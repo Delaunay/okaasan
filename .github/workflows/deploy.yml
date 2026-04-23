@@ -36,7 +36,7 @@ jobs:
         cache: 'npm'
         cache-dependency-path: |
           package-lock.json
-          recipes/ui/package-lock.json
+          okaasan/ui/package-lock.json
 
     - name: Cache Python dependencies
       uses: actions/cache@v4
@@ -54,12 +54,12 @@ jobs:
         source venv/bin/activate
         pip install requests flask gunicorn
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f recipes/requirements.txt ]; then pip install -r recipes/requirements.txt; fi
+        if [ -f okaasan/requirements.txt ]; then pip install -r okaasan/requirements.txt; fi
         pip install -e .
 
     - name: Install Node.js dependencies (UI)
       run: |
-        cd recipes/ui
+        cd okaasan/ui
         npm ci
 
     - name: Fetch Resources
@@ -69,7 +69,7 @@ jobs:
     - name: Build static website
       run: |
         source venv/bin/activate
-        python -m recipes.main static --base_path /recipes/ --api_url /recipes/api
+        python -m okaasan.main static --base_path /recipes/ --api_url /recipes/api
       env:
         PYTHONPATH: ${{ github.workspace }}
         FLASK_STATIC: ${{ github.repository }}/website

@@ -1,63 +1,60 @@
 #!/usr/bin/env python
-import os
 from pathlib import Path
 
-from setuptools import setup
-
+from setuptools import setup, find_packages
 
 version = '0.0.1'
 
-extra_requires = {"plugins": ["importlib_resources"],}
+extra_requires = {"plugins": ["importlib_resources"]}
 extra_requires["all"] = sorted(set(sum(extra_requires.values(), [])))
 
 
-if __name__ == "__main__":
-    setup(
-        name="recipes",
-        version=version,
-        extras_require=extra_requires,
-        description="",
-        long_description=(Path(__file__).parent / "README.rst").read_text(),
-        author="Gamekit",
-        author_email="github@gamekit.ca",
-        license="MIT",
-        url="https://recipes.readthedocs.io",
-        classifiers=[
-            "License :: OSI Approved :: BSD License",
-            "Programming Language :: Python :: 3.7",
-            "Programming Language :: Python :: 3.8",
-            "Programming Language :: Python :: 3.9",
-            "Operating System :: OS Independent",
+setup(
+    name="okaasan",
+    version=version,
+    extras_require=extra_requires,
+    description="Recipe management web application",
+    long_description=(Path(__file__).parent / "README.rst").read_text(),
+    author="Gamekit",
+    author_email="github@gamekit.ca",
+    license="MIT",
+    url="https://recipes.readthedocs.io",
+    classifiers=[
+        "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Operating System :: OS Independent",
+    ],
+    packages=find_packages(exclude=["tests*", "docs*"]),
+    package_data={
+        "okaasan.server": [
+            "static/**/*",
+            "static/*",
         ],
-        packages=[
-            "recipes.main",
-            "recipes.server",
-            "recipes.tools",
-            "recipes.cli",
-            "recipes.plugin"
-            # "recipes.recipes",
-            #   "recipes.recipes.migrations",
-            # "recipes.recipes.templatetags",
+        "okaasan.data": [
+            "*.json",
+            "**/*.csv",
         ],
-        setup_requires=["setuptools"],
-        install_requires=[
-            "importlib_resources",
-            "sqlalchemy",
-            "alembic",
-            "psycopg2-binary",
-            "flask",
-            "werkzeug",
-            "flask-sqlalchemy",
-            "flask-cors",
-            "pillow",
-            "appdirs",
-            "python-telegram-bot",
-            "argklass",
-            "usda_fdc",
+    },
+    include_package_data=True,
+    setup_requires=["setuptools"],
+    install_requires=[
+        "importlib_resources",
+        "sqlalchemy",
+        "alembic",
+        "fastapi",
+        "uvicorn[standard]",
+        "python-multipart",
+        "pillow",
+        "appdirs",
+        "python-telegram-bot",
+        "argklass",
+        "usda_fdc",
+    ],
+    entry_points={
+        "console_scripts": [
+            "okaasan = okaasan.main:main_force",
         ],
-         entry_points={
-            "console_scripts": [
-                "recipe = recipes.main:main_force",
-            ],
-        },
-    )
+    },
+)

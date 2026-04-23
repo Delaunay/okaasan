@@ -1,0 +1,16 @@
+include README.rst
+include pyproject.toml
+
+# Bundled React UI (built by CI or `make build-ui`)
+recursive-include okaasan/server/static *.html *.js *.css *.svg *.png *.ico *.json *.txt *.map
+
+# USDA data files
+recursive-include okaasan/data *.json *.csv
+
+# Exclude source-only trees
+prune okaasan/ui
+prune docs
+prune tests
+prune scripts
+prune static_build
+prune .github

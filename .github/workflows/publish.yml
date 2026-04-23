@@ -1,0 +1,113 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set version from tag
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION="${GITHUB_REF_NAME#v}"
+        echo "Setting version to $VERSION"
+        sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" okaasan/__init__.py
+        sed -i "s/^version = .*/version = '$VERSION'/" setup.py
+        cat okaasan/__init__.py
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: okaasan/ui/package-lock.json
+
+    - name: Install UI dependencies
+      working-directory: okaasan/ui
+      run: npm ci
+
+    - name: Build React UI into server/static
+      working-directory: okaasan/ui
+      env:
+        VITE_API_URL: ""
+        VITE_BASE_PATH: "/"
+      run: npx vite build --outDir ../server/static
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Python build tools
+      run: pip install build
+
+    - name: Build sdist and wheel
+      run: python -m build
+
+    - name: Verify static files in wheel
+      run: |
+        python -c "
+        import zipfile, sys
+        whl = list(__import__('pathlib').Path('dist').glob('*.whl'))[0]
+        with zipfile.ZipFile(whl) as z:
+            statics = [n for n in z.namelist() if 'static/' in n]
+            print(f'Found {len(statics)} static files in wheel:')
+            for s in statics[:20]:
+                print(f'  {s}')
+            if not statics:
+                print('ERROR: No static files found in wheel!')
+                sys.exit(1)
+        "
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  publish-test:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags')
+    environment: testpypi
+
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Publish to Test PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+
+  publish:
+    needs: publish-test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags')
+    environment: pypi
+
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1

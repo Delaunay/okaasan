@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, with_loader_criteria
 
 from .models.article import Article, ArticleBlock
 from .decorators import expose
-from .query_context import is_public_only
+from .query_context import is_public_only, public_articles_only
 
 router = APIRouter()
 
@@ -76,7 +76,9 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
         article_json = article.to_json(session=db, children=True)
         articles = [article_json]
         Article.get_block_forest(db, articles)
-        article_json["children"] = Article.get_article_forest(db, article)
+        article_json["children"] = Article.get_article_forest(
+            db, article, public_only=is_public_only(),
+        )
         return article_json
     except HTTPException:
         raise
@@ -182,7 +184,10 @@ def get_child_articles(parent_id: int, db: Session = Depends(get_db)):
         parent_article = db.query(Article).get(parent_id)
         if not parent_article:
             raise HTTPException(status_code=404, detail="Parent article not found")
-        child_articles = db.query(Article).filter(Article.parent == parent_id).all()
+        query = db.query(Article).filter(Article.parent == parent_id)
+        if is_public_only():
+            query = query.filter(Article.public == True)
+        child_articles = query.all()
         return [child.to_json() for child in child_articles]
     except HTTPException:
         raise

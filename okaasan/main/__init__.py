@@ -64,9 +64,9 @@ def args(*a):
 def main(argv=None):
     """Entry point for the command line interface"""
 
-    import okaasan.cli
+    import okaasan
 
-    with with_cache_location(okaasan.cli.__name__):
+    with with_cache_location(okaasan):
         with timeit("discover_commands"):
             commands = discover_commands()
 

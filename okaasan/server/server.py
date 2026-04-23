@@ -317,7 +317,14 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Workflow template not found")
 
         template = template_path.read_text()
-        workflow_content = template.replace("{{BASE_PATH}}", base_path)
+        okaasan_repo = getattr(_recipes_pkg, '__url__', None) or "https://github.com/Delaunay/okaasan"
+        if okaasan_repo.endswith("/"):
+            okaasan_repo = okaasan_repo[:-1]
+        workflow_content = (
+            template
+            .replace("{{BASE_PATH}}", base_path)
+            .replace("{{OKAASAN_REPO}}", okaasan_repo)
+        )
 
         # Write workflow to data repo
         workflow_dir = store_root / ".github" / "workflows"

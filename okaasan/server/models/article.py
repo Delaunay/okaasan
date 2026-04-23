@@ -43,13 +43,16 @@ class Article(Base):
     # Add a view counter for optimizing UX display view
 
     @staticmethod
-    def get_article_forest(session, article):
+    def get_article_forest(session, article, public_only=False):
         if article.root_id is not None:
             query_id = article.root_id
         else:
             query_id = article._id
 
-        nodes = session.query(Article).filter(Article.root_id == query_id).all()
+        query = session.query(Article).filter(Article.root_id == query_id)
+        if public_only:
+            query = query.filter(Article.public == True)
+        nodes = query.all()
 
         root = []
         parents = {article._id: {"children": root}}

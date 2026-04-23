@@ -27,6 +27,9 @@ class Arguments:
 
 
 def default_output_dir():
+    data_dir = os.getenv("OKAASAN_DATA")
+    if data_dir:
+        return Path(data_dir) / "static_build"
     base_dir = Path(__file__).parent.parent.parent
     return base_dir / "static_build"
 
@@ -242,6 +245,10 @@ class StaticWebsite(Command):
         except Exception as e:
             logger.error(f"Error generating sidebar config: {e}")
 
+    def _bundled_static_dir(self):
+        """Return the path to pre-built static files bundled in the wheel."""
+        return Path(__file__).resolve().parent.parent / "server" / "static"
+
     def build_frontend(self, base_path="/", api_url="/api"):
         """Build the React frontend for production."""
         logger.info("Building React frontend...")
@@ -249,7 +256,7 @@ class StaticWebsite(Command):
         ui_dir = self.base_dir / "okaasan" / "ui"
 
         if not ui_dir.exists():
-            logger.warning(f"UI directory not found: {ui_dir}")
+            logger.info("UI source not found (pip install); will use bundled static files")
             return
 
         logger.info("Installing npm dependencies...")
@@ -287,18 +294,29 @@ class StaticWebsite(Command):
         logger.info("Frontend build completed")
 
     def copy_frontend_build(self):
-        """Copy the built frontend to the output directory."""
+        """Copy the built frontend to the output directory.
+
+        Tries the freshly-built ui/dist first, then falls back to the
+        pre-built static files bundled inside the installed package.
+        """
         logger.info("Copying frontend build...")
 
         ui_dist = self.base_dir / "okaasan" / "ui" / "dist"
+        bundled = self._bundled_static_dir()
 
-        if not ui_dist.exists():
-            logger.warning(f"Frontend dist directory not found: {ui_dist}")
+        if ui_dist.exists():
+            src = ui_dist
+            logger.info(f"Using freshly-built frontend from {src}")
+        elif bundled.exists() and (bundled / "index.html").exists():
+            src = bundled
+            logger.info(f"Using bundled static files from {src}")
+        else:
+            logger.error("No frontend files found — neither ui/dist nor bundled static/")
             return
 
-        for item in ui_dist.rglob("*"):
+        for item in src.rglob("*"):
             if item.is_file():
-                rel_path = item.relative_to(ui_dist)
+                rel_path = item.relative_to(src)
                 dest_path = self.output_dir / rel_path
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, dest_path)

@@ -2,7 +2,7 @@ Recipes
 =======
 
 * This repository is solely for the server and ui of the recipe website.
-The data is kept separate inside a data repository.
+  The data is kept separate inside a data repository.
 
 User Interface
 --------------

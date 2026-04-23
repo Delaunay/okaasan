@@ -15,6 +15,7 @@ setup(
     extras_require=extra_requires,
     description="Recipe management web application",
     long_description=(Path(__file__).parent / "README.rst").read_text(),
+    long_description_content_type="text/x-rst",
     author="Gamekit",
     author_email="github@gamekit.ca",
     license="MIT",

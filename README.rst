@@ -4,6 +4,16 @@ Recipes
 * This repository is solely for the server and ui of the recipe website.
   The data is kept separate inside a data repository.
 
+Install
+-------
+
+.. code-block:: bash
+
+   curl -sSL https://raw.githubusercontent.com/Delaunay/okaasan/master/install.sh | bash
+
+Safe to re-run: upgrades the package, preserves data.
+Installs to ``/opt/okaasan/`` with a Python virtual environment, systemd service, and data directory.
+
 User Interface
 --------------
 

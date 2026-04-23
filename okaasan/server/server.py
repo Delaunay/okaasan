@@ -46,6 +46,25 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from .query_context import _public_only
+
+    class PublicOnlyMiddleware(BaseHTTPMiddleware):
+        """Set the public_only ContextVar when the static builder sends
+        ``X-Public-Only: true``.  Because this runs inside the ASGI app's
+        async context, the value propagates to sync handlers via
+        ``run_in_threadpool``."""
+        async def dispatch(self, request, call_next):
+            if request.headers.get("x-public-only") == "true":
+                token = _public_only.set(True)
+                try:
+                    return await call_next(request)
+                finally:
+                    _public_only.reset(token)
+            return await call_next(request)
+
+    app.add_middleware(PublicOnlyMiddleware)
+
     db_path = os.path.join(STATIC_FOLDER, "database.db")
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)

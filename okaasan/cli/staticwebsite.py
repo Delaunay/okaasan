@@ -73,6 +73,7 @@ class StaticWebsite(Command):
 
         from starlette.testclient import TestClient
         self.client = TestClient(self.fastapi_app)
+        self._public_headers = {"X-Public-Only": "true"}
 
         skip_api = getattr(args, 'skip_api', False)
         skip_frontend = getattr(args, 'skip_frontend', False)
@@ -191,10 +192,7 @@ class StaticWebsite(Command):
         for kwargs in combinations:
             try:
                 url = self._build_url(route, kwargs)
-
-                from okaasan.server.query_context import public_articles_only
-                with public_articles_only():
-                    response = self.client.get(url)
+                response = self.client.get(url, headers=self._public_headers)
 
                 if response.status_code == 200:
                     try:
@@ -236,7 +234,7 @@ class StaticWebsite(Command):
         """Fetch /api/sidebar and write it as a static JSON file."""
         logger.info("Generating sidebar config...")
         try:
-            response = self.client.get("/api/sidebar")
+            response = self.client.get("/api/sidebar", headers=self._public_headers)
             if response.status_code == 200:
                 self.save_json_file("/api/sidebar", response.json())
                 logger.info("Saved api/sidebar.json")

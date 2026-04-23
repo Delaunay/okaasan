@@ -6,6 +6,7 @@ import {
 } from '@chakra-ui/react';
 import { ColorModeProvider } from "@/components/ui/color-mode"
 import Layout, { sidebarSections } from './layout/Layout';
+import { isStaticMode } from './services/api';
 import Home from './components/Home';
 import RecipeList from './components/RecipeList';
 import RecipeDetail from './components/RecipeDetail';
@@ -99,10 +100,10 @@ function App() {
                 <Route path="/unit-manager" element={<UnitManager />} />
                 <Route path="/compare" element={<RecipeComparison />} />
                 <Route path="/settings" element={<Settings />} />
-                <Route path="/settings/git" element={<GitSettings />} />
-                <Route path="/settings/updates" element={<UpdateSettings />} />
-                <Route path="/settings/sidebar" element={<SidebarSettings />} />
-                <Route path="/api-tester" element={<ApiTester />} />
+                <Route path="/settings/git" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GitSettings />} />
+                <Route path="/settings/updates" element={isStaticMode() ? <Navigate to="/settings" replace /> : <UpdateSettings />} />
+                <Route path="/settings/sidebar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <SidebarSettings />} />
+                <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
                 {/* Expense Tracker */}
                 <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />

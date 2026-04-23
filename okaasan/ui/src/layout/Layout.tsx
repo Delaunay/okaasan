@@ -196,10 +196,16 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     return () => window.removeEventListener('sidebar-config-changed', handler);
   }, [fetchSidebarConfig]);
 
-  const visibleSections = useMemo(
-    () => allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title)),
-    [hiddenSections]
-  );
+  const STATIC_HIDDEN_ITEMS = new Set(['/settings/sidebar', '/settings/git', '/settings/updates', '/api-tester']);
+
+  const visibleSections = useMemo(() => {
+    const filtered = allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title));
+    if (!isStaticMode()) return filtered;
+    return filtered.map(s => {
+      const items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_ITEMS.has(item.href));
+      return Object.assign({}, s, { items });
+    });
+  }, [hiddenSections]);
 
   useEffect(() => {
     const path = location.pathname;

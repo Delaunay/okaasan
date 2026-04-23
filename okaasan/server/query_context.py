@@ -1,5 +1,11 @@
 """
-Thread-local context flags for query filtering.
+Context flags for query filtering.
+
+Uses ``contextvars`` so the flag propagates correctly across
+Starlette's ``run_in_threadpool`` (used for sync FastAPI endpoints)
+and through ``anyio.from_thread.BlockingPortal`` (used by TestClient).
+``threading.local`` does *not* propagate in those scenarios, which
+caused private articles to leak into the static build.
 
 Usage:
     with public_articles_only():
@@ -7,21 +13,20 @@ Usage:
         # All Article queries in this block are automatically filtered
         # to public == True via the SQLAlchemy do_orm_execute event.
 """
-import threading
+from contextvars import ContextVar
 from contextlib import contextmanager
 
-_local = threading.local()
+_public_only: ContextVar[bool] = ContextVar('public_only', default=False)
 
 
 def is_public_only() -> bool:
-    return getattr(_local, 'public_only', False)
+    return _public_only.get()
 
 
 @contextmanager
 def public_articles_only():
-    old = getattr(_local, 'public_only', False)
-    _local.public_only = True
+    token = _public_only.set(True)
     try:
         yield
     finally:
-        _local.public_only = old
+        _public_only.reset(token)

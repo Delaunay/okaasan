@@ -36,6 +36,25 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 _BUNDLED_STATIC = _PACKAGE_DIR / "static"
 
 
+class _StripApiPrefix:
+    """ASGI middleware that rewrites ``/api/…`` → ``/…``.
+
+    In dev the Vite proxy performs this rewrite; in production the bundled
+    UI is served directly by FastAPI so we need to do it ourselves.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+            scope = dict(scope)
+            scope["path"] = scope["path"][4:]
+            if "raw_path" in scope:
+                scope["raw_path"] = scope["raw_path"][4:]
+        await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Recipes")
 
@@ -158,7 +177,7 @@ def create_app() -> FastAPI:
 
     # ── Update API ─────────────────────────────────────────────
 
-    @app.post("/api/update")
+    @app.post("/update")
     async def trigger_update():
         return StreamingResponse(
             updater.stream_upgrade(),
@@ -169,7 +188,7 @@ def create_app() -> FastAPI:
             },
         )
 
-    @app.get("/api/version")
+    @app.get("/version")
     def get_version():
         return {"version": _recipes_pkg.__version__}
 
@@ -199,7 +218,7 @@ def create_app() -> FastAPI:
                 return json.load(f)
         return {}
 
-    @app.get("/api/sidebar")
+    @app.get("/sidebar")
     def get_sidebar():
         cfg = _load_sidebar_config()
         hidden = set(cfg.get("hidden", []))
@@ -212,7 +231,7 @@ def create_app() -> FastAPI:
             "static_hidden": list(static_hidden),
         }
 
-    @app.put("/api/sidebar")
+    @app.put("/sidebar")
     async def put_sidebar(request: Request):
         body = await request.json()
         cfg = _load_sidebar_config()
@@ -229,26 +248,26 @@ def create_app() -> FastAPI:
 
     # ── Git configuration API ─────────────────────────────────
 
-    @app.get("/api/git/status")
+    @app.get("/git/status")
     async def git_status():
         status = gitsync.get_status(store_root)
         status["data_path"] = str(store_root.resolve())
         return status
 
-    @app.post("/api/git/generate-key")
+    @app.post("/git/generate-key")
     async def git_generate_key():
         loop = asyncio.get_event_loop()
         pub = await loop.run_in_executor(None, gitsync.generate_ssh_key)
         return {"public_key": pub}
 
-    @app.get("/api/git/ssh-key")
+    @app.get("/git/ssh-key")
     async def git_ssh_key():
         pub = gitsync.get_ssh_public_key()
         if pub is None:
             raise HTTPException(status_code=404, detail="No SSH key generated yet")
         return {"public_key": pub}
 
-    @app.post("/api/git/setup")
+    @app.post("/git/setup")
     async def git_setup(request: Request):
         body = await request.json()
         remote = body.get("remote", "").strip()
@@ -268,7 +287,7 @@ def create_app() -> FastAPI:
             resp["error"] = result.error
         return resp
 
-    @app.post("/api/git/sync")
+    @app.post("/git/sync")
     async def git_trigger_sync():
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, gitsync.git_sync, store_root)
@@ -279,7 +298,7 @@ def create_app() -> FastAPI:
             resp["error"] = result.error
         return resp
 
-    @app.post("/api/git/test")
+    @app.post("/git/test")
     async def git_test_connection():
         loop = asyncio.get_event_loop()
 
@@ -298,7 +317,7 @@ def create_app() -> FastAPI:
 
     # ── GitHub Pages setup ─────────────────────────────────────
 
-    @app.get("/api/git/pages-status")
+    @app.get("/git/pages-status")
     async def git_pages_status():
         workflow = store_root / ".github" / "workflows" / "deploy.yml"
         remote = gitsync.get_remote(store_root)
@@ -317,7 +336,7 @@ def create_app() -> FastAPI:
             "pages_url": pages_url,
         }
 
-    @app.post("/api/git/setup-pages")
+    @app.post("/git/setup-pages")
     async def git_setup_pages():
         if not gitsync.is_git_repo(store_root):
             raise HTTPException(status_code=400, detail="Git backup not configured")
@@ -385,11 +404,12 @@ def create_app() -> FastAPI:
                 return FileResponse(str(path))
             raise HTTPException(status_code=404)
 
-        _API_PREFIXES = ("api/", "store/", "health", "kv/", "events", "tasks",
+        _API_PREFIXES = ("store/", "health", "kv/", "events", "tasks",
                          "recipes", "ingredients", "articles", "article/",
                          "blocks/", "units", "unit/", "upload", "download-image",
                          "uploads/", "routine/", "planning/", "kiwi/", "categories",
-                         "ingredient/")
+                         "ingredient/", "sidebar", "version", "update",
+                         "git/", "usda/", "subtasks")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

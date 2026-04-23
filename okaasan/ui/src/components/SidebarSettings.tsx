@@ -5,8 +5,7 @@ import {
 import { useColorModeValue } from './ui/color-mode';
 import { useToast } from './ui/toaster';
 import { LayoutDashboard, Eye, EyeOff, Loader2, Lock, Globe } from 'lucide-react';
-
-const API = import.meta.env.VITE_API_URL ?? '/api';
+import { recipeAPI } from '../services/api';
 
 interface SectionInfo {
   title: string;
@@ -31,13 +30,10 @@ export default function SidebarSettings() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/sidebar`);
-      if (res.ok) {
-        const data = await res.json();
-        setAllSections(data.all_sections || []);
-        setHidden(new Set(data.hidden || []));
-        setStaticHidden(new Set(data.static_hidden || []));
-      }
+      const data = await recipeAPI.getSidebar();
+      setAllSections(data.all_sections || []);
+      setHidden(new Set(data.hidden || []));
+      setStaticHidden(new Set(data.static_hidden || []));
     } catch {
       toast('error', 'Failed to load sidebar configuration');
     } finally {
@@ -49,13 +45,9 @@ export default function SidebarSettings() {
 
   const saveConfig = async (nextHidden: Set<string>, nextStaticHidden: Set<string>) => {
     try {
-      await fetch(`${API}/api/sidebar`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hidden: [...nextHidden],
-          static_hidden: [...nextStaticHidden],
-        }),
+      await recipeAPI.updateSidebar({
+        hidden: [...nextHidden],
+        static_hidden: [...nextStaticHidden],
       });
       window.dispatchEvent(new Event('sidebar-config-changed'));
     } catch (e: any) {

@@ -103,7 +103,7 @@ async def download_image(
             f.write(contents)
 
         relative = '/'.join(safe_parts + [filename])
-        file_url = f"/api/uploads/{relative}"
+        file_url = f"/uploads/{relative}"
         return {"url": file_url, "filename": filename}
     except HTTPException:
         raise

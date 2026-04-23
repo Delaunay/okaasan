@@ -7,7 +7,6 @@ import { recipeAPI, isStaticMode } from '../services/api';
 import SidebarSection, { SidebarItem } from './SidebarSection';
 import './Layout.css';
 
-const API = import.meta.env.VITE_API_URL ?? '/api';
 const GITHUB_REPO = 'https://github.com/Delaunay/okaasan';
 
 const HamburgerIcon = () => (
@@ -173,18 +172,12 @@ const Layout: FC<LayoutProps> = ({ children }) => {
 
   const fetchSidebarConfig = useCallback(async () => {
     try {
-      const url = isStaticMode()
-        ? `${API}/api/sidebar.json`
-        : `${API}/api/sidebar`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const merged = new Set([
-          ...(data.hidden || []),
-          ...(isStaticMode() ? (data.static_hidden || []) : []),
-        ]);
-        setHiddenSections(merged);
-      }
+      const data = await recipeAPI.getSidebar();
+      const merged = new Set([
+        ...(data.hidden || []),
+        ...(isStaticMode() ? (data.static_hidden || []) : []),
+      ]);
+      setHiddenSections(merged);
     } catch { /* use defaults — show everything */ }
   }, []);
 

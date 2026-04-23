@@ -622,23 +622,23 @@ class RecipeAPI {
 
   // USDA Food API methods
   async searchUsdaFoods(name: string): Promise<Array<{ fdc_id: number, description: string, data_type: string, publication_date?: string }>> {
-    return this.request<Array<{ fdc_id: number, description: string, data_type: string, publication_date?: string }>>(`/api/usda/search/${encodeURIComponent(name)}`);
+    return this.request<Array<{ fdc_id: number, description: string, data_type: string, publication_date?: string }>>(`/usda/search/${encodeURIComponent(name)}`);
   }
 
   async getUsdaFood(fdcId: number): Promise<any> {
-    return this.request<any>(`/api/usda/food/${fdcId}`);
+    return this.request<any>(`/usda/food/${fdcId}`);
   }
 
   async analyzeUsdaFood(fdcId: number): Promise<any> {
-    return this.request<any>(`/api/usda/analyze/${fdcId}`);
+    return this.request<any>(`/usda/analyze/${fdcId}`);
   }
 
   async getNutrientGroup(nutrientName: string): Promise<{ group: string, name: string }> {
-    return this.request<{ group: string, name: string }>(`/api/usda/nutrient/group/${encodeURIComponent(nutrientName)}`);
+    return this.request<{ group: string, name: string }>(`/usda/nutrient/group/${encodeURIComponent(nutrientName)}`);
   }
 
   async updateRecipeIngredient(recipeIngredientId: number, data: { fdc_id?: number, quantity?: number, unit?: string }): Promise<RecipeIngredient> {
-    return this.request<RecipeIngredient>(`/api/recipes/ingredients/${recipeIngredientId}`, {
+    return this.request<RecipeIngredient>(`/recipes/ingredients/${recipeIngredientId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -812,6 +812,67 @@ class RecipeAPI {
 
   async getBlocklyToolbox(): Promise<any> {
     return this.request<any>('/kiwi/blockly/toolbox');
+  }
+
+  // Sidebar configuration
+  async getSidebar(): Promise<{ sections: any[]; all_sections: any[]; hidden: string[]; static_hidden: string[] }> {
+    if (isStaticMode()) {
+      return this.requestStatic('/sidebar');
+    }
+    return this.request('/sidebar');
+  }
+
+  async updateSidebar(config: { hidden?: string[]; static_hidden?: string[] }): Promise<{ message: string }> {
+    if (isStaticMode()) {
+      throw new Error('Updating sidebar is not supported in static mode');
+    }
+    return this.request('/sidebar', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Version
+  async getVersion(): Promise<{ version: string }> {
+    return this.request('/version');
+  }
+
+  // Git backup
+  async getGitStatus(): Promise<any> {
+    return this.request('/git/status');
+  }
+
+  async getGitPagesStatus(): Promise<{ workflow_exists: boolean; repo_name: string; pages_url: string }> {
+    return this.request('/git/pages-status');
+  }
+
+  async generateGitKey(): Promise<{ public_key: string }> {
+    return this.request('/git/generate-key', { method: 'POST' });
+  }
+
+  async setupGit(remote: string): Promise<{ message: string; remote: string; commit: string; push_error?: string; error?: string }> {
+    return this.request('/git/setup', {
+      method: 'POST',
+      body: JSON.stringify({ remote }),
+    });
+  }
+
+  async testGitConnection(): Promise<{ connected: boolean; output: string }> {
+    return this.request('/git/test', { method: 'POST' });
+  }
+
+  async triggerGitSync(): Promise<{ commit: string | null; pushed: boolean; push_error?: string; error?: string }> {
+    return this.request('/git/sync', { method: 'POST' });
+  }
+
+  async setupGitPages(): Promise<{ message: string; base_path: string; commit: string; push_error?: string; error?: string }> {
+    return this.request('/git/setup-pages', { method: 'POST' });
+  }
+
+  // Software update (returns raw Response for SSE streaming)
+  async triggerUpdate(): Promise<Response> {
+    const url = `${API_BASE_URL}/update`;
+    return fetch(url, { method: 'POST' });
   }
 }
 

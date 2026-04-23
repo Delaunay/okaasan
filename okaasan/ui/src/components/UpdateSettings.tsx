@@ -9,8 +9,7 @@ import {
   RefreshCw, Check, Loader2, Download,
   Settings as SettingsIcon, Terminal,
 } from 'lucide-react';
-
-const API = import.meta.env.VITE_API_URL ?? '/api';
+import { recipeAPI } from '../services/api';
 const PYPI_URL = 'https://pypi.org/pypi/okaasan/json';
 const SETTINGS_COLLECTION = '_config';
 const SETTINGS_KEY = '_settings';
@@ -58,7 +57,7 @@ export default function UpdateSettings() {
     try {
       const [pypiRes, versionRes, stored] = await Promise.all([
         fetch(PYPI_URL).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${API}/api/version`).then(r => r.ok ? r.json() : null).catch(() => null),
+        recipeAPI.getVersion().catch(() => null),
         jsonStore.get<SettingsData>(SETTINGS_COLLECTION, SETTINGS_KEY).catch(() => null),
       ]);
       if (stored) setSettings(s => ({ ...s, ...stored }));
@@ -93,7 +92,7 @@ export default function UpdateSettings() {
     setLogs([]);
 
     try {
-      const res = await fetch(`${API}/api/update`, { method: 'POST' });
+      const res = await recipeAPI.triggerUpdate();
       if (!res.body) {
         toast('error', 'Streaming not supported');
         setUpdating(false);

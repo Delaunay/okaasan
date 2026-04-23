@@ -35,8 +35,8 @@ def main():
 
 
 def entry():
-    from .server import create_app
-    return create_app()
+    from .server import create_app, _StripApiPrefix
+    return _StripApiPrefix(create_app())
 
 
 if __name__ == '__main__':

@@ -218,7 +218,7 @@ def get_recipe_nutrition(recipe_id: int, db: Session = Depends(get_db)):
     return [comp.to_json() for comp in compositions]
 
 
-@router.patch("/api/recipes/ingredients/{recipe_ingredient_id}")
+@router.patch("/recipes/ingredients/{recipe_ingredient_id}")
 async def update_recipe_ingredient(recipe_ingredient_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         recipe_ingredient = db.get(RecipeIngredient, recipe_ingredient_id)

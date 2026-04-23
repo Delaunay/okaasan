@@ -64,17 +64,17 @@ def create_usda_routers(engine):
         api_key = os.getenv("FDC_API_KEY")
         client = RateLimitedClient(api_key)
 
-        @fdc_router.get("/api/usda/search/{name}")
+        @fdc_router.get("/usda/search/{name}")
         def search_usda_foods(name: str):
             rows: SearchResult = client.search(name, data_type="Foundation")
             return [asdict(row) for row in rows.foods]
 
-        @fdc_router.get("/api/usda/food/{fdc_id:int}")
+        @fdc_router.get("/usda/food/{fdc_id:int}")
         def get_food(fdc_id: int):
             food: Food = client.get_food(fdc_id, nutrients=None)
             return asdict(food)
 
-        @fdc_router.get("/api/usda/analyze/{fdc_id:int}")
+        @fdc_router.get("/usda/analyze/{fdc_id:int}")
         def analyze_ingredient(fdc_id: int):
             try:
                 food = client.get_food(fdc_id)
@@ -85,7 +85,7 @@ def create_usda_routers(engine):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @fdc_router.get("/api/usda/nutrient/group/{name}")
+        @fdc_router.get("/usda/nutrient/group/{name}")
         def get_nutrient(name: str):
             original_name = name
             name_lower = name.split(",")[0].lower()
@@ -116,7 +116,7 @@ def create_usda_routers(engine):
     # CSV-based USDA routes
     usda_reader = USDAReader(USDA_FOLDER)
 
-    @csv_router.get("/api/usda/search")
+    @csv_router.get("/usda/search")
     def search_usda_csv(q: str = "", limit: int = 20, data_type: str = "foundation_food"):
         if not q:
             raise HTTPException(status_code=400, detail="Query parameter 'q' is required")
@@ -127,7 +127,7 @@ def create_usda_routers(engine):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/api/usda/food/{fdc_id}")
+    @csv_router.get("/usda/food/{fdc_id}")
     def get_usda_food_details(fdc_id: str):
         try:
             food_details = usda_reader.get_food_details(fdc_id)
@@ -144,7 +144,7 @@ def create_usda_routers(engine):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/api/usda/food/{fdc_id}/nutrients")
+    @csv_router.get("/usda/food/{fdc_id}/nutrients")
     def get_usda_food_nutrients(fdc_id: str):
         try:
             nutrients = usda_reader.get_food_nutrients(fdc_id)
@@ -159,7 +159,7 @@ def create_usda_routers(engine):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.post("/api/usda/apply")
+    @csv_router.post("/usda/apply")
     async def apply_usda_to_ingredient(request: Request, db: Session = Depends(get_db)):
         try:
             data = await request.json()
@@ -231,7 +231,7 @@ def create_usda_routers(engine):
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/api/usda/nutrient-list")
+    @csv_router.get("/usda/nutrient-list")
     def get_usda_nutrient_list():
         try:
             nutrients = []

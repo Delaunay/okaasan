@@ -13,11 +13,9 @@ import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
     Ruler, FolderOpen, LayoutDashboard,
 } from 'lucide-react';
-import { isStaticMode } from '../services/api';
+import { isStaticMode, recipeAPI } from '../services/api';
 import { TelegramSettings } from './TelegramSettings';
 import { UnitSystemModal } from './UnitSystemModal';
-
-const API = import.meta.env.VITE_API_URL ?? '/api';
 
 interface SettingsSection {
     id: string;
@@ -46,10 +44,8 @@ const Settings: React.FC = () => {
 
     useEffect(() => {
         if (_static) return;
-        fetch(`${API}/api/version`).then(r => r.json())
-            .then(d => setVersion(d.version)).catch(() => {});
-        fetch(`${API}/api/git/status`).then(r => r.json())
-            .then(d => setDataPath(d.data_path || '')).catch(() => {});
+        recipeAPI.getVersion().then(d => setVersion(d.version)).catch(() => {});
+        recipeAPI.getGitStatus().then(d => setDataPath(d.data_path || '')).catch(() => {});
     }, [_static]);
 
     const settingsSections: SettingsSection[] = [

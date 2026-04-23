@@ -8,8 +8,7 @@ import {
   GitBranch, Key, RefreshCw, Check, AlertTriangle,
   ExternalLink, Copy, Loader2, Shield, FolderGit2, Globe,
 } from 'lucide-react';
-
-const API = import.meta.env.VITE_API_URL ?? '/api';
+import { recipeAPI } from '../services/api';
 
 interface SyncResult {
   commit: string | null;
@@ -50,15 +49,13 @@ export default function GitSettings() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/git/status`);
-      const data = await res.json();
+      const data = await recipeAPI.getGitStatus();
       setStatus(data);
       if (data.remote) setRemote(data.remote);
 
       if (data.initialized) {
         try {
-          const pRes = await fetch(`${API}/api/git/pages-status`);
-          if (pRes.ok) setPagesStatus(await pRes.json());
+          setPagesStatus(await recipeAPI.getGitPagesStatus());
         } catch { /* pages status is optional */ }
       }
     } catch {
@@ -72,8 +69,7 @@ export default function GitSettings() {
     setLoading('key');
     setTestResult(null);
     try {
-      const res = await fetch(`${API}/api/git/generate-key`, { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
+      await recipeAPI.generateGitKey();
       toast('success', 'SSH key generated');
       await fetchStatus();
     } catch (e: any) {
@@ -90,13 +86,7 @@ export default function GitSettings() {
     }
     setLoading('setup');
     try {
-      const res = await fetch(`${API}/api/git/setup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ remote: remote.trim() }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const data = await recipeAPI.setupGit(remote.trim());
       if (data.push_error) {
         toast('warning', `Git configured but push failed: ${data.push_error}`);
       } else {
@@ -114,8 +104,7 @@ export default function GitSettings() {
     setLoading('test');
     setTestResult(null);
     try {
-      const res = await fetch(`${API}/api/git/test`, { method: 'POST' });
-      const data = await res.json();
+      const data = await recipeAPI.testGitConnection();
       setTestResult(data);
       toast(data.connected ? 'success' : 'error',
         data.connected ? 'SSH connection successful' : `SSH connection failed: ${data.output}`);
@@ -130,9 +119,7 @@ export default function GitSettings() {
   const triggerSync = async () => {
     setLoading('sync');
     try {
-      const res = await fetch(`${API}/api/git/sync`, { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const data = await recipeAPI.triggerGitSync();
       if (data.error) {
         toast('error', `Sync failed: ${data.error}`);
       } else if (data.push_error) {
@@ -160,12 +147,7 @@ export default function GitSettings() {
   const setupPages = async () => {
     setLoading('pages');
     try {
-      const res = await fetch(`${API}/api/git/setup-pages`, { method: 'POST' });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(err.detail || 'Setup failed');
-      }
-      const data = await res.json();
+      const data = await recipeAPI.setupGitPages();
       if (data.push_error) {
         toast('warning', data.message || `Workflow added but push failed: ${data.push_error}`);
       } else {

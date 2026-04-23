@@ -231,15 +231,15 @@ class StaticWebsite(Command):
         logger.debug(f"Saved {file_path}")
 
     def generate_sidebar_json(self):
-        """Fetch /api/sidebar and write it as a static JSON file."""
+        """Fetch /sidebar and write it as a static JSON file."""
         logger.info("Generating sidebar config...")
         try:
-            response = self.client.get("/api/sidebar", headers=self._public_headers)
+            response = self.client.get("/sidebar", headers=self._public_headers)
             if response.status_code == 200:
-                self.save_json_file("/api/sidebar", response.json())
+                self.save_json_file("/sidebar", response.json())
                 logger.info("Saved api/sidebar.json")
             else:
-                logger.warning(f"Failed to fetch /api/sidebar: {response.status_code}")
+                logger.warning(f"Failed to fetch /sidebar: {response.status_code}")
         except Exception as e:
             logger.error(f"Error generating sidebar config: {e}")
 

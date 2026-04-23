@@ -4,6 +4,9 @@ include pyproject.toml
 # Bundled React UI (built by CI or `make build-ui`)
 recursive-include okaasan/server/static *.html *.js *.css *.svg *.png *.ico *.json *.txt *.map
 
+# Workflow templates
+recursive-include okaasan/server/templates *.yml
+
 # USDA data files
 recursive-include okaasan/data *.json *.csv
 

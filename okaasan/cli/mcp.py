@@ -1,8 +1,8 @@
 """
 MCP Tool Generator
 
-Automatically generates MCP tool definitions from Flask routes.
-Introspects the Flask app to discover all routes and creates the TOOLS dictionary.
+Automatically generates MCP tool definitions from FastAPI routes.
+Introspects the app to discover all routes and creates the TOOLS dictionary.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import logging
 import sys
 import inspect
 import json
+import re
 from pathlib import Path
 from dataclasses import dataclass
 from typing import get_type_hints, Dict, Any, Optional, List, TYPE_CHECKING
@@ -19,7 +20,7 @@ from argklass.arguments import add_arguments
 from argklass.command import Command, newparser
 
 if TYPE_CHECKING:
-    from werkzeug.routing import Rule
+    from starlette.routing import Route
 
 
 @dataclass
@@ -42,30 +43,25 @@ IGNORE_PATTERNS = [
 SUPPORTED_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"]
 
 
-def should_include_route(rule: Rule) -> bool:
+def should_include_route(route: Route) -> bool:
     """Determine if a route should be included in MCP tools"""
-    # Skip if no methods we care about
-    if not any(method in rule.methods for method in SUPPORTED_METHODS):
+    if not (route.methods or set()) & set(SUPPORTED_METHODS):
         return False
 
-    # Skip ignored patterns
     for pattern in IGNORE_PATTERNS:
-        if pattern in rule.rule:
+        if pattern in route.path:
             return False
 
-    # Skip routes with no endpoint
-    if not rule.endpoint:
+    if not route.endpoint:
         return False
 
     return True
 
 
-def extract_path_params(rule: Rule) -> List[str]:
-    """Extract parameter names from a route rule"""
-    import re
-    # Find all parameters in angle brackets: <param> or <int:param>
-    pattern = r'<(?:[^:]+:)?([^>]+)>'
-    return re.findall(pattern, rule.rule)
+def extract_path_params(route: Route) -> List[str]:
+    """Extract parameter names from a route path"""
+    pattern = r'\{([^:}]+)(?::[^}]*)?\}'
+    return re.findall(pattern, route.path)
 
 
 def infer_param_type(param_name: str, type_converter: str = None) -> str:
@@ -80,27 +76,24 @@ def infer_param_type(param_name: str, type_converter: str = None) -> str:
         }
         return type_map.get(type_converter, 'string')
 
-    # Infer from parameter name
     if any(x in param_name.lower() for x in ['id', 'count', 'num', 'index']):
         return 'integer'
     elif any(x in param_name.lower() for x in ['price', 'amount', 'quantity']):
         return 'number'
     elif any(x in param_name.lower() for x in ['date', 'time']):
-        return 'string'  # ISO format
+        return 'string'
     else:
         return 'string'
 
 
-def extract_param_types(rule: Rule) -> Dict[str, str]:
-    """Extract parameter types from route converters"""
-    import re
+def extract_param_types(route: Route) -> Dict[str, str]:
+    """Extract parameter types from route path"""
     param_types = {}
 
-    # Pattern to match <converter:param> or <param>
-    pattern = r'<(?:([^:]+):)?([^>]+)>'
-    matches = re.findall(pattern, rule.rule)
+    pattern = r'\{([^:}]+)(?::([^}]*))?\}'
+    matches = re.findall(pattern, route.path)
 
-    for converter, param_name in matches:
+    for param_name, converter in matches:
         param_types[param_name] = infer_param_type(param_name, converter or None)
 
     return param_types
@@ -150,73 +143,62 @@ def get_handler_signature(handler) -> Dict[str, Any]:
         return {}
 
 
-def generate_tool_name(rule: Rule) -> str:
+def generate_tool_name(route: Route) -> str:
     """Generate a descriptive tool name from a route"""
-    endpoint = rule.endpoint
+    name = route.endpoint.__name__ if route.endpoint else route.path
 
-    # Remove common prefixes
     for prefix in ['route_', 'api_', 'get_', 'post_', 'put_', 'delete_']:
-        if endpoint.startswith(prefix):
-            endpoint = endpoint[len(prefix):]
+        if name.startswith(prefix):
+            name = name[len(prefix):]
 
-    # Convert to snake_case if needed
-    return endpoint
+    return name
 
 
-def generate_description(rule: Rule, handler) -> str:
+def generate_description(route: Route, handler) -> str:
     """Generate a description for the tool"""
-    # Try to get from docstring
     if handler and handler.__doc__:
-        # Get first line of docstring
         doc = handler.__doc__.strip().split('\n')[0]
         if doc:
             return doc
 
-    # Generate from endpoint and method
-    endpoint = rule.endpoint.replace('_', ' ').title()
-    methods = [m for m in SUPPORTED_METHODS if m in rule.methods]
+    name = (route.endpoint.__name__ if route.endpoint else route.path).replace('_', ' ').title()
+    methods = [m for m in SUPPORTED_METHODS if m in (route.methods or set())]
 
     if not methods:
-        return endpoint
+        return name
 
     method = methods[0]
 
     action_map = {
-        'GET': 'Get' if 'get' not in endpoint.lower() else '',
-        'POST': 'Create' if 'create' not in endpoint.lower() else '',
-        'PUT': 'Update' if 'update' not in endpoint.lower() else '',
-        'DELETE': 'Delete' if 'delete' not in endpoint.lower() else '',
-        'PATCH': 'Update' if 'update' not in endpoint.lower() else '',
+        'GET': 'Get' if 'get' not in name.lower() else '',
+        'POST': 'Create' if 'create' not in name.lower() else '',
+        'PUT': 'Update' if 'update' not in name.lower() else '',
+        'DELETE': 'Delete' if 'delete' not in name.lower() else '',
+        'PATCH': 'Update' if 'update' not in name.lower() else '',
     }
 
     action = action_map.get(method, '')
-    description = f"{action} {endpoint}".strip()
-
-    return description
+    return f"{action} {name}".strip()
 
 
-def route_to_tool(rule: Rule, handler, app) -> Optional[Dict[str, Any]]:
-    """Convert a Flask route to an MCP tool definition"""
-    if not should_include_route(rule):
+def route_to_tool(route: Route, app) -> Optional[tuple]:
+    """Convert a FastAPI route to an MCP tool definition"""
+    if not should_include_route(route):
         return None
 
-    # Get primary HTTP method (prefer POST > GET > PUT > DELETE)
-    methods = [m for m in rule.methods if m in SUPPORTED_METHODS]
+    methods = [m for m in (route.methods or set()) if m in SUPPORTED_METHODS]
     if not methods:
         return None
 
-    # Prioritize methods
     method_priority = ['POST', 'GET', 'PUT', 'DELETE', 'PATCH']
     method = next((m for m in method_priority if m in methods), methods[0])
 
-    # Extract parameters
-    path_params = extract_param_types(rule)
+    path_params = extract_param_types(route)
+    handler = route.endpoint
     handler_params = get_handler_signature(handler) if handler else {}
 
-    # Merge parameter info
     all_params = {}
 
-    # Add path parameters (always required)
     for param, ptype in path_params.items():
         all_params[param] = {
             'type': ptype,
@@ -224,19 +206,17 @@ def route_to_tool(rule: Rule, handler, app) -> Optional[Dict[str, Any]]:
             'description': f'Path parameter: {param}'
         }
 
-    # Add handler parameters
     for param, info in handler_params.items():
-        if param not in all_params:  # Don't override path params
+        if param not in all_params and param not in ('request', 'db'):
             all_params[param] = info
 
-    # Generate tool definition
-    tool_name = generate_tool_name(rule)
-    description = generate_description(rule, handler)
+    tool_name = generate_tool_name(route)
+    description = generate_description(route, handler)
 
     tool = {
         'description': description,
         'method': method,
-        'path': rule.rule,
+        'path': route.path,
         'params': all_params
     }
 
@@ -244,16 +224,17 @@ def route_to_tool(rule: Rule, handler, app) -> Optional[Dict[str, Any]]:
 
 
 def generate_mcp_tools(app) -> Dict[str, Dict[str, Any]]:
-    """Generate all MCP tools from Flask app routes"""
+    """Generate all MCP tools from FastAPI app routes"""
+    from starlette.routing import Route
+
     tools = {}
 
-    for rule in app.url_map.iter_rules():
-        handler = app.view_functions.get(rule.endpoint)
-        result = route_to_tool(rule, handler, app)
-
+    for route in app.routes:
+        if not isinstance(route, Route):
+            continue
+        result = route_to_tool(route, app)
         if result:
             tool_name, tool_def = result
-            # Avoid duplicates - use first occurrence
             if tool_name not in tools:
                 tools[tool_name] = tool_def
 
@@ -295,7 +276,7 @@ def format_as_python(tools: Dict[str, Any]) -> str:
 
 
 class MCPGenerator(Command):
-    """Generate MCP tool definitions from Flask routes"""
+    """Generate MCP tool definitions from FastAPI routes"""
 
     name: str = "mcp"
 
@@ -307,13 +288,11 @@ class MCPGenerator(Command):
     @staticmethod
     def execute(args):
         """Execute the MCP generator"""
-        from okaasan.server.server import RecipeApp
+        from okaasan.server.server import create_app
 
-        # Create Flask app
-        print("Creating Flask app...")
-        app = RecipeApp().app
+        print("Creating FastAPI app...")
+        app = create_app()
 
-        # Generate tools
         print("Analyzing routes...")
         tools = generate_mcp_tools(app)
 

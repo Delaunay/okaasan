@@ -1,12 +1,15 @@
-import { FC, ReactNode, useState, useEffect } from 'react';
+import { FC, ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useLocation, type Location } from 'react-router-dom';
 import { ColorModeButton } from "@/components/ui/color-mode"
-import { IconButton, Box } from '@chakra-ui/react';
-import { recipeAPI } from '../services/api';
+import { IconButton, Box, Flex } from '@chakra-ui/react';
+import { Bug } from 'lucide-react';
+import { recipeAPI, isStaticMode } from '../services/api';
 import SidebarSection, { SidebarItem } from './SidebarSection';
 import './Layout.css';
 
-// Custom icon components
+const API = import.meta.env.VITE_API_URL ?? '/api';
+const GITHUB_REPO = 'https://github.com/Delaunay/okaasan';
+
 const HamburgerIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
     <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
@@ -78,7 +81,6 @@ const getStaticSidebarSections = () => [
     title: 'Home Management',
     href: '/home-management',
     items: [
-      // Add your home management features here
       { name: 'Computers', href: '/computers' },
       { name: 'Home', href: '/home' },
       { name: 'Sensors', href: "/sensors"},
@@ -90,7 +92,6 @@ const getStaticSidebarSections = () => [
     title: 'Investing',
     href: '/investing',
     items: [
-      // Add your home management features here
       { name: 'Taxes', href: '/tax' },
       { name: 'Retirement', href: '/retirement' }
     ]
@@ -98,9 +99,7 @@ const getStaticSidebarSections = () => [
   {
     title: 'Health',
     href: '/health',
-    items: [
-      // Add your home management features here
-    ]
+    items: []
   },
   {
     title: 'Notes',
@@ -110,6 +109,32 @@ const getStaticSidebarSections = () => [
     },
     items: [],
     fetch: getArticles
+  },
+  {
+    title: 'Expense Tracker',
+    href: '/expense-tracker',
+    isSelected: (location: Location) => location.pathname.startsWith('/expense-tracker'),
+    items: [
+      { name: 'Entries', href: '/expense-tracker/entries' },
+      { name: 'Summary', href: '/expense-tracker/summary' },
+      { name: 'Tax Summary', href: '/expense-tracker/tax' },
+      { name: 'Types', href: '/expense-tracker/types' },
+      { name: 'From', href: '/expense-tracker/from' },
+      { name: 'Bank', href: '/expense-tracker/bank' },
+      { name: 'Details', href: '/expense-tracker/details' },
+    ]
+  },
+  {
+    title: 'Scratch',
+    href: '/scratch',
+    items: [
+      { name: 'Code Visualization', href: '/scratch/code-viz' },
+      { name: 'Article Blocks', href: '/scratch/article-blocks' },
+      { name: 'Filament Math', href: '/scratch/filament-math' },
+      { name: 'Wood Planner', href: '/scratch/wood-planner' },
+      { name: 'Brainstorm', href: '/scratch/brainstorm' },
+      { name: 'Print Cost', href: '/scratch/print-cost' },
+    ]
   },
   {
     title: 'Units',
@@ -124,20 +149,10 @@ const getStaticSidebarSections = () => [
     href: '/settings-section',
     items: [
       { name: 'Settings', href: '/settings' },
+      { name: 'Sidebar', href: '/settings/sidebar' },
+      { name: 'Git Backup', href: '/settings/git' },
+      { name: 'Software Update', href: '/settings/updates' },
       { name: 'API Tester', href: '/api-tester' },
-    ]
-  },
-  {
-    title: 'Scratch',
-    href: '/scratch',
-    items: [
-      { name: 'Code Visualization', href: '/scratch/code-viz' },
-      { name: 'Article Blocks', href: '/scratch/article-blocks' },
-      { name: 'Filament Math', href: '/scratch/filament-math' },
-      { name: 'Wood Planner', href: '/scratch/wood-planner' },
-      { name: 'Brainstorm', href: '/scratch/brainstorm' },
-      { name: 'Budget Sheet', href: '/scratch/budget-sheet' },
-      { name: 'Print Cost', href: '/scratch/print-cost' },
     ]
   },
 ];
@@ -145,17 +160,50 @@ const getStaticSidebarSections = () => [
 // Export static version for use in App.tsx
 export const sidebarSections = getStaticSidebarSections();
 
+// Sections that should never be hidden
+const ALWAYS_VISIBLE = new Set(['Home', 'Settings']);
+
 const Layout: FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
+  const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set());
 
-  // Use static sidebar sections (Content section will fetch its own items)
-  const sidebarSections = getStaticSidebarSections();
+  const allSections = getStaticSidebarSections();
+
+  const fetchSidebarConfig = useCallback(async () => {
+    try {
+      const url = isStaticMode()
+        ? `${API}/api/sidebar.json`
+        : `${API}/api/sidebar`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const merged = new Set([
+          ...(data.hidden || []),
+          ...(isStaticMode() ? (data.static_hidden || []) : []),
+        ]);
+        setHiddenSections(merged);
+      }
+    } catch { /* use defaults — show everything */ }
+  }, []);
+
+  useEffect(() => { fetchSidebarConfig(); }, [fetchSidebarConfig]);
+
+  useEffect(() => {
+    const handler = () => fetchSidebarConfig();
+    window.addEventListener('sidebar-config-changed', handler);
+    return () => window.removeEventListener('sidebar-config-changed', handler);
+  }, [fetchSidebarConfig]);
+
+  const visibleSections = useMemo(
+    () => allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title)),
+    [hiddenSections]
+  );
 
   useEffect(() => {
     const path = location.pathname;
-    for (const section of sidebarSections) {
+    for (const section of visibleSections) {
       if (section.href === path && section.items.length === 0) {
         document.title = section.title;
         return;
@@ -170,7 +218,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     if (path === '/') {
       document.title = 'Home';
     }
-  }, [location.pathname, sidebarSections]);
+  }, [location.pathname, visibleSections]);
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -180,56 +228,44 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     setIsMobileMenuOpen(false);
   };
 
-  // Check if a section contains the active route or if we're on the section page itself
-  const isSectionActive = (section: typeof sidebarSections[number]) => {
-    // console.log(location.pathname, section)
+  const isSectionActive = (section: typeof allSections[number]) => {
     const itemPath = section.href.split('?')[0];
 
-    // check if section has "isSelected", if so call that, if true return else continue
     if (typeof section.isSelected === 'function') {
       try {
         if (section.isSelected(location)) return true;
       } catch (err) {
-        // Defensive: do not crash sidebar on error in isSelected
         console.error("Error in isSelected for section", section.title, err);
       }
     }
 
-    // Check if we're on the section's main page
     if (location.pathname === itemPath) {
       return true;
     }
 
-    // For sections with dynamic items (like Content), check if we're on a matching path
-    // Content section items link to /article?id=..., so if we're on /article, Content is active
     if (section.title === 'Content' && location.pathname === '/article') {
       return true;
     }
 
-    // Check if we're on one of the section's items (need to handle query params)
     return section.items.some(item => {
       const itemPath = item.href.split('?')[0];
       const currentPath = location.pathname;
       const currentFullPath = location.pathname + location.search;
 
-      // Exact match with query params
       if (currentFullPath === item.href) {
         return true;
       }
 
-      // Path match without query params
       return currentPath === itemPath;
     });
   };
 
-  // Determine if a section should be expanded
-  const isSectionExpanded = (section: typeof sidebarSections[number]) => {
+  const isSectionExpanded = (section: typeof allSections[number]) => {
     return hoveredSection === section.title || isSectionActive(section);
   };
 
   return (
     <div className="layout" style={{ height: "100%", width: "100%" }}>
-      {/* Mobile Menu Button */}
       <Box
         position="fixed"
         top={4}
@@ -255,23 +291,34 @@ const Layout: FC<LayoutProps> = ({ children }) => {
             <ColorModeButton />
             <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }} onClick={closeMobileMenu}>
               (O)KaaSan
-
-              {/* <br></br>
-              (お)母さん */}
             </Link>
           </h2>
         </div>
-        <nav className="sidebar-nav">
-          {sidebarSections.map((section) => (
-            <SidebarSection
-              key={section.title}
-              section={section}
-              isExpanded={isSectionExpanded(section)}
-              onMouseEnter={() => setHoveredSection(section.title)}
-              onMouseLeave={() => setHoveredSection(null)}
-              onItemClick={closeMobileMenu}
-            />
-          ))}
+        <nav className="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {visibleSections.map((section) => (
+              <SidebarSection
+                key={section.title}
+                section={section}
+                isExpanded={isSectionExpanded(section)}
+                onMouseEnter={() => setHoveredSection(section.title)}
+                onMouseLeave={() => setHoveredSection(null)}
+                onItemClick={closeMobileMenu}
+              />
+            ))}
+          </div>
+
+          <div className="nav-section" style={{ borderTop: '1px solid var(--chakra-colors-border)', paddingTop: '0.5rem' }}>
+            <a
+              href={`${GITHUB_REPO}/issues/new?labels=bug&title=Bug+Report`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nav-section-title"
+              onClick={closeMobileMenu}
+            >
+              <Flex align="center" gap={2}><Bug size={16} /> Report a Bug</Flex>
+            </a>
+          </div>
         </nav>
       </div>
 
@@ -281,7 +328,6 @@ const Layout: FC<LayoutProps> = ({ children }) => {
         </div>
       </div>
 
-      {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <Box
           position="fixed"

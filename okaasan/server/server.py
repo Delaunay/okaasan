@@ -1,6 +1,7 @@
 """Recipes server — FastAPI application with SQLite database and JSON file storage."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -25,7 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 
 STATIC_FOLDER_DEFAULT = os.path.join(ROOT, 'static')
-STATIC_FOLDER = os.path.abspath(os.getenv("FLASK_STATIC", STATIC_FOLDER_DEFAULT))
+STATIC_FOLDER = os.path.abspath(
+    os.getenv("OKAASAN_DATA") or os.getenv("FLASK_STATIC", STATIC_FOLDER_DEFAULT)
+)
 STATIC_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'uploads')
 ORIGINALS_FOLDER = '/mnt/xshare/projects/recipes/originals'
 
@@ -126,6 +129,14 @@ def create_app() -> FastAPI:
     async def _startup():
         gitsync.start_sync(store_root)
 
+        settings_path = Path(STATIC_UPLOAD_FOLDER) / "data" / "_config" / "_settings.json"
+        if settings_path.is_file():
+            import json as _json
+            with open(settings_path) as f:
+                settings = _json.load(f)
+            if settings.get("auto_update"):
+                updater.start_update_loop(settings.get("update_interval_hours", 24))
+
     # ── Update API ─────────────────────────────────────────────
 
     @app.post("/api/update")
@@ -143,11 +154,67 @@ def create_app() -> FastAPI:
     def get_version():
         return {"version": _recipes_pkg.__version__}
 
+    # ── Sidebar configuration API ─────────────────────────────
+
+    _ALL_SECTIONS = [
+        {"title": "Home",                  "href": "/"},
+        {"title": "Cooking",               "href": "/cooking",             "items": ["Recipes", "Meal Plan", "Ingredients", "Compare Recipes"]},
+        {"title": "Inventory & Shopping",   "href": "/inventory-shopping",  "items": ["Receipts", "Pantry", "Budget"]},
+        {"title": "Planning",              "href": "/planning-section",    "items": ["Calendar", "Routine", "Tasks", "Projects"]},
+        {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
+        {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
+        {"title": "Health",                "href": "/health"},
+        {"title": "Notes",                 "href": "/content"},
+        {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
+        {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
+        {"title": "Scratch",               "href": "/scratch",             "items": ["Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost"]},
+    ]
+
+    def _sidebar_config_path():
+        return Path(STATIC_UPLOAD_FOLDER) / "data" / "_config" / "_sidebar.json"
+
+    def _load_sidebar_config() -> dict:
+        p = _sidebar_config_path()
+        if p.is_file():
+            with open(p) as f:
+                return json.load(f)
+        return {}
+
+    @app.get("/api/sidebar")
+    def get_sidebar():
+        cfg = _load_sidebar_config()
+        hidden = set(cfg.get("hidden", []))
+        static_hidden = set(cfg.get("static_hidden", []))
+        sections = [s for s in _ALL_SECTIONS if s["title"] not in hidden]
+        return {
+            "sections": sections,
+            "all_sections": _ALL_SECTIONS,
+            "hidden": list(hidden),
+            "static_hidden": list(static_hidden),
+        }
+
+    @app.put("/api/sidebar")
+    async def put_sidebar(request: Request):
+        body = await request.json()
+        cfg = _load_sidebar_config()
+        if "hidden" in body:
+            cfg["hidden"] = body["hidden"]
+        if "static_hidden" in body:
+            cfg["static_hidden"] = body["static_hidden"]
+        folder = Path(STATIC_UPLOAD_FOLDER) / "data" / "_config"
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(folder / "_sidebar.json", "w") as f:
+            json.dump(cfg, f, indent=2)
+        gitsync.notify_write()
+        return {"message": "Saved"}
+
     # ── Git configuration API ─────────────────────────────────
 
     @app.get("/api/git/status")
     async def git_status():
-        return gitsync.get_status(store_root)
+        status = gitsync.get_status(store_root)
+        status["data_path"] = str(store_root.resolve())
+        return status
 
     @app.post("/api/git/generate-key")
     async def git_generate_key():
@@ -172,16 +239,26 @@ def create_app() -> FastAPI:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, gitsync.git_init, store_root, remote)
 
-        sha = await loop.run_in_executor(None, gitsync.git_sync, store_root)
+        result = await loop.run_in_executor(None, gitsync.git_sync, store_root)
         gitsync.ensure_sync_running(store_root)
 
-        return {"message": "Git configured", "remote": remote, "commit": sha}
+        resp = {"message": "Git configured", "remote": remote, "commit": result.commit}
+        if result.push_error:
+            resp["push_error"] = result.push_error
+        if result.error:
+            resp["error"] = result.error
+        return resp
 
     @app.post("/api/git/sync")
     async def git_trigger_sync():
         loop = asyncio.get_event_loop()
-        sha = await loop.run_in_executor(None, gitsync.git_sync, store_root)
-        return {"commit": sha}
+        result = await loop.run_in_executor(None, gitsync.git_sync, store_root)
+        resp = {"commit": result.commit, "pushed": result.pushed}
+        if result.push_error:
+            resp["push_error"] = result.push_error
+        if result.error:
+            resp["error"] = result.error
+        return resp
 
     @app.post("/api/git/test")
     async def git_test_connection():
@@ -199,6 +276,69 @@ def create_app() -> FastAPI:
 
         ok, output = await loop.run_in_executor(None, _test)
         return {"connected": ok, "output": output}
+
+    # ── GitHub Pages setup ─────────────────────────────────────
+
+    @app.get("/api/git/pages-status")
+    async def git_pages_status():
+        workflow = store_root / ".github" / "workflows" / "deploy.yml"
+        remote = gitsync.get_remote(store_root)
+        repo_name = ""
+        pages_url = ""
+        if remote:
+            # git@github.com:user/repo.git -> repo
+            parts = remote.rstrip(".git").rsplit("/", 1)
+            if len(parts) == 2:
+                repo_name = parts[1]
+                owner = parts[0].rsplit(":", 1)[-1].rsplit("/", 1)[-1]
+                pages_url = f"https://{owner}.github.io/{repo_name}/"
+        return {
+            "workflow_exists": workflow.is_file(),
+            "repo_name": repo_name,
+            "pages_url": pages_url,
+        }
+
+    @app.post("/api/git/setup-pages")
+    async def git_setup_pages():
+        if not gitsync.is_git_repo(store_root):
+            raise HTTPException(status_code=400, detail="Git backup not configured")
+
+        remote = gitsync.get_remote(store_root)
+        if not remote:
+            raise HTTPException(status_code=400, detail="No git remote configured")
+
+        # Infer repo name from remote URL
+        repo_name = remote.rstrip(".git").rsplit("/", 1)[-1]
+        base_path = f"/{repo_name}/"
+
+        # Read template
+        template_path = _PACKAGE_DIR / "templates" / "deploy-pages.yml"
+        if not template_path.is_file():
+            raise HTTPException(status_code=500, detail="Workflow template not found")
+
+        template = template_path.read_text()
+        workflow_content = template.replace("{{BASE_PATH}}", base_path)
+
+        # Write workflow to data repo
+        workflow_dir = store_root / ".github" / "workflows"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        (workflow_dir / "deploy.yml").write_text(workflow_content)
+
+        # Commit and push
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, gitsync.git_sync, store_root)
+
+        resp = {
+            "message": "GitHub Pages workflow added",
+            "base_path": base_path,
+            "commit": result.commit,
+        }
+        if result.push_error:
+            resp["push_error"] = result.push_error
+            resp["message"] = f"Workflow added but push failed: {result.push_error}"
+        if result.error:
+            resp["error"] = result.error
+        return resp
 
     # ── Bundled UI static files ───────────────────────────────
 

@@ -1,4 +1,4 @@
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import {
   ChakraProvider,
   createSystem,
@@ -22,6 +22,9 @@ import GroceryReceipts from './components/GroceryReceipts';
 import Pantry from './components/Pantry';
 import Budget from './components/Budget';
 import Settings from './components/Settings';
+import GitSettings from './components/GitSettings';
+import UpdateSettings from './components/UpdateSettings';
+import SidebarSettings from './components/SidebarSettings';
 import RecipeComparison from './components/RecipeComparison';
 import ApiTester from './components/ApiTester';
 import ArticleTestPage from './components/ArticleTestPage';
@@ -33,10 +36,17 @@ import FilamentMath from './components/FilamentMath';
 import WoodPlanner from './components/WoodPlanner';
 import Brainstorm from './components/Brainstorm';
 import BudgetSheet from './components/BudgetSheet';
+import { BudgetProvider } from './services/BudgetContext';
 import PrintCostEstimator from './components/PrintCostEstimator';
+import { Toaster } from './components/ui/toaster';
 import './App.css';
 
-// Create the theme system for Chakra UI v3
+function ExpenseTrackerRedirect() {
+  const { tab } = useParams<{ tab: string }>();
+  const year = localStorage.getItem('expense-tracker-year') || String(new Date().getFullYear());
+  return <Navigate to={`/expense-tracker/${year}/${tab || 'entries'}`} replace />;
+}
+
 const system = createSystem(defaultConfig);
 
 function App() {
@@ -44,6 +54,7 @@ function App() {
     <>
       <ChakraProvider value={system}>
         <ColorModeProvider>
+          <Toaster />
           <Router>
             <Layout>
               <Routes>
@@ -88,15 +99,21 @@ function App() {
                 <Route path="/unit-manager" element={<UnitManager />} />
                 <Route path="/compare" element={<RecipeComparison />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/settings/git" element={<GitSettings />} />
+                <Route path="/settings/updates" element={<UpdateSettings />} />
+                <Route path="/settings/sidebar" element={<SidebarSettings />} />
                 <Route path="/api-tester" element={<ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
+                {/* Expense Tracker */}
+                <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />
+                <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />
+
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />
                 <Route path="/scratch/filament-math" element={<FilamentMath />} />
                 <Route path="/scratch/wood-planner" element={<WoodPlanner />} />
                 <Route path="/scratch/wood-planner/:project" element={<WoodPlanner />} />
                 <Route path="/scratch/brainstorm" element={<Brainstorm />} />
                 <Route path="/scratch/brainstorm/:project" element={<Brainstorm />} />
-                <Route path="/scratch/budget-sheet" element={<BudgetSheet />} />
                 <Route path="/scratch/print-cost" element={<PrintCostEstimator />} />
                 <Route path="/scratch/print-cost/:project" element={<PrintCostEstimator />} />
   

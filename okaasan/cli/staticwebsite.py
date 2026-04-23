@@ -51,7 +51,7 @@ class StaticWebsite(Command):
         return self.run(args)
 
     def run(self, args):
-        from okaasan.server.server import RecipeApp
+        from okaasan.server.server import create_app, STATIC_FOLDER
 
         logging.basicConfig(
             level=logging.INFO,
@@ -60,34 +60,38 @@ class StaticWebsite(Command):
 
         logger.info("Starting static site generation...")
 
-        recipe_app = RecipeApp()
-        self.app = recipe_app.app
-        self.db = recipe_app.db
-        self.client = self.app.test_client()
+        self.fastapi_app = create_app()
 
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        db_path = os.path.join(STATIC_FOLDER, "database.db")
+        engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        self.SessionLocal = sessionmaker(bind=engine)
+
+        from starlette.testclient import TestClient
+        self.client = TestClient(self.fastapi_app)
 
         skip_api = getattr(args, 'skip_api', False)
         skip_frontend = getattr(args, 'skip_frontend', False)
         base_path = getattr(args, 'base_path', '/')
         api_url = getattr(args, 'api_url', '/api')
 
-        # Clean output directory
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
         self.output_dir.mkdir(parents=True)
 
-        with self.app.app_context():
-            if not skip_api:
-                self.crawl_exposed_routes()
+        if not skip_api:
+            self.crawl_exposed_routes()
+            self.generate_sidebar_json()
 
-            if not skip_frontend:
-                self.build_frontend(base_path=base_path, api_url=api_url)
-                self.copy_frontend_build()
+        if not skip_frontend:
+            self.build_frontend(base_path=base_path, api_url=api_url)
+            self.copy_frontend_build()
 
-            self.copy_uploads()
-            self.create_spa_fallback()
-            self.create_hosting_configs()
-            self.create_build_info()
+        self.copy_uploads()
+        self.create_spa_fallback()
+        self.create_hosting_configs()
+        self.create_build_info()
 
         logger.info(f"Static site generated at {self.output_dir}")
         return 0
@@ -96,96 +100,118 @@ class StaticWebsite(Command):
         """Find all routes with @expose and fetch their data."""
         logger.info("Crawling exposed routes...")
 
+        from starlette.routing import Route
         count = 0
-        for rule in self.app.url_map.iter_rules():
-            if "GET" not in rule.methods:
+        for route in self.fastapi_app.routes:
+            if not isinstance(route, Route):
+                continue
+            if "GET" not in (route.methods or set()):
                 continue
 
-            endpoint = rule.endpoint
-            if endpoint == 'static':
+            endpoint = route.endpoint
+            if not endpoint:
                 continue
 
-            view_func = self.app.view_functions.get(endpoint)
-            if not view_func:
-                continue
+            if hasattr(endpoint, '_static_kwargs') or hasattr(endpoint, '_static_args'):
+                static_args = getattr(endpoint, '_static_args', ())
+                static_kwargs = getattr(endpoint, '_static_kwargs', {})
+                count += self.save_route_data(route, static_args, static_kwargs)
 
-            if hasattr(view_func, '_static_kwargs') or hasattr(view_func, '_static_args'):
-                static_args = getattr(view_func, '_static_args', ())
-                static_kwargs = getattr(view_func, '_static_kwargs', {})
-                count += self.save_route_data(rule, static_args, static_kwargs)
+        for router in getattr(self.fastapi_app, 'routes', []):
+            if hasattr(router, 'routes'):
+                for route in router.routes:
+                    if not isinstance(route, Route):
+                        continue
+                    if "GET" not in (route.methods or set()):
+                        continue
+                    endpoint = route.endpoint
+                    if not endpoint:
+                        continue
+                    if hasattr(endpoint, '_static_kwargs') or hasattr(endpoint, '_static_args'):
+                        static_args = getattr(endpoint, '_static_args', ())
+                        static_kwargs = getattr(endpoint, '_static_kwargs', {})
+                        count += self.save_route_data(route, static_args, static_kwargs)
 
         logger.info(f"Crawled {count} endpoints total")
 
-    def save_route_data(self, rule, static_args, static_kwargs):
+    def _build_url(self, route, kwargs):
+        """Build a URL from a Starlette route and parameter dict."""
+        path = route.path
+        for key, val in kwargs.items():
+            path = path.replace(f"{{{key}}}", str(val))
+            path = path.replace(f"{{{key}:int}}", str(val))
+            path = path.replace(f"{{{key}:path}}", str(val))
+        return path
+
+    def save_route_data(self, route, static_args, static_kwargs):
         """Generate all route combinations and save the data."""
-        from flask import url_for
         from sqlalchemy.sql import Select
         from okaasan.server.query_context import public_articles_only
 
-        logger.info(f"Processing route: {rule}")
+        logger.info(f"Processing route: {route.path}")
 
         combinations = []
+        db = self.SessionLocal()
+        try:
+            with public_articles_only():
+                if static_kwargs:
+                    resolved_params = {}
+                    for param_name, generator in static_kwargs.items():
+                        if isinstance(generator, Select):
+                            resolved_params[param_name] = db.scalars(generator).all()
+                        elif callable(generator):
+                            resolved_params[param_name] = generator()
+                        else:
+                            resolved_params[param_name] = generator
 
-        with public_articles_only():
-            # 1. Process kwargs (Cartesian product)
-            if static_kwargs:
-                resolved_params = {}
-                for param_name, generator in static_kwargs.items():
-                    if isinstance(generator, Select):
-                        resolved_params[param_name] = self.db.session.scalars(generator).all()
-                    elif callable(generator):
-                        resolved_params[param_name] = generator()
-                    else:
-                        resolved_params[param_name] = generator
+                    param_names = resolved_params.keys()
+                    param_values = resolved_params.values()
+                    for combination in itertools.product(*param_values):
+                        combinations.append(dict(zip(param_names, combination)))
 
-                param_names = resolved_params.keys()
-                param_values = resolved_params.values()
-                for combination in itertools.product(*param_values):
-                    combinations.append(dict(zip(param_names, combination)))
+                if static_args:
+                    for query in static_args:
+                        if isinstance(query, Select):
+                            rows = db.execute(query).all()
+                            for row in rows:
+                                combinations.append(dict(row._mapping))
+                        elif callable(query):
+                            for item in query():
+                                combinations.append(item if isinstance(item, dict) else {'id': item})
 
-            # 2. Process args (Direct rows)
-            if static_args:
-                for query in static_args:
-                    if isinstance(query, Select):
-                        rows = self.db.session.execute(query).all()
-                        for row in rows:
-                            combinations.append(dict(row._mapping))
-                    elif callable(query):
-                        for item in query():
-                            combinations.append(item if isinstance(item, dict) else {'id': item})
+                if not combinations and not static_args and not static_kwargs:
+                    combinations = [{}]
+        finally:
+            db.close()
 
-            # 3. No-parameter route: just fetch once
-            if not combinations and not static_args and not static_kwargs:
-                combinations = [{}]
-
-        # 4. Fetch and save — each request runs inside its own public_articles_only() context
         saved = 0
         for kwargs in combinations:
             try:
-                with self.app.test_request_context():
-                    relative_url = url_for(rule.endpoint, **kwargs)
+                url = self._build_url(route, kwargs)
+
+                from okaasan.server.query_context import public_articles_only
                 with public_articles_only():
-                    response = self.client.get(relative_url)
+                    response = self.client.get(url)
 
                 if response.status_code == 200:
                     try:
-                        data = response.get_json()
+                        data = response.json()
                         if data is not None:
-                            self.save_json_file(relative_url, data)
+                            self.save_json_file(url, data)
                             saved += 1
                     except Exception as e:
-                        logger.error(f"Failed to parse JSON for {relative_url}: {e}")
+                        logger.error(f"Failed to parse JSON for {url}: {e}")
                 else:
                     logger.warning(
-                        f"Failed request to {relative_url}: Status {response.status_code}"
+                        f"Failed request to {url}: Status {response.status_code}"
                     )
 
             except Exception as e:
                 logger.error(
-                    f"Error processing combination {kwargs} for {rule.endpoint}: {e}"
+                    f"Error processing combination {kwargs} for {route.path}: {e}"
                 )
 
-        logger.info(f"  Saved {saved}/{len(combinations)} for {rule.endpoint}")
+        logger.info(f"  Saved {saved}/{len(combinations)} for {route.path}")
         return saved
 
     def save_json_file(self, endpoint: str, data: Any):
@@ -202,6 +228,19 @@ class StaticWebsite(Command):
             json.dump(data, f, indent=2, default=str)
 
         logger.debug(f"Saved {file_path}")
+
+    def generate_sidebar_json(self):
+        """Fetch /api/sidebar and write it as a static JSON file."""
+        logger.info("Generating sidebar config...")
+        try:
+            response = self.client.get("/api/sidebar")
+            if response.status_code == 200:
+                self.save_json_file("/api/sidebar", response.json())
+                logger.info("Saved api/sidebar.json")
+            else:
+                logger.warning(f"Failed to fetch /api/sidebar: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error generating sidebar config: {e}")
 
     def build_frontend(self, base_path="/", api_url="/api"):
         """Build the React frontend for production."""
@@ -276,8 +315,7 @@ class StaticWebsite(Command):
 
         uploads_src = None
 
-        # Find the source upload folder
-        upload_folder = self.app.config.get('UPLOAD_FOLDER')
+        upload_folder = getattr(self.fastapi_app.state, 'upload_folder', None)
         if upload_folder and Path(upload_folder).exists():
             uploads_src = Path(upload_folder)
         else:
@@ -293,22 +331,16 @@ class StaticWebsite(Command):
             logger.info("No uploads directory found")
             return
 
-        # Copy to /uploads/ (direct path as stored in JSON data)
         uploads_dest = self.output_dir / "uploads"
         shutil.copytree(uploads_src, uploads_dest, dirs_exist_ok=True)
 
-        # Also copy into /api/uploads/ so the frontend's API_BASE_URL prefix resolves
         api_uploads_dest = self.output_dir / "api" / "uploads"
         shutil.copytree(uploads_src, api_uploads_dest, dirs_exist_ok=True)
 
         logger.info(f"Copied uploads from {uploads_src} to /uploads/ and /api/uploads/")
 
     def create_spa_fallback(self):
-        """Create 404.html for SPA routing on static hosts.
-
-        With HashRouter this is mostly a safety net — all routing
-        is client-side via #/ URLs.
-        """
+        """Create 404.html for SPA routing on static hosts."""
         index_html = self.output_dir / "index.html"
         if not index_html.exists():
             logger.warning("No index.html found, skipping SPA fallback")
@@ -319,16 +351,13 @@ class StaticWebsite(Command):
 
     def create_hosting_configs(self):
         """Create configuration files for various hosting providers."""
-        # GitHub Pages: disable Jekyll processing
         (self.output_dir / ".nojekyll").touch()
 
-        # Netlify: _redirects
         (self.output_dir / "_redirects").write_text(
             "/api/* /api/:splat.json 200\n"
             "/* /index.html 200\n"
         )
 
-        # Vercel: vercel.json
         vercel_config = {
             "routes": [
                 {"src": "/api/(.*)", "dest": "/api/$1.json"},

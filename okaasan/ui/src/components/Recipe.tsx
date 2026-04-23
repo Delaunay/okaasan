@@ -3485,7 +3485,7 @@ const Recipe: FC<RecipeProps> = ({
                 multiple={true}
                 maxImages={5}
                 disabled={false}
-                namespace={recipe.id ? `${recipe.id}_${recipe.title.replace(/[^a-zA-Z0-9]/g, '_')}/preview_${(recipe.images?.length || 0) + 1}` : undefined}
+                namespace={recipe.id ? `recipes/${recipe.id}_${recipe.title.replace(/[^a-zA-Z0-9]/g, '_')}/preview_${(recipe.images?.length || 0) + 1}` : undefined}
               />
             ) : (
               recipe.images && recipe.images.length > 0 ? (
@@ -3688,7 +3688,7 @@ const Recipe: FC<RecipeProps> = ({
               onAddInstructionImage={addInstructionImage}
               onRemoveInstructionImage={removeInstructionImage}
               onReorderInstructions={reorderInstructions}
-              baseNamespace={recipe.id ? `${recipe.id}_${recipe.title.replace(/[^a-zA-Z0-9]/g, '_')}` : undefined}
+              baseNamespace={recipe.id ? `recipes/${recipe.id}_${recipe.title.replace(/[^a-zA-Z0-9]/g, '_')}` : undefined}
               multiplier={getEffectiveMultiplier()}
               convertedIngredients={convertedIngredients}
               preferredTemperatureUnit={preferredTemperatureUnit}

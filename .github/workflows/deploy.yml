@@ -52,7 +52,7 @@ jobs:
         pip install virtualenv
         python -m venv venv
         source venv/bin/activate
-        pip install requests flask gunicorn
+        pip install requests fastapi uvicorn[standard] httpx
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f okaasan/requirements.txt ]; then pip install -r okaasan/requirements.txt; fi
         pip install -e .

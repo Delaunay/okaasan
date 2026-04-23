@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  Box, Button, Flex, Heading, HStack, Input, Text, VStack,
+  Box, Button, Flex, HStack, Input, Text, VStack,
 } from '@chakra-ui/react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useColorModeValue } from './ui/color-mode';
+import { useToast } from './ui/toaster';
 import { jsonStore } from '../services/jsonstore';
+import { useBudget } from '../services/BudgetContext';
 import {
   Plus, Save, Trash2, Download, Upload,
-  ChevronUp, ChevronDown, ArrowUpDown, FileText, X,
+  ChevronUp, ChevronDown, ArrowUpDown, X,
 } from 'lucide-react';
 
 interface BudgetEntry {
@@ -83,7 +86,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   'buying-others': '🎁', 'friend-reimburse': '🤝',
 };
 
-const COLLECTION = 'budget-sheet';
+const COLLECTION = 'expense-tracker';
 
 const DEFAULT_CATEGORIES: ExpenseCategory[] = [
   { id: 'income',          name: 'Income',                   icon: '💰', taxDeductible: false, notes: '' },
@@ -119,10 +122,13 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function emptyEntry(): BudgetEntry {
+function emptyEntry(taxYear?: string): BudgetEntry {
+  const today = new Date().toISOString().slice(0, 10);
+  const year = taxYear && /^\d{4}$/.test(taxYear) ? taxYear : today.slice(0, 4);
+  const defaultDate = today.startsWith(year) ? today : `${year}-01-01`;
   return {
     id: genId(),
-    date: new Date().toISOString().slice(0, 10),
+    date: defaultDate,
     amount: 0, type: '', from: '', bank: '',
     details: '', adjustment: 1, comment: '',
   };
@@ -230,8 +236,22 @@ function parseDateWithFormat(raw: string, fmt: string): string {
 }
 
 const BudgetSheet: React.FC = () => {
+  const { year: routeYear, tab: routeTab } = useParams<{ year: string; tab: string }>();
+  const navigate = useNavigate();
+  const activeTab: Tab = (routeTab as Tab) || 'entries';
+  const fileName = routeYear || String(new Date().getFullYear());
+  const { toast } = useToast();
+  const { fileList, refreshFileList } = useBudget();
+
+  useEffect(() => {
+    if (fileName) localStorage.setItem('expense-tracker-year', fileName);
+  }, [fileName]);
+
+  const setFileName = useCallback((year: string) => {
+    navigate(`/expense-tracker/${year}/${activeTab}`, { replace: true });
+  }, [navigate, activeTab]);
+
   const [entries, setEntries]           = useState<BudgetEntry[]>([]);
-  const [activeTab, setActiveTab]       = useState<Tab>('entries');
   const [sort, setSort]                 = useState<SortConfig>({ column: 'date', direction: 'asc' });
   const [displayYear, setDisplayYear]   = useState<string>('');
   const [filters, setFilters]           = useState<Record<string, string>>({});
@@ -240,9 +260,6 @@ const BudgetSheet: React.FC = () => {
   const [editing, setEditing]           = useState<{ row: string; col: string } | null>(null);
   const [editVal, setEditVal]           = useState('');
   const [saveStatus, setSaveStatus]     = useState<'' | 'saving' | 'saved'>('');
-  const [fileName, setFileName]         = useState('default');
-  const [fileList, setFileList]         = useState<string[]>([]);
-  const [showFiles, setShowFiles]       = useState(false);
   const [taxTypes, setTaxTypes]         = useState<Record<string, 'taxable' | 'deductible'>>({});
   const [categories, setCategories]     = useState<ExpenseCategory[]>([]);
   const [summaryYear, setSummaryYear]   = useState(new Date().getFullYear());
@@ -265,9 +282,8 @@ const BudgetSheet: React.FC = () => {
   const blurRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
-  const phantomRef = useRef<BudgetEntry>(emptyEntry());
+  const phantomRef = useRef<BudgetEntry>(emptyEntry(fileName));
 
-  // Hex colors for inline styles on HTML table elements
   const hx = {
     border:  useColorModeValue('#e2e8f0', '#4a5568'),
     header:  useColorModeValue('#edf2f7', '#2d3748'),
@@ -281,7 +297,6 @@ const BudgetSheet: React.FC = () => {
     netBg:    useColorModeValue('#f6ffed', '#1a3020'),
   };
 
-  // Chakra tokens for Chakra components
   const bgColor     = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const headerBg    = useColorModeValue('gray.100', 'gray.700');
@@ -300,25 +315,12 @@ const BudgetSheet: React.FC = () => {
     }
   }, []);
 
-  const loadFiles = useCallback(async () => {
-    try {
-      const all = await jsonStore.list(COLLECTION);
-      setFileList(all.filter(f => !f.startsWith('_')));
-    } catch { setFileList([]); }
-  }, []);
+  const loadFiles = refreshFileList;
 
   const loadCategories = useCallback(async () => {
     try {
       const cats = await jsonStore.get<ExpenseCategory[]>(COLLECTION, '_categories');
       if (cats && cats.length > 0) { setCategories(cats); return; }
-    } catch {}
-    try {
-      const cats = await jsonStore.get<ExpenseCategory[]>('budget-categories', 'default');
-      if (cats && cats.length > 0) {
-        setCategories(cats);
-        await jsonStore.put(COLLECTION, '_categories', cats);
-        return;
-      }
     } catch {}
     await jsonStore.put(COLLECTION, '_categories', DEFAULT_CATEGORIES);
     setCategories(DEFAULT_CATEGORIES);
@@ -357,8 +359,8 @@ const BudgetSheet: React.FC = () => {
         await jsonStore.put(COLLECTION, fileName, { entries: ents, taxTypes: tax });
         setSaveStatus('saved');
         saveStatusRef.current = setTimeout(() => setSaveStatus(''), 1500);
-      } catch (err) {
-        console.error('Save failed:', err);
+      } catch (err: any) {
+        toast('error', `Auto-save failed: ${err.message || 'unknown error'}`);
         setSaveStatus('');
       }
     }, 800);
@@ -370,14 +372,18 @@ const BudgetSheet: React.FC = () => {
       await jsonStore.put(COLLECTION, fileName, { entries, taxTypes });
       setSaveStatus('saved');
       loadFiles();
+      toast('success', `Saved ${fileName}`);
       setTimeout(() => setSaveStatus(''), 1500);
-    } catch { setSaveStatus(''); }
+    } catch (err: any) {
+      toast('error', `Save failed: ${err.message || 'unknown error'}`);
+      setSaveStatus('');
+    }
   };
 
   // ── Entry CRUD ────────────────────────────────────────────
 
   const addEntry = () => {
-    const ne = emptyEntry();
+    const ne = emptyEntry(fileName);
     const updated = [...entries, ne];
     setEntries(updated);
     scheduleSave(updated, taxTypes);
@@ -500,7 +506,7 @@ const BudgetSheet: React.FC = () => {
       const updated = [...entries, phantom];
       setEntries(updated);
       scheduleSave(updated, taxTypes);
-      phantomRef.current = emptyEntry();
+      phantomRef.current = emptyEntry(fileName);
       entry = phantom;
     }
     if (!entry) return;
@@ -640,6 +646,7 @@ const BudgetSheet: React.FC = () => {
     const a = document.createElement('a');
     a.href = url; a.download = `budget-${fileName}.csv`; a.click();
     URL.revokeObjectURL(url);
+    toast('success', `Exported ${entries.length} entries to CSV`);
   };
 
   const importCSV = () => {
@@ -794,6 +801,7 @@ const BudgetSheet: React.FC = () => {
   const confirmCsvImport = () => {
     if (!csvImport) return;
     const selected = csvImport.preview.filter(r => r.selected);
+    toast('success', `Imported ${selected.length} entries from CSV`);
     const imported: BudgetEntry[] = selected.map(r => ({
       id: genId(),
       date: r.date,
@@ -1458,19 +1466,16 @@ const BudgetSheet: React.FC = () => {
           </tr>
         </thead>
         <tbody>
-          {/* Income */}
           <tr style={{ background: hx.incomeBg }}>
             <td style={labelCell(false, true, hx.incomeBg)}>Income</td>
             {months.map(m => { const n = v(income, m); return <td key={m} style={numCell(n)}>{fmt(n)}</td>; })}
             <td style={numCell(incomeTotal, true)}>{fmt(incomeTotal)}</td>
           </tr>
-          {/* Expenses header */}
           <tr>
             <td style={labelCell(false, true)}>{expenseLabel}</td>
             {months.map(m => <td key={m} style={{ borderBottom: `1px solid ${hx.border}`, borderRight: `1px solid ${hx.border}` }} />)}
             <td style={{ borderBottom: `1px solid ${hx.border}` }} />
           </tr>
-          {/* Expense rows */}
           {expenseTypes.map(type => {
             const data = byType[type];
             const total = rowSum(data);
@@ -1482,13 +1487,11 @@ const BudgetSheet: React.FC = () => {
               </tr>
             );
           })}
-          {/* Expense total */}
           <tr style={{ background: hx.header }}>
             <td style={{ ...labelCell(false, false, hx.header), ...sep }} />
             {months.map(m => { const n = expTotal(m); return <td key={m} style={numCell(n, true, sep)}>{fmt(n)}</td>; })}
             <td style={numCell(expGrand, true, sep)}>{fmt(expGrand)}</td>
           </tr>
-          {/* Net */}
           <tr style={{ background: hx.netBg }}>
             <td style={{ ...labelCell(false, true, hx.netBg), ...sep }}>Net</td>
             {months.map(m => { const n = v(income, m) - expTotal(m); return <td key={m} style={numCell(n, true, sep)}>{fmt(n)}</td>; })}
@@ -1835,56 +1838,30 @@ const BudgetSheet: React.FC = () => {
 
   return (
     <Box h="100%" display="flex" flexDirection="column" bg={bgColor}>
-      {/* Header */}
-      <Flex px={4} py={3} borderBottom="1px solid" borderColor={borderColor} align="center" flexShrink={0}>
-        <Heading size="lg" flex={1}>Budget Sheet</Heading>
-      </Flex>
-
-      {/* File bar */}
-      <HStack px={4} py={2} borderBottom="1px solid" borderColor={borderColor} bg={headerBg} flexShrink={0} flexWrap="wrap">
-        <FileText size={16} />
-        <Text fontSize="sm" fontWeight={500}>File:</Text>
-        <Input
-          size="sm"
+      <HStack px={4} py={2} borderBottom="1px solid" borderColor={borderColor} flexShrink={0} gap={3}>
+        <Text fontSize="sm" fontWeight={600}>Tax Year</Text>
+        <select
           value={fileName}
           onChange={e => setFileName(e.target.value)}
-          style={{ width: '160px', height: '28px', fontSize: '13px' }}
+          style={{
+            padding: '2px 8px', fontSize: '13px', borderRadius: '4px',
+            border: `1px solid ${hx.border}`, background: 'transparent', color: 'inherit',
+          }}
+        >
+          {[...new Set([...fileList, fileName])].sort().reverse().map(f => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </select>
+        <Input
+          size="xs" w="90px" placeholder="New year…"
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              const v = (e.target as HTMLInputElement).value.trim();
+              if (v) { setFileName(v); (e.target as HTMLInputElement).value = ''; }
+            }
+          }}
         />
-        <Button size="sm" variant="outline" onClick={() => { setShowFiles(!showFiles); loadFiles(); }}>
-          {showFiles ? 'Hide' : 'Open…'}
-        </Button>
-        {showFiles && fileList.length > 0 && fileList.map(f => (
-          <Button key={f} size="xs" variant={f === fileName ? 'solid' : 'ghost'}
-            onClick={() => { setFileName(f); setShowFiles(false); }}>
-            {f}
-          </Button>
-        ))}
       </HStack>
-
-      {/* Tabs */}
-      <HStack px={4} py={2} borderBottom="1px solid" borderColor={borderColor} gap={1} flexShrink={0} flexWrap="wrap">
-        {([
-            ['entries', 'Entries'], 
-            ['summary', 'Summary'], 
-            ['tax', 'Tax Summary'], 
-            ['types', 'Types'], 
-            ['from', 'From'], 
-            ['bank', 'Bank'], 
-            ['details', 'Details']
-          ] as const).map(([tab, label]) => (
-          <Button
-            key={tab}
-            size="sm"
-            variant={activeTab === tab ? 'solid' : 'outline'}
-            colorScheme={activeTab === tab ? 'blue' : undefined}
-            onClick={() => { setActiveTab(tab); setEditingCat(null); setAddingListVal(false); setAddingCat(false); }}
-          >
-            {label}
-          </Button>
-        ))}
-      </HStack>
-
-      {/* Content */}
       <Box flex={1} overflow="hidden">
         {activeTab === 'entries' && renderEntries()}
         {activeTab === 'summary' && renderSummary()}

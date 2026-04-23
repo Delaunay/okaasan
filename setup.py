@@ -31,6 +31,7 @@ setup(
         "okaasan.server": [
             "static/**/*",
             "static/*",
+            "templates/*",
         ],
         "okaasan.data": [
             "*.json",
@@ -46,6 +47,7 @@ setup(
         "fastapi",
         "uvicorn[standard]",
         "python-multipart",
+        "httpx",
         "pillow",
         "appdirs",
         "python-telegram-bot",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -12,9 +13,28 @@ log = logging.getLogger("okaasan.gitsync")
 _pending: asyncio.Event | None = None
 _task: asyncio.Task | None = None
 _data_dir: Path | None = None
+_last_sync: SyncResult | None = None
 
 SSH_KEY_DIR = Path.home() / ".ssh"
 SSH_KEY_NAME = "okaasan_ed25519"
+
+
+@dataclass
+class SyncResult:
+    commit: str | None = None
+    pushed: bool = False
+    push_error: str | None = None
+    error: str | None = None
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> dict:
+        return {
+            "commit": self.commit,
+            "pushed": self.pushed,
+            "push_error": self.push_error,
+            "error": self.error,
+            "timestamp": self.timestamp,
+        }
 
 
 def _run(cmd: list[str], cwd: Path, env: dict | None = None) -> tuple[int, str]:
@@ -111,6 +131,12 @@ def _rewrite_remote_for_ssh_alias(remote: str) -> str:
     return remote
 
 
+def _current_branch(data_dir: Path) -> str:
+    """Return the current branch name, defaulting to 'main'."""
+    rc, out = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], data_dir)
+    return out if rc == 0 and out else "main"
+
+
 def get_remote(data_dir: Path) -> str | None:
     if not is_git_repo(data_dir):
         return None
@@ -142,6 +168,9 @@ def get_status(data_dir: Path) -> dict:
         result["recent_commits"] = []
         result["dirty"] = False
 
+    if _last_sync is not None:
+        result["last_sync"] = _last_sync.to_dict()
+
     return result
 
 
@@ -169,36 +198,72 @@ def git_init(data_dir: Path, remote: str | None = None):
             log.info("Updated remote origin to %s", remote)
 
 
-def git_sync(data_dir: Path) -> str | None:
-    """Stage all, commit if dirty, push if remote exists. Returns commit hash or None."""
-    if not is_git_repo(data_dir):
-        return None
-
-    _run(["git", "add", "-A"], data_dir)
-
-    rc, _ = _run(["git", "diff", "--cached", "--quiet"], data_dir)
+def _has_unpushed(data_dir: Path) -> bool:
+    """Check if there are local commits not yet pushed to the remote."""
+    branch = _current_branch(data_dir)
+    rc, out = _run(["git", "rev-list", f"origin/{branch}..HEAD", "--count"], data_dir)
     if rc == 0:
-        return None
+        return out.strip() != "0"
+    # If there's no upstream tracking yet, any commit is unpushed
+    rc, _ = _run(["git", "rev-parse", "HEAD"], data_dir)
+    return rc == 0
 
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    msg = f"auto-save {ts}"
-    _run(["git", "commit", "--author", "Okaasan Bot <okaasan@noreply>", "-m", msg], data_dir)
 
-    rc, out = _run(["git", "remote", "get-url", "origin"], data_dir)
-    if rc == 0 and out:
-        rc, out = _run(["git", "push", "-u", "origin", "main"], data_dir)
+def git_sync(data_dir: Path) -> SyncResult:
+    """Stage all, commit if dirty, push if remote exists."""
+    global _last_sync
+
+    if not is_git_repo(data_dir):
+        result = SyncResult(error="Not a git repository")
+        _last_sync = result
+        return result
+
+    rc, out = _run(["git", "add", "-A"], data_dir)
+    if rc != 0:
+        result = SyncResult(error=f"git add failed: {out}")
+        _last_sync = result
+        return result
+
+    # Commit if there are staged changes
+    committed = False
+    rc, _ = _run(["git", "diff", "--cached", "--quiet"], data_dir)
+    if rc != 0:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        msg = f"auto-save {ts}"
+        rc, out = _run(["git", "commit", "--author", "Okaasan Bot <okaasan@noreply>", "-m", msg], data_dir)
         if rc != 0:
-            log.warning("git push failed: %s", out)
-        else:
-            log.info("Pushed: %s", msg)
+            result = SyncResult(error=f"git commit failed: {out}")
+            _last_sync = result
+            return result
+        committed = True
 
     rc, sha = _run(["git", "rev-parse", "--short", "HEAD"], data_dir)
-    return sha if rc == 0 else None
+    commit = sha if (rc == 0 and committed) else None
+    result = SyncResult(commit=commit)
+
+    # Push if there's a remote and we have unpushed commits
+    rc, out = _run(["git", "remote", "get-url", "origin"], data_dir)
+    if rc == 0 and out and (committed or _has_unpushed(data_dir)):
+        branch = _current_branch(data_dir)
+        rc, push_out = _run(["git", "push", "-u", "origin", branch], data_dir)
+        if rc != 0:
+            log.warning("git push failed: %s", push_out)
+            result.push_error = push_out
+        else:
+            log.info("Pushed to %s", branch)
+            result.pushed = True
+
+    _last_sync = result
+    return result
+
+
+def get_last_sync() -> SyncResult | None:
+    return _last_sync
 
 
 async def _sync_loop(data_dir: Path, debounce_s: float = 5.0):
     """Background loop: waits for a write signal, debounces, then syncs."""
-    global _pending
+    global _pending, _last_sync
     assert _pending is not None
 
     while True:
@@ -210,13 +275,18 @@ async def _sync_loop(data_dir: Path, debounce_s: float = 5.0):
             _pending.clear()
 
         try:
-            sha = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_event_loop().run_in_executor(
                 None, git_sync, data_dir
             )
-            if sha:
-                log.info("Committed %s", sha)
-        except Exception:
+            if result.commit:
+                log.info("Committed %s", result.commit)
+            if result.push_error:
+                log.warning("Push failed: %s", result.push_error)
+            if result.error:
+                log.error("Sync error: %s", result.error)
+        except Exception as exc:
             log.exception("git sync failed")
+            _last_sync = SyncResult(error=str(exc))
 
 
 def notify_write():

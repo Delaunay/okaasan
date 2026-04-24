@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, Button, Flex, Heading, HStack, Input, Text, VStack,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import { useToast } from '../ui/toaster';
 import { jsonStore } from '../../services/jsonstore';
 import {
@@ -49,9 +48,9 @@ export default function UpdateSettings() {
   const { toast } = useToast();
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const cardBg = useColorModeValue('#f8f9fa', '#16213e');
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
+  const cardBg = 'var(--card-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
 
   const fetchUpdateInfo = useCallback(async () => {
     try {

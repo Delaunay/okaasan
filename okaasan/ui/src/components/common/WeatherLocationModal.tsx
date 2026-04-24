@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Button, VStack, HStack, Text, Box, Heading, Input, Badge,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import { MapPin, Search, Loader2, Check, X, Trash2 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
@@ -34,10 +33,10 @@ export const WeatherLocationModal: React.FC<WeatherLocationModalProps> = ({ isOp
   const [justSaved, setJustSaved] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  const selectedBg = useColorModeValue('blue.50', 'blue.900');
-  const hoverBg = useColorModeValue('gray.50', 'gray.800');
-  const border = useColorModeValue('gray.200', 'gray.700');
-  const mutedText = useColorModeValue('gray.600', 'gray.400');
+  const selectedBg = 'var(--selected-bg)';
+  const hoverBg = 'var(--hover-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
 
   useEffect(() => {
     if (!isOpen) return;

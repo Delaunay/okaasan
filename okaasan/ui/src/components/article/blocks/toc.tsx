@@ -1,7 +1,6 @@
 import React from 'react';
 import { BlockBase, BlockDef, MarkdownGeneratorContext, ArticleBlock } from "../base";
 import { Box, VStack, Text } from '@chakra-ui/react';
-import { useColorModeValue } from '../../ui/color-mode';
 
 export interface TocData {
     title?: string;
@@ -91,16 +90,15 @@ const TableOfContentsBlock: React.FC<{ block: TocBlock; mode: string }> = ({ blo
         }
     };
 
-    // Color mode values
-    const bg = useColorModeValue('gray.50', 'gray.800');
-    const borderColor = useColorModeValue('gray.200', 'gray.700');
-    const titleColor = useColorModeValue('gray.800', 'white');
-    const emptyTextColor = useColorModeValue('gray.500', 'gray.400');
-    const itemHoverBg = useColorModeValue('gray.100', 'gray.700');
-    const itemColorPrimary = useColorModeValue('gray.800', 'gray.200');
-    const itemColorSecondary = useColorModeValue('gray.700', 'gray.300');
-    const itemHoverColor = useColorModeValue('gray.800', 'white');
-    const bulletColor = useColorModeValue('gray.400', 'gray.500');
+    const bg = 'var(--toc-bg)';
+    const borderColor = 'var(--border-color)';
+    const titleColor = 'var(--toc-title)';
+    const emptyTextColor = 'var(--empty-text)';
+    const itemHoverBg = 'var(--toc-item-hover-bg)';
+    const itemColorPrimary = 'var(--toc-item-primary)';
+    const itemColorSecondary = 'var(--toc-item-secondary)';
+    const itemHoverColor = 'var(--toc-item-hover-color)';
+    const bulletColor = 'var(--toc-bullet)';
 
     return (
         <Box

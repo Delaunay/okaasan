@@ -9,7 +9,6 @@ import { Button, CloseButton, Dialog, Portal } from "@chakra-ui/react";
 import { IconButton, Flex } from "@chakra-ui/react";
 import { Trash, GripVertical, Settings } from "lucide-react";
 import { isStaticMode } from '../../services/api';
-import { useColorModeValue } from '../ui/color-mode';
 import { Textarea, Input } from '@chakra-ui/react';
 import { parseMarkdown } from './markdown';
 import {
@@ -327,7 +326,7 @@ const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
 
   const editTrigger = block.article.options?.editTrigger ?? "click";
   const is_md_ok = block.is_md_representable();
-  const hoverBg = useColorModeValue("blackAlpha.50", "whiteAlpha.50");
+  const hoverBg = 'var(--block-hover)';
 
   const editing = editTrigger === "hover"
     ? hovered || focused

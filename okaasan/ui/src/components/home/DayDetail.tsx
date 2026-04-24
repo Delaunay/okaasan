@@ -3,7 +3,6 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Box, Heading, Text, VStack, HStack, Flex, Badge,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import {
   Cloud, Wind, Thermometer, Droplets, Sunrise, Sunset,
   CalendarDays, UtensilsCrossed, Clock, ChevronLeft, ChevronRight, ArrowLeft,
@@ -251,7 +250,7 @@ function MealsSection({ date, cardBg, border, mutedText }: {
 }) {
   const [meals, setMeals] = useState<PlannedMeal[]>([]);
   const [planName, setPlanName] = useState('');
-  const accentBg = useColorModeValue('orange.50', 'orange.900');
+  const accentBg = 'var(--accent-bg)';
 
   useEffect(() => {
     (async () => {
@@ -324,9 +323,9 @@ function MealsSection({ date, cardBg, border, mutedText }: {
 const DayDetail = () => {
   const { date: dateParam } = useParams<{ date: string }>();
   const navigate = useNavigate();
-  const cardBg = useColorModeValue('#f8f9fa', '#16213e');
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
+  const cardBg = 'var(--card-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
 
   const date = new Date(dateParam + 'T12:00:00');
   const isToday = date.toDateString() === new Date().toDateString();

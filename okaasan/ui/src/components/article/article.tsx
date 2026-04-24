@@ -27,7 +27,6 @@ import type {
     BlockTypeEntry,
 } from './base'
 import { recipeAPI, isStaticMode } from '../../services/api'
-import { useColorModeValue } from '../ui/color-mode'
 import { SubPageList } from './subpages'
 
 import "./blocks/heading"
@@ -910,10 +909,10 @@ const TitleDisplay: React.FC<{ article: ArticleInstance }> = ({ article }) => {
         ? hovered || focused
         : focused;
 
-    const hoverBg = useColorModeValue("blackAlpha.50", "whiteAlpha.50");
+    const hoverBg = 'var(--block-hover)';
     const showHoverHint = hovered && !editing;
-    const panelBg = useColorModeValue("white", "gray.800");
-    const panelBorder = useColorModeValue("gray.200", "gray.600");
+    const panelBg = 'var(--panel-bg)';
+    const panelBorder = 'var(--panel-border)';
 
     useEffect(() => {
         setText(article.def.title);

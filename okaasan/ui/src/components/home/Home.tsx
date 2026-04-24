@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   Box, Heading, Text, VStack, HStack, Flex, Badge, Button,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
   CloudFog, Clock, ExternalLink, MapPin, X, Users,
@@ -119,8 +118,8 @@ interface DayData {
 // ── Event Detail Modal ───────────────────────────────────────
 
 export function EventModal({ event, onClose }: { event: DayEvent; onClose: () => void }) {
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
 
   const dateLabel = event.start.toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -391,9 +390,9 @@ function StaticHome() {
 // ── Home Page ─────────────────────────────────────────────────
 
 const Home = () => {
-  const cardBg = useColorModeValue('#f8f9fa', '#16213e');
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
+  const cardBg = 'var(--card-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
   const _static = isStaticMode();
 
   const [days, setDays] = useState<DayData[]>([]);

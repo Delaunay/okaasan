@@ -3,7 +3,6 @@ import {
   Box, Button, Flex, HStack, Input, Text, VStack,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useColorModeValue } from '../ui/color-mode';
 import { useToast } from '../ui/toaster';
 import { jsonStore } from '../../services/jsonstore';
 import { useBudget } from '../../services/BudgetContext';
@@ -285,22 +284,22 @@ const BudgetSheet: React.FC = () => {
   const phantomRef = useRef<BudgetEntry>(emptyEntry(fileName));
 
   const hx = {
-    border:  useColorModeValue('#e2e8f0', '#4a5568'),
-    header:  useColorModeValue('#edf2f7', '#2d3748'),
-    altRow:  useColorModeValue('#f7fafc', '#1e2430'),
-    active:  useColorModeValue('#ebf8ff', '#1a365d'),
-    filter:  useColorModeValue('#f7fafc', '#171923'),
-    income:  useColorModeValue('#276749', '#68d391'),
-    expense: useColorModeValue('#c53030', '#fc8181'),
-    muted:   useColorModeValue('#718096', '#a0aec0'),
-    incomeBg: useColorModeValue('#e6f7ff', '#1a2f40'),
-    netBg:    useColorModeValue('#f6ffed', '#1a3020'),
+    border:  'var(--border-color)',
+    header:  'var(--table-header-bg)',
+    altRow:  'var(--table-alt-row)',
+    active:  'var(--table-active-row)',
+    filter:  'var(--table-filter-bg)',
+    income:  'var(--income-color)',
+    expense: 'var(--expense-color)',
+    muted:   'var(--muted-text)',
+    incomeBg: 'var(--income-bg)',
+    netBg:    'var(--net-bg)',
   };
 
-  const bgColor     = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const headerBg    = useColorModeValue('gray.100', 'gray.700');
-  const mutedColor  = useColorModeValue('gray.500', 'gray.400');
+  const bgColor     = 'var(--card-bg-raised)';
+  const borderColor = 'var(--border-color)';
+  const headerBg    = 'var(--table-header-bg)';
+  const mutedColor  = 'var(--muted-text)';
 
   // ── Data persistence ──────────────────────────────────────
 

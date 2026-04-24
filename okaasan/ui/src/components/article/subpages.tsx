@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Box, Heading, VStack, HStack, Button, Text, Input, chakra, IconButton, Portal } from '@chakra-ui/react';
 import { Plus, Settings } from 'lucide-react';
 import { Link as RouterLinkBase } from 'react-router-dom';
-import { useColorModeValue } from '../ui/color-mode';
 import { ArticleDef } from './base';
 import { recipeAPI, isStaticMode } from '../../services/api';
 
@@ -33,14 +32,14 @@ export const SubPageList: React.FC<SubPageListProps> = ({ articleDef }) => {
     const [searchError, setSearchError] = useState<string | null>(null);
     const [selectedParent, setSelectedParent] = useState<any | null>(null);
 
-    const headingColor = useColorModeValue('gray.700', 'gray.200');
-    const inputBg = useColorModeValue('white', 'gray.800');
-    const inputBorder = useColorModeValue('gray.200', 'gray.600');
-    const cardBg = useColorModeValue('white', 'gray.800');
-    const cardBorder = useColorModeValue('gray.200', 'gray.700');
-    const textColor = useColorModeValue('gray.700', 'gray.200');
-    const emptyTextColor = useColorModeValue('gray.500', 'gray.400');
-    const createBoxBg = useColorModeValue('gray.50', 'gray.700');
+    const headingColor = 'var(--heading-color)';
+    const inputBg = 'var(--input-bg)';
+    const inputBorder = 'var(--panel-border)';
+    const cardBg = 'var(--panel-bg)';
+    const cardBorder = 'var(--border-color)';
+    const textColor = 'var(--heading-color)';
+    const emptyTextColor = 'var(--empty-text)';
+    const createBoxBg = 'var(--hover-bg)';
 
     useEffect(() => {
         setChildren(articleDef.children || []);

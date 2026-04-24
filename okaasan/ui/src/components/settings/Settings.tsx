@@ -9,7 +9,6 @@ import {
     Heading,
     Badge
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
     Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin,
@@ -37,11 +36,11 @@ const Settings: React.FC = () => {
     const [dataPath, setDataPath] = useState<string>('');
     const [version, setVersion] = useState<string>('');
 
-    const cardBg = useColorModeValue('white', '#1e1e2e');
-    const border = useColorModeValue('gray.200', 'gray.700');
-    const mutedText = useColorModeValue('gray.600', 'gray.400');
-    const iconBg = useColorModeValue('blue.50', 'blue.900');
-    const iconColor = useColorModeValue('blue.600', 'blue.200');
+    const cardBg = 'var(--card-bg-raised)';
+    const border = 'var(--border-color)';
+    const mutedText = 'var(--muted-text)';
+    const iconBg = 'var(--icon-bg)';
+    const iconColor = 'var(--icon-color)';
 
     const _static = isStaticMode();
 

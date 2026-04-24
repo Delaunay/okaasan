@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Button, Flex, Heading, HStack, Input, Text, VStack,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import { useToast } from '../ui/toaster';
 import {
   GitBranch, Key, RefreshCw, Check, AlertTriangle,
@@ -42,10 +41,10 @@ export default function GitSettings() {
   const [pagesStatus, setPagesStatus] = useState<PagesStatus | null>(null);
   const { toast } = useToast();
 
-  const cardBg = useColorModeValue('#f8f9fa', '#16213e');
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
-  const keyBg = useColorModeValue('#edf2f7', '#0f3460');
+  const cardBg = 'var(--card-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
+  const keyBg = 'var(--key-bg)';
 
   const fetchStatus = useCallback(async () => {
     try {

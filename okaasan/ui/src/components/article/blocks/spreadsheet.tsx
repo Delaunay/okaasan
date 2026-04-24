@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from 'react';
 import { BlockBase, BlockDef, BlockSetting, MarkdownGeneratorContext } from "../base";
 import { Box, Text, Table, Input, Flex } from '@chakra-ui/react';
 import { AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
-import { useColorModeValue } from '../../ui/color-mode';
 
 // ─── Data Types ─────────────────────────────────────────────────────────────
 
@@ -327,12 +326,12 @@ const SpreadsheetEditor: React.FC<SpreadsheetEditorProps> = ({ block, data }) =>
     };
 
     // Theme-aware colors
-    const selectedBg   = useColorModeValue("blue.50",  "blue.900");
-    const mutedColor   = useColorModeValue("gray.400", "gray.500");
-    const deleteBg     = useColorModeValue("red.100",  "red.900");
-    const deleteColor  = useColorModeValue("red.700",  "red.300");
-    const addBtnColor  = useColorModeValue("gray.400", "gray.500");
-    const addBtnHover  = useColorModeValue("gray.600", "gray.300");
+    const selectedBg   = 'var(--selected-bg)';
+    const mutedColor   = 'var(--muted-text)';
+    const deleteBg     = 'var(--delete-bg)';
+    const deleteColor  = 'var(--delete-color)';
+    const addBtnColor  = 'var(--add-btn)';
+    const addBtnHover  = 'var(--add-btn-hover)';
     const formulaColor = "var(--chakra-colors-blue-500)";
 
     // Shared cell input style — mirrors Table.Cell's default padding so layout is identical
@@ -639,7 +638,7 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({ data }) => {
     const showHeaders = data.showHeaders !== false;
     const viewMode = data.viewMode ?? "table";
     const colFormats: ColFormat[] = data.colFormats ?? [];
-    const formulaCellColor = useColorModeValue("blue.600", "blue.300");
+    const formulaCellColor = 'var(--formula-color)';
 
     if (viewMode === "bullets") {
         // Estimate max char width per column using the actual displayed strings (post-format)

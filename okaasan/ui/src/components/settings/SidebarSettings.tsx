@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Flex, Heading, HStack, Text, VStack,
 } from '@chakra-ui/react';
-import { useColorModeValue } from '../ui/color-mode';
 import { useToast } from '../ui/toaster';
 import { LayoutDashboard, Eye, EyeOff, Loader2, Lock, Globe } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
@@ -22,11 +21,11 @@ export default function SidebarSettings() {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const cardBg = useColorModeValue('#f8f9fa', '#16213e');
-  const border = useColorModeValue('#e2e8f0', '#2d3748');
-  const mutedText = useColorModeValue('#718096', '#a0aec0');
-  const activeBg = useColorModeValue('green.50', 'green.900');
-  const hiddenBg = useColorModeValue('gray.50', 'gray.800');
+  const cardBg = 'var(--card-bg)';
+  const border = 'var(--border-color)';
+  const mutedText = 'var(--muted-text)';
+  const activeBg = 'var(--active-bg)';
+  const hiddenBg = 'var(--hidden-bg)';
 
   const fetchConfig = useCallback(async () => {
     try {

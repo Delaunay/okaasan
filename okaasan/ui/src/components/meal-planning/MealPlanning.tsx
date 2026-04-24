@@ -17,7 +17,6 @@ import { recipeAPI } from '../../services/api';
 import type { RecipeData, WeeklyRecipe, PlannedMeal, MealPlan } from '../../services/type';
 import { TelegramClient, TelegramStorage } from '../../services/telegram';
 import { TelegramSettings } from '../common/TelegramSettings';
-import { useColorModeValue } from '../ui/color-mode';
 
 // Custom icon components
 const DeleteIcon = () => (
@@ -57,14 +56,14 @@ const MealPlanning: React.FC = () => {
     const { planName: urlPlanName } = useParams<{ planName?: string }>();
     const navigate = useNavigate();
 
-    const rowHover = useColorModeValue('gray.50', 'gray.700');
-    const cellHover = useColorModeValue('blue.50', 'blue.900');
-    const mealBg = useColorModeValue('blue.100', 'blue.800');
-    const mealBorder = useColorModeValue('blue.200', 'blue.600');
-    const skipBg = useColorModeValue('gray.100', 'gray.700');
-    const skipBorder = useColorModeValue('gray.300', 'gray.500');
-    const itemHover = useColorModeValue('gray.50', 'gray.700');
-    const selectBg = useColorModeValue('#fff', '#1a202c');
+    const rowHover = 'var(--row-hover)';
+    const cellHover = 'var(--cell-hover)';
+    const mealBg = 'var(--meal-bg)';
+    const mealBorder = 'var(--meal-border)';
+    const skipBg = 'var(--skip-bg)';
+    const skipBorder = 'var(--skip-border)';
+    const itemHover = 'var(--item-hover)';
+    const selectBg = 'var(--input-bg)';
 
     const [mealPlan, setMealPlan] = useState<MealPlan>({ ...EMPTY_PLAN });
     const [activePlanName, setActivePlanName] = useState<string>('');

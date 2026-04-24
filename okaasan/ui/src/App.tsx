@@ -26,6 +26,7 @@ import Settings from './components/Settings';
 import GitSettings from './components/GitSettings';
 import UpdateSettings from './components/UpdateSettings';
 import SidebarSettings from './components/SidebarSettings';
+import GoogleCalendarSettings from './components/GoogleCalendarSettings';
 import RecipeComparison from './components/RecipeComparison';
 import ApiTester from './components/ApiTester';
 import ArticleTestPage from './components/ArticleTestPage';
@@ -103,6 +104,7 @@ function App() {
                 <Route path="/settings/git" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GitSettings />} />
                 <Route path="/settings/updates" element={isStaticMode() ? <Navigate to="/settings" replace /> : <UpdateSettings />} />
                 <Route path="/settings/sidebar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <SidebarSettings />} />
+                <Route path="/settings/google-calendar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GoogleCalendarSettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
                 {/* Expense Tracker */}

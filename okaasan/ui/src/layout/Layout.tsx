@@ -150,6 +150,7 @@ const getStaticSidebarSections = () => [
       { name: 'Settings', href: '/settings' },
       { name: 'Sidebar', href: '/settings/sidebar' },
       { name: 'Git Backup', href: '/settings/git' },
+      { name: 'Google Calendar', href: '/settings/google-calendar' },
       { name: 'Software Update', href: '/settings/updates' },
       { name: 'API Tester', href: '/api-tester' },
     ]
@@ -189,7 +190,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     return () => window.removeEventListener('sidebar-config-changed', handler);
   }, [fetchSidebarConfig]);
 
-  const STATIC_HIDDEN_ITEMS = new Set(['/settings/sidebar', '/settings/git', '/settings/updates', '/api-tester']);
+  const STATIC_HIDDEN_ITEMS = new Set(['/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester']);
 
   const visibleSections = useMemo(() => {
     const filtered = allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title));

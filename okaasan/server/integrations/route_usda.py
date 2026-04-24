@@ -9,11 +9,11 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .models import Ingredient, IngredientComposition
+from ..models import Ingredient, IngredientComposition
 from .usda.usda_reader import USDAReader
 
 HERE = os.path.dirname(__file__)
-USDA_FOLDER = os.path.join(HERE, "..", "data", "usda")
+USDA_FOLDER = os.path.join(HERE, "..", "..", "data", "usda")
 
 
 def get_db_from_engine(engine):

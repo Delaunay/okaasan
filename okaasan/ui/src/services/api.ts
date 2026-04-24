@@ -117,7 +117,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       return await response.json();
@@ -354,7 +354,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       return await response.json();
@@ -384,7 +384,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       return await response.json();
@@ -867,6 +867,48 @@ class RecipeAPI {
 
   async setupGitPages(): Promise<{ message: string; base_path: string; commit: string; push_error?: string; error?: string }> {
     return this.request('/git/setup-pages', { method: 'POST' });
+  }
+
+  // Google Calendar
+  async getGCalStatus(): Promise<{ key_uploaded: boolean; client_email: string; calendar_id: string; setup_complete: boolean }> {
+    return this.request('/gcalendar/status');
+  }
+
+  async uploadGCalKey(keyJson: object): Promise<{ client_email: string }> {
+    return this.request('/gcalendar/upload-key', {
+      method: 'POST',
+      body: JSON.stringify(keyJson),
+    });
+  }
+
+  async getGCalCalendars(): Promise<{ id: string; summary: string; description: string; primary: boolean }[]> {
+    return this.request('/gcalendar/calendars');
+  }
+
+  async selectGCalCalendar(calendarId: string): Promise<{ calendar_id: string }> {
+    return this.request('/gcalendar/select-calendar', {
+      method: 'POST',
+      body: JSON.stringify({ calendar_id: calendarId }),
+    });
+  }
+
+  async testGCal(): Promise<{ connected: boolean; calendars?: number; events_this_week?: number; sample_events?: any[]; error?: string }> {
+    return this.request('/gcalendar/test', { method: 'POST' });
+  }
+
+  // Weather (Open-Meteo)
+  async getWeatherForecast(latitude: number, longitude: number, days: number = 1): Promise<any> {
+    return this.request(`/weather/forecast?latitude=${latitude}&longitude=${longitude}&days=${days}`);
+  }
+
+  async geocode(name: string): Promise<any[]> {
+    return this.request(`/weather/geocode?name=${encodeURIComponent(name)}`);
+  }
+
+  // Google Calendar events for today
+  async getGCalWeekEvents(date?: string): Promise<any[]> {
+    const params = date ? `?date=${date}` : '';
+    return this.request(`/gcalendar/events/week${params}`);
   }
 
   // Software update (returns raw Response for SSE streaming)

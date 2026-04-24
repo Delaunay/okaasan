@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
+    Flex,
     VStack,
     HStack,
     Text,
@@ -11,11 +12,12 @@ import {
 import { useColorModeValue } from './ui/color-mode';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
-    Ruler, FolderOpen, LayoutDashboard,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../services/api';
 import { TelegramSettings } from './TelegramSettings';
 import { UnitSystemModal } from './UnitSystemModal';
+import { WeatherLocationModal } from './WeatherLocationModal';
 
 interface SettingsSection {
     id: string;
@@ -31,6 +33,7 @@ const Settings: React.FC = () => {
     const navigate = useNavigate();
     const [isTelegramOpen, setIsTelegramOpen] = useState(false);
     const [isUnitSystemOpen, setIsUnitSystemOpen] = useState(false);
+    const [isWeatherLocationOpen, setIsWeatherLocationOpen] = useState(false);
     const [dataPath, setDataPath] = useState<string>('');
     const [version, setVersion] = useState<string>('');
 
@@ -75,7 +78,23 @@ const Settings: React.FC = () => {
                 badge: 'Display',
                 onOpen: () => navigate('/settings/sidebar'),
             },
+            {
+                id: 'gcalendar',
+                title: 'Google Calendar',
+                description: 'Connect your Google Calendar to see events in the planner',
+                icon: <CalendarDays size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/google-calendar'),
+            },
         ]),
+        {
+            id: 'weather',
+            title: 'Weather Location',
+            description: 'Set your location to display weather on the home page',
+            icon: <MapPin size={20} />,
+            badge: 'Display',
+            onOpen: () => setIsWeatherLocationOpen(true),
+        },
         {
             id: 'telegram',
             title: 'Telegram Bot',
@@ -112,15 +131,7 @@ const Settings: React.FC = () => {
 
                     <Box h="1px" bg={border} />
 
-                    <Box
-                        display="grid"
-                        gridTemplateColumns={{
-                            base: "1fr",
-                            md: "repeat(2, 1fr)",
-                            lg: "repeat(3, 1fr)"
-                        }}
-                        gap={6}
-                    >
+                    <Flex wrap="wrap" gap={6}>
                         {settingsSections.map((section) => (
                             <Box
                                 key={section.id}
@@ -130,6 +141,8 @@ const Settings: React.FC = () => {
                                 borderRadius="md"
                                 cursor="pointer"
                                 transition="all 0.2s"
+                                w={{ base: '100%', md: '280px' }}
+                                flex="0 0 auto"
                                 _hover={{
                                     boxShadow: 'md',
                                     borderColor: 'blue.300',
@@ -181,7 +194,7 @@ const Settings: React.FC = () => {
                                 </Box>
                             </Box>
                         ))}
-                    </Box>
+                    </Flex>
 
                     {/* Data Folder Info */}
                     {dataPath && (
@@ -218,6 +231,11 @@ const Settings: React.FC = () => {
             <UnitSystemModal
                 isOpen={isUnitSystemOpen}
                 onClose={() => setIsUnitSystemOpen(false)}
+            />
+
+            <WeatherLocationModal
+                isOpen={isWeatherLocationOpen}
+                onClose={() => setIsWeatherLocationOpen(false)}
             />
         </>
     );

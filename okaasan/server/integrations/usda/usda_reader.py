@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Tuple
 from functools import lru_cache
 
 HERE = os.path.dirname(__file__)
-USDA_FOLDER = os.path.join(HERE, "..", "..", "data", "usda")
+USDA_FOLDER = os.path.join(HERE, "..", "..", "..", "data", "usda")
 
 
 class USDAReader:
@@ -188,4 +188,3 @@ class USDAReader:
                         'description': row.get('description', '')
                     }
         return None
-

@@ -10,3 +10,5 @@ appdirs
 python-telegram-bot
 argklass
 usda_fdc
+google-api-python-client
+google-auth

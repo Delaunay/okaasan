@@ -113,8 +113,6 @@ def create_app() -> FastAPI:
     from .route_units import router as units_router
     from .route_images import router as images_router
     from .route_jsonstore import router as jsonstore_router
-    from .route_usda import create_usda_routers
-    from .route_messaging import router as messaging_router
     from .projects.graph import router as graph_router
 
     app.include_router(kv_router)
@@ -126,15 +124,11 @@ def create_app() -> FastAPI:
     app.include_router(units_router)
     app.include_router(images_router)
     app.include_router(jsonstore_router)
-    app.include_router(messaging_router)
     app.include_router(graph_router)
 
-    try:
-        fdc_router, csv_router = create_usda_routers(engine)
-        app.include_router(fdc_router)
-        app.include_router(csv_router)
-    except Exception:
-        log.warning("USDA routes not available (missing usda_fdc or data)")
+    # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
+    from .integrations import register_integrations
+    register_integrations(app, engine)
 
     @app.get("/health")
     def health_check():
@@ -409,7 +403,8 @@ def create_app() -> FastAPI:
                          "blocks/", "units", "unit/", "upload", "download-image",
                          "uploads/", "routine/", "planning/", "kiwi/", "categories",
                          "ingredient/", "sidebar", "version", "update",
-                         "git/", "usda/", "subtasks")
+                         "git/", "usda/", "subtasks",
+                         "gcalendar/", "garmin/", "weather/")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

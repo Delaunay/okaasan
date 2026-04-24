@@ -2,7 +2,7 @@
 # Actvity tracking from Garmin Watch
 #
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     Integer,
@@ -40,8 +40,8 @@ class Post(Base):
     tags = Column(JSON)
     extension = Column(JSON)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     public = Column(Boolean, default=False)
 

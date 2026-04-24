@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -107,8 +107,8 @@ class Recipe(Base):
     prep_time = Column(Integer)  # in minutes
     cook_time = Column(Integer)  # in minutes
     servings = Column(Integer)
-    created_at = Column(DateTime, default=lambda:datetime.utcnow)
-    updated_at = Column(DateTime, default=lambda:  datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     author_id = Column(Integer, ForeignKey('users._id'))
 
     component = Column(Boolean, default=False)

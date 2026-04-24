@@ -1,17 +1,126 @@
 from __future__ import annotations
 
+import logging
+import traceback
+
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .models import Recipe, Ingredient, Category, RecipeIngredient, IngredientComposition
 from .decorators import expose
 
+log = logging.getLogger("okaasan.recipes")
+
 router = APIRouter()
 
 
 def get_db(request: Request):
     yield from request.app.state.get_db()
+
+
+def _resolve_ingredient(db: Session, ing_data: dict, recipe_id: int | None = None):
+    """Resolve an ingredient dict into (ingredient_id, ingredient_recipe_id).
+
+    Raises HTTPException with a user-friendly message on validation errors.
+    """
+    ingredient_id = None
+    ingredient_recipe_id = None
+
+    if ing_data.get('ingredient_recipe_id'):
+        if ing_data['ingredient_recipe_id'] == recipe_id:
+            raise HTTPException(
+                status_code=400,
+                detail="A recipe cannot reference itself as an ingredient",
+            )
+        ingredient_recipe_id = ing_data['ingredient_recipe_id']
+
+    elif ing_data.get('ingredient_id'):
+        ingredient_id = ing_data['ingredient_id']
+
+    else:
+        name = ing_data.get('name')
+        if not name or not name.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Ingredient is missing a name (and has no ingredient_id or ingredient_recipe_id)",
+            )
+        ingredient = db.query(Ingredient).filter_by(name=name).first()
+        if not ingredient:
+            ingredient = Ingredient(name=name)
+            db.add(ingredient)
+            db.flush()
+        ingredient_id = ingredient._id
+
+    return ingredient_id, ingredient_recipe_id
+
+
+def _save_ingredients(db: Session, recipe: Recipe, ingredients: list[dict]):
+    """Validate and persist a list of ingredient dicts for a recipe."""
+    for i, ing_data in enumerate(ingredients):
+        ingredient_id, ingredient_recipe_id = _resolve_ingredient(
+            db, ing_data, recipe._id,
+        )
+
+        qty = ing_data.get('quantity', 1.0)
+        try:
+            qty = float(qty)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient #{i + 1} ({ing_data.get('name', '?')}): "
+                       f"quantity must be a number, got {qty!r}",
+            )
+        if qty <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient #{i + 1} ({ing_data.get('name', '?')}): "
+                       f"quantity must be > 0, got {qty}",
+            )
+
+        unit = ing_data.get('unit', 'piece')
+        if not unit or not str(unit).strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient #{i + 1} ({ing_data.get('name', '?')}): unit cannot be empty",
+            )
+
+        recipe_ingredient = RecipeIngredient(
+            recipe_id=recipe._id,
+            ingredient_id=ingredient_id,
+            ingredient_recipe_id=ingredient_recipe_id,
+            quantity=qty,
+            unit=unit,
+            fdc_id=ing_data.get('fdc_id'),
+        )
+        db.add(recipe_ingredient)
+
+
+def _save_categories(db: Session, recipe: Recipe, categories: list[dict]):
+    """Validate and persist a list of category dicts for a recipe."""
+    for cat_data in categories:
+        cat_id = cat_data.get('id', 0)
+        cat_name = cat_data.get('name', '')
+
+        if cat_id is not None and cat_id < 0:
+            if not cat_name or not cat_name.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="New category is missing a name",
+                )
+            category = db.query(Category).filter_by(name=cat_name).first()
+            if not category:
+                category = Category(name=cat_name, description=cat_data.get('description', ''))
+                db.add(category)
+                db.flush()
+            recipe.categories.append(category)
+        else:
+            category = db.get(Category, cat_id)
+            if not category:
+                log.warning("Category id=%s not found, skipping", cat_id)
+                continue
+            recipe.categories.append(category)
 
 
 @router.get("/ingredient/search/{name}")
@@ -41,8 +150,16 @@ def get_recipes_range(start: int, end: int, db: Session = Depends(get_db)):
 async def create_recipe(request: Request, db: Session = Depends(get_db)):
     try:
         data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body is not valid JSON")
+
+    title = data.get('title')
+    if not title or not str(title).strip():
+        raise HTTPException(status_code=400, detail="Recipe title is required")
+
+    try:
         recipe = Recipe(
-            title=data.get('title'),
+            title=title,
             description=data.get('description'),
             instructions=data.get('instructions', []),
             prep_time=data.get('prep_time'),
@@ -50,60 +167,37 @@ async def create_recipe(request: Request, db: Session = Depends(get_db)):
             servings=data.get('servings'),
             images=data.get('images', []),
             author_id=data.get('author_id', 1),
-            component=data.get('component', False)
+            component=data.get('component', False),
         )
         db.add(recipe)
         db.flush()
 
         if 'ingredients' in data:
-            for ing_data in data['ingredients']:
-                ingredient_id = None
-                ingredient_recipe_id = None
-                if 'ingredient_recipe_id' in ing_data and ing_data['ingredient_recipe_id']:
-                    if ing_data['ingredient_recipe_id'] == recipe._id:
-                        raise HTTPException(status_code=400, detail="A recipe cannot reference itself as an ingredient")
-                    ingredient_recipe_id = ing_data['ingredient_recipe_id']
-                elif 'ingredient_id' in ing_data and ing_data['ingredient_id']:
-                    ingredient_id = ing_data['ingredient_id']
-                else:
-                    ingredient = db.query(Ingredient).filter_by(name=ing_data['name']).first()
-                    if not ingredient:
-                        ingredient = Ingredient(name=ing_data['name'])
-                        db.add(ingredient)
-                        db.flush()
-                    ingredient_id = ingredient._id
-
-                recipe_ingredient = RecipeIngredient(
-                    recipe_id=recipe._id,
-                    ingredient_id=ingredient_id,
-                    ingredient_recipe_id=ingredient_recipe_id,
-                    quantity=ing_data.get('quantity', 1.0),
-                    unit=ing_data.get('unit', 'piece'),
-                    fdc_id=ing_data.get('fdc_id')
-                )
-                db.add(recipe_ingredient)
+            _save_ingredients(db, recipe, data['ingredients'])
 
         if 'categories' in data:
-            for cat_data in data['categories']:
-                if cat_data.get('id', 0) < 0:
-                    category = db.query(Category).filter_by(name=cat_data['name']).first()
-                    if not category:
-                        category = Category(name=cat_data['name'], description=cat_data.get('description', ''))
-                        db.add(category)
-                        db.flush()
-                    recipe.categories.append(category)
-                else:
-                    category = db.get(Category, cat_data['id'])
-                    if category:
-                        recipe.categories.append(category)
+            _save_categories(db, recipe, data['categories'])
 
         db.commit()
         return recipe.to_json()
+
     except HTTPException:
+        db.rollback()
         raise
+    except IntegrityError as e:
+        db.rollback()
+        log.error("Integrity error creating recipe: %s", e)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Database conflict: a recipe or ingredient with that name may already exist ({e.orig})",
+        )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error("Unexpected error creating recipe:\n%s", traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while creating recipe: {type(e).__name__}: {e}",
+        )
 
 
 @router.get("/recipes/{recipe_id:int}")
@@ -127,12 +221,16 @@ def get_recipe_by_name(recipe_name: str, db: Session = Depends(get_db)):
 
 @router.put("/recipes/{recipe_id}")
 async def update_recipe(recipe_id: int, request: Request, db: Session = Depends(get_db)):
-    try:
-        recipe = db.get(Recipe, recipe_id)
-        if not recipe:
-            raise HTTPException(status_code=404, detail="Recipe not found")
+    recipe = db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found")
 
+    try:
         data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body is not valid JSON")
+
+    try:
         recipe.title = data.get('title', recipe.title)
         recipe.description = data.get('description', recipe.description)
         recipe.instructions = data.get('instructions', recipe.instructions)
@@ -145,70 +243,62 @@ async def update_recipe(recipe_id: int, request: Request, db: Session = Depends(
         if 'ingredients' in data:
             for ri in recipe.recipe_ingredients:
                 db.delete(ri)
-            for ing_data in data['ingredients']:
-                ingredient_id = None
-                ingredient_recipe_id = None
-                if 'ingredient_recipe_id' in ing_data and ing_data['ingredient_recipe_id']:
-                    if ing_data['ingredient_recipe_id'] == recipe._id:
-                        raise HTTPException(status_code=400, detail="A recipe cannot reference itself as an ingredient")
-                    ingredient_recipe_id = ing_data['ingredient_recipe_id']
-                elif 'ingredient_id' in ing_data and ing_data['ingredient_id']:
-                    ingredient_id = ing_data['ingredient_id']
-                else:
-                    ingredient = db.query(Ingredient).filter_by(name=ing_data['name']).first()
-                    if not ingredient:
-                        ingredient = Ingredient(name=ing_data['name'])
-                        db.add(ingredient)
-                        db.flush()
-                    ingredient_id = ingredient._id
-                recipe_ingredient = RecipeIngredient(
-                    recipe_id=recipe._id,
-                    ingredient_id=ingredient_id,
-                    ingredient_recipe_id=ingredient_recipe_id,
-                    quantity=ing_data.get('quantity', 1.0),
-                    unit=ing_data.get('unit', 'piece'),
-                    fdc_id=ing_data.get('fdc_id')
-                )
-                db.add(recipe_ingredient)
+            db.flush()
+            _save_ingredients(db, recipe, data['ingredients'])
 
         if 'categories' in data:
             recipe.categories.clear()
-            for cat_data in data['categories']:
-                if cat_data.get('id', 0) < 0:
-                    category = db.query(Category).filter_by(name=cat_data['name']).first()
-                    if not category:
-                        category = Category(name=cat_data['name'], description=cat_data.get('description', ''))
-                        db.add(category)
-                        db.flush()
-                    recipe.categories.append(category)
-                else:
-                    category = db.get(Category, cat_data['id'])
-                    if category:
-                        recipe.categories.append(category)
+            _save_categories(db, recipe, data['categories'])
 
         db.commit()
         return recipe.to_json()
+
     except HTTPException:
+        db.rollback()
         raise
+    except IntegrityError as e:
+        db.rollback()
+        log.error("Integrity error updating recipe %s: %s", recipe_id, e)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Database conflict while updating recipe: {e.orig}",
+        )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error("Unexpected error updating recipe %s:\n%s", recipe_id, traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while updating recipe: {type(e).__name__}: {e}",
+        )
 
 
 @router.delete("/recipes/{recipe_id}")
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found")
+
     try:
-        recipe = db.get(Recipe, recipe_id)
-        if not recipe:
-            raise HTTPException(status_code=404, detail="Recipe not found")
+        for ri in recipe.recipe_ingredients:
+            db.delete(ri)
+        db.flush()
         db.delete(recipe)
         db.commit()
         return {"message": "Recipe deleted successfully"}
-    except HTTPException:
-        raise
+    except IntegrityError as e:
+        db.rollback()
+        log.error("Integrity error deleting recipe %s: %s", recipe_id, e)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete recipe: it is still referenced by other data ({e.orig})",
+        )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error("Unexpected error deleting recipe %s:\n%s", recipe_id, traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while deleting recipe: {type(e).__name__}: {e}",
+        )
 
 
 @router.get("/recipes/nutrition/{recipe_id}")
@@ -220,21 +310,37 @@ def get_recipe_nutrition(recipe_id: int, db: Session = Depends(get_db)):
 
 @router.patch("/recipes/ingredients/{recipe_ingredient_id}")
 async def update_recipe_ingredient(recipe_ingredient_id: int, request: Request, db: Session = Depends(get_db)):
+    recipe_ingredient = db.get(RecipeIngredient, recipe_ingredient_id)
+    if not recipe_ingredient:
+        raise HTTPException(status_code=404, detail=f"Recipe ingredient {recipe_ingredient_id} not found")
+
     try:
-        recipe_ingredient = db.get(RecipeIngredient, recipe_ingredient_id)
-        if not recipe_ingredient:
-            raise HTTPException(status_code=404, detail="Recipe ingredient not found")
         data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body is not valid JSON")
+
+    try:
         if 'fdc_id' in data:
             recipe_ingredient.fdc_id = data['fdc_id']
         if 'quantity' in data:
-            recipe_ingredient.quantity = data['quantity']
+            try:
+                recipe_ingredient.quantity = float(data['quantity'])
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"quantity must be a number, got {data['quantity']!r}",
+                )
         if 'unit' in data:
             recipe_ingredient.unit = data['unit']
         db.commit()
         return recipe_ingredient.to_json()
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error("Unexpected error updating recipe ingredient %s:\n%s", recipe_ingredient_id, traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while updating ingredient: {type(e).__name__}: {e}",
+        )

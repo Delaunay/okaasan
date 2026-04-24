@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -17,7 +17,7 @@ class Product(Base):
     price = Column(Float)                                   # unitary price
     count = Column(Integer)                                 # Number of item purchase
     organic = Column(Boolean)                               # Organic or not
-    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))  # Date of purchase
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # Date of purchase
     ingredient = Column(String(50))                         # Ingredient this is usually used for
     fdc_id = Column(Integer)
 

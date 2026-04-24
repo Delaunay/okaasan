@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -11,8 +11,8 @@ class KeyValueStore(Base):
     topic = Column(String(100), primary_key=True, nullable=False)
     key = Column(String(100), primary_key=True, nullable=False)
     value = Column(JSON)
-    created_at = Column(DateTime, default=datetime.now())
-    updated_at = Column(DateTime, default=datetime.now(), onupdate=datetime.now())
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Composite primary key constraint on (topic, key)
     __table_args__ = (

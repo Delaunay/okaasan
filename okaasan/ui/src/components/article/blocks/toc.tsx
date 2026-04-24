@@ -90,15 +90,15 @@ const TableOfContentsBlock: React.FC<{ block: TocBlock; mode: string }> = ({ blo
         }
     };
 
-    const bg = 'var(--toc-bg)';
+    const bg = 'var(--hidden-bg)';
     const borderColor = 'var(--border-color)';
     const titleColor = 'var(--toc-title)';
     const emptyTextColor = 'var(--empty-text)';
-    const itemHoverBg = 'var(--toc-item-hover-bg)';
+    const itemHoverBg = 'var(--table-header-bg)';
     const itemColorPrimary = 'var(--toc-item-primary)';
     const itemColorSecondary = 'var(--toc-item-secondary)';
-    const itemHoverColor = 'var(--toc-item-hover-color)';
-    const bulletColor = 'var(--toc-bullet)';
+    const itemHoverColor = 'var(--toc-title)';
+    const bulletColor = 'var(--empty-text)';
 
     return (
         <Box

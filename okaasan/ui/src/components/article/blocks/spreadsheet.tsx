@@ -330,7 +330,7 @@ const SpreadsheetEditor: React.FC<SpreadsheetEditorProps> = ({ block, data }) =>
     const mutedColor   = 'var(--muted-text)';
     const deleteBg     = 'var(--delete-bg)';
     const deleteColor  = 'var(--delete-color)';
-    const addBtnColor  = 'var(--add-btn)';
+    const addBtnColor  = 'var(--empty-text)';
     const addBtnHover  = 'var(--add-btn-hover)';
     const formulaColor = "var(--chakra-colors-blue-500)";
 

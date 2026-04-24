@@ -911,7 +911,7 @@ const TitleDisplay: React.FC<{ article: ArticleInstance }> = ({ article }) => {
 
     const hoverBg = 'var(--block-hover)';
     const showHoverHint = hovered && !editing;
-    const panelBg = 'var(--panel-bg)';
+    const panelBg = 'var(--input-bg)';
     const panelBorder = 'var(--panel-border)';
 
     useEffect(() => {

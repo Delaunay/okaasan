@@ -35,7 +35,7 @@ export const SubPageList: React.FC<SubPageListProps> = ({ articleDef }) => {
     const headingColor = 'var(--heading-color)';
     const inputBg = 'var(--input-bg)';
     const inputBorder = 'var(--panel-border)';
-    const cardBg = 'var(--panel-bg)';
+    const cardBg = 'var(--input-bg)';
     const cardBorder = 'var(--border-color)';
     const textColor = 'var(--heading-color)';
     const emptyTextColor = 'var(--empty-text)';

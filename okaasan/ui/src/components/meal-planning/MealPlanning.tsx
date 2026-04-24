@@ -56,13 +56,13 @@ const MealPlanning: React.FC = () => {
     const { planName: urlPlanName } = useParams<{ planName?: string }>();
     const navigate = useNavigate();
 
-    const rowHover = 'var(--row-hover)';
-    const cellHover = 'var(--cell-hover)';
+    const rowHover = 'var(--hover-bg)';
+    const cellHover = 'var(--selected-bg)';
     const mealBg = 'var(--meal-bg)';
     const mealBorder = 'var(--meal-border)';
     const skipBg = 'var(--skip-bg)';
     const skipBorder = 'var(--skip-border)';
-    const itemHover = 'var(--item-hover)';
+    const itemHover = 'var(--hover-bg)';
     const selectBg = 'var(--input-bg)';
 
     const [mealPlan, setMealPlan] = useState<MealPlan>({ ...EMPTY_PLAN });

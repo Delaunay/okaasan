@@ -39,7 +39,7 @@ const Settings: React.FC = () => {
     const cardBg = 'var(--card-bg-raised)';
     const border = 'var(--border-color)';
     const mutedText = 'var(--muted-text)';
-    const iconBg = 'var(--icon-bg)';
+    const iconBg = 'var(--selected-bg)';
     const iconColor = 'var(--icon-color)';
 
     const _static = isStaticMode();

@@ -9,9 +9,11 @@
 
   /* Borders */
   --border-color: #e2e8f0;
+  --panel-border: #e2e8f0;
 
   /* Text */
   --muted-text: #718096;
+  --empty-text: #a0aec0;
   --heading-color: #2d3748;
 
   /* Interactive */
@@ -20,10 +22,7 @@
   --active-bg: #f0fff4;
   --hidden-bg: #f7fafc;
   --key-bg: #edf2f7;
-
-  /* Overlay / panel */
-  --panel-bg: #fff;
-  --panel-border: #e2e8f0;
+  --table-header-bg: #edf2f7;
   --block-hover: rgba(0, 0, 0, 0.04);
 
   /* Semantic: status */
@@ -34,39 +33,26 @@
   --accent-bg: #fff7ed;
 
   /* Semantic: table */
-  --table-header-bg: #edf2f7;
   --table-alt-row: #f7fafc;
-  --table-active-row: #ebf8ff;
-  --table-filter-bg: #f7fafc;
 
   /* Meal planning */
   --meal-bg: #bee3f8;
   --meal-border: #90cdf4;
   --skip-bg: #e2e8f0;
   --skip-border: #cbd5e0;
-  --cell-hover: #ebf8ff;
-  --row-hover: #f7fafc;
-  --item-hover: #f7fafc;
 
   /* Article / TOC */
-  --toc-bg: #f7fafc;
   --toc-title: #1a202c;
   --toc-item-primary: #1a202c;
   --toc-item-secondary: #2d3748;
-  --toc-item-hover-bg: #edf2f7;
-  --toc-item-hover-color: #1a202c;
-  --toc-bullet: #a0aec0;
-  --empty-text: #a0aec0;
 
   /* Spreadsheet */
   --formula-color: #2b6cb0;
   --delete-bg: #fed7d7;
   --delete-color: #c53030;
-  --add-btn: #a0aec0;
   --add-btn-hover: #718096;
 
   /* Settings */
-  --icon-bg: #ebf8ff;
   --icon-color: #2b6cb0;
 }
 
@@ -79,9 +65,11 @@
 
   /* Borders */
   --border-color: #2d3748;
+  --panel-border: #4a5568;
 
   /* Text */
   --muted-text: #a0aec0;
+  --empty-text: #718096;
   --heading-color: #e2e8f0;
 
   /* Interactive */
@@ -90,10 +78,7 @@
   --active-bg: #1c4532;
   --hidden-bg: #1a202c;
   --key-bg: #0f3460;
-
-  /* Overlay / panel */
-  --panel-bg: #1a202c;
-  --panel-border: #4a5568;
+  --table-header-bg: #2d3748;
   --block-hover: rgba(255, 255, 255, 0.04);
 
   /* Semantic: status */
@@ -104,38 +89,25 @@
   --accent-bg: #7b341e;
 
   /* Semantic: table */
-  --table-header-bg: #2d3748;
   --table-alt-row: #1e2430;
-  --table-active-row: #1a365d;
-  --table-filter-bg: #171923;
 
   /* Meal planning */
   --meal-bg: #2a4365;
   --meal-border: #2b6cb0;
   --skip-bg: #4a5568;
   --skip-border: #718096;
-  --cell-hover: #1a365d;
-  --row-hover: #2d3748;
-  --item-hover: #2d3748;
 
   /* Article / TOC */
-  --toc-bg: #1a202c;
   --toc-title: #fff;
   --toc-item-primary: #e2e8f0;
   --toc-item-secondary: #cbd5e0;
-  --toc-item-hover-bg: #2d3748;
-  --toc-item-hover-color: #fff;
-  --toc-bullet: #718096;
-  --empty-text: #718096;
 
   /* Spreadsheet */
   --formula-color: #63b3ed;
   --delete-bg: #63171b;
   --delete-color: #feb2b2;
-  --add-btn: #718096;
   --add-btn-hover: #cbd5e0;
 
   /* Settings */
-  --icon-bg: #1a365d;
   --icon-color: #90cdf4;
 }

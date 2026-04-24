@@ -105,15 +105,15 @@ def create_app() -> FastAPI:
     app.state.originals_folder = ORIGINALS_FOLDER
 
     from .route_keyvalue import router as kv_router
-    from .route_calendar import router as calendar_router
-    from .route_tasks import router as tasks_router
-    from .route_recipe import router as recipe_router
-    from .route_ingredient import router as ingredient_router
-    from .route_article import router as article_router
-    from .route_units import router as units_router
     from .route_images import router as images_router
     from .route_jsonstore import router as jsonstore_router
     from .projects.graph import router as graph_router
+
+    from .calendar import router as calendar_router
+    from .tasks import router as tasks_router
+    from .recipe import router as recipe_router
+    from .recipe import ingredient_router, units_router
+    from .articles import router as article_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)

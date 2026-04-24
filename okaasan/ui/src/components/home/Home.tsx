@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Box, Heading, Text, VStack, HStack, Flex, Badge, Button, SimpleGrid,
+  Box, Heading, Text, VStack, HStack, Flex, Badge, Button,
 } from '@chakra-ui/react';
 import { useColorModeValue } from '../ui/color-mode';
 import {
@@ -13,7 +13,7 @@ import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
 import { sidebarSections } from '../../layout/Layout';
-import SidebarSectionComponent from '../../layout/SidebarSection';
+import SectionView from '../content/SectionView';
 import type { MealPlan, PlannedMeal } from '../../services/type';
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -374,29 +374,18 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
   );
 }
 
-// ── Static Home (reuses sidebar sections, all expanded) ─────
+// ── Static Home (reuses SectionView cards) ──────────────────
 
 const STATIC_SKIP = new Set(['Home', 'Settings']);
 
 function StaticHome() {
-  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title));
-  const noop = () => {};
+  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title) && s.items.length > 0);
+  const items = sections.map(s => ({
+    name: s.title,
+    href: s.items[0]?.href || s.href,
+  }));
 
-  return (
-    <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} gap={4}>
-      {sections.map(section => (
-        <Box key={section.title}>
-          <SidebarSectionComponent
-            section={section}
-            isExpanded={true}
-            onMouseEnter={noop}
-            onMouseLeave={noop}
-            onItemClick={noop}
-          />
-        </Box>
-      ))}
-    </SimpleGrid>
-  );
+  return <SectionView title="(O)KaaSan" items={items} />;
 }
 
 // ── Home Page ─────────────────────────────────────────────────
@@ -526,11 +515,7 @@ const Home = () => {
 
   return (
     <Box mx="auto" p={4}>
-      {_static ? (
-        <Box mb={6}>
-          <Heading size="xl" mb={1}>(O)KaaSan</Heading>
-        </Box>
-      ) : (
+      {!_static && (
         <Box mb={6}>
           <Heading size="xl" mb={1}>{dayName}</Heading>
           <Text fontSize="lg" color={mutedText}>{dateStr}</Text>

@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       install_source:
-        description: 'Install okaasan from PyPI or from git (latest source)'
+        description: 'Install okaasan from git (source) or from PyPI (wheel — no static build support)'
         required: false
-        default: 'pypi'
+        default: 'git'
         type: choice
         options:
-          - pypi
           - git
+          - pypi
 
 permissions:
   contents: read
@@ -41,15 +41,15 @@ jobs:
       with:
         node-version: 'lts/*'
 
-    - name: Install Okaasan (PyPI)
-      if: ${{ github.event.inputs.install_source != 'git' }}
-      run: pip install okaasan
-
     - name: Install Okaasan (git source)
-      if: ${{ github.event.inputs.install_source == 'git' }}
+      if: ${{ github.event.inputs.install_source != 'pypi' }}
       run: |
         git clone {{OKAASAN_REPO}} /tmp/okaasan-src
         pip install -e /tmp/okaasan-src
+
+    - name: Install Okaasan (PyPI)
+      if: ${{ github.event.inputs.install_source == 'pypi' }}
+      run: pip install okaasan
 
     - name: Build static website
       run: |

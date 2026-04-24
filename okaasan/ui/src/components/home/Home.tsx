@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Box, Heading, Text, VStack, HStack, Flex, Badge, Button,
+  Box, Heading, Text, VStack, HStack, Flex, Badge, Button, SimpleGrid,
 } from '@chakra-ui/react';
 import { useColorModeValue } from '../ui/color-mode';
 import {
@@ -12,6 +12,7 @@ import { recipeAPI, isStaticMode } from '../../services/api';
 import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
+import { sidebarSections } from '../../layout/Layout';
 import type { MealPlan, PlannedMeal } from '../../services/type';
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -372,6 +373,47 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
   );
 }
 
+// ── Static Home (big navigation buttons) ────────────────────
+
+const STATIC_SKIP = new Set(['Home', 'Settings']);
+
+function StaticHome({ cardBg, border, mutedText }: {
+  cardBg: string;
+  border: string;
+  mutedText: string;
+}) {
+  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title) && (s.items.length > 0 || s.href !== '/'));
+
+  return (
+    <SimpleGrid columns={{ base: 1, sm: 2, md: 3, lg: 4 }} gap={5}>
+      {sections.map(section => (
+        <Link key={section.title} to={section.items[0]?.href || section.href} style={{ textDecoration: 'none' }}>
+          <Box
+            bg={cardBg}
+            borderRadius="xl"
+            border="1px solid"
+            borderColor={border}
+            p={6}
+            cursor="pointer"
+            transition="all 0.2s"
+            _hover={{ shadow: 'lg', transform: 'translateY(-2px)', borderColor: 'blue.300' }}
+            h="100%"
+          >
+            <Heading size="md" mb={2}>{section.title}</Heading>
+            {section.items.length > 0 && (
+              <VStack align="stretch" gap={1}>
+                {section.items.map(item => (
+                  <Text key={item.href} fontSize="sm" color={mutedText}>{item.name}</Text>
+                ))}
+              </VStack>
+            )}
+          </Box>
+        </Link>
+      ))}
+    </SimpleGrid>
+  );
+}
+
 // ── Home Page ─────────────────────────────────────────────────
 
 const Home = () => {
@@ -505,10 +547,7 @@ const Home = () => {
       </Box>
 
       {_static ? (
-        <Box textAlign="center" py={8}>
-          <Heading size="lg" mb={2} color="orange.500">Welcome to (O)KaaSan</Heading>
-          <Text color={mutedText}>Use the sidebar to navigate.</Text>
-        </Box>
+        <StaticHome cardBg={cardBg} border={border} mutedText={mutedText} />
       ) : (
         <>
           {weatherError === 'no-location' && (

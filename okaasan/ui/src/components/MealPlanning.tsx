@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
     Box,
     VStack,
@@ -16,6 +17,7 @@ import { recipeAPI } from '../services/api';
 import type { RecipeData, WeeklyRecipe, PlannedMeal, MealPlan } from '../services/type';
 import { TelegramClient, TelegramStorage } from '../services/telegram';
 import { TelegramSettings } from './TelegramSettings';
+import { useColorModeValue } from './ui/color-mode';
 
 // Custom icon components
 const DeleteIcon = () => (
@@ -43,14 +45,29 @@ const SettingsIcon = () => (
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner'];
 
+const EMPTY_PLAN: MealPlan = {
+    weekStart: new Date(),
+    people: 2,
+    mealsPerDay: 3,
+    weeklyRecipes: [],
+    plannedMeals: [],
+};
+
 const MealPlanning: React.FC = () => {
-    const [mealPlan, setMealPlan] = useState<MealPlan>({
-        weekStart: new Date(),
-        people: 2,
-        mealsPerDay: 3,
-        weeklyRecipes: [],
-        plannedMeals: [],
-    });
+    const { planName: urlPlanName } = useParams<{ planName?: string }>();
+    const navigate = useNavigate();
+
+    const rowHover = useColorModeValue('gray.50', 'gray.700');
+    const cellHover = useColorModeValue('blue.50', 'blue.900');
+    const mealBg = useColorModeValue('blue.100', 'blue.800');
+    const mealBorder = useColorModeValue('blue.200', 'blue.600');
+    const skipBg = useColorModeValue('gray.100', 'gray.700');
+    const skipBorder = useColorModeValue('gray.300', 'gray.500');
+    const itemHover = useColorModeValue('gray.50', 'gray.700');
+    const selectBg = useColorModeValue('#fff', '#1a202c');
+
+    const [mealPlan, setMealPlan] = useState<MealPlan>({ ...EMPTY_PLAN });
+    const [activePlanName, setActivePlanName] = useState<string>('');
 
     const [recipes, setRecipes] = useState<RecipeData[]>([]);
     const [selectedRecipe, setSelectedRecipe] = useState<string>('');
@@ -60,26 +77,31 @@ const MealPlanning: React.FC = () => {
     const [showMealModal, setShowMealModal] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; show: boolean } | null>(null);
 
-    // Meal plan save/load state
     const [mealPlanName, setMealPlanName] = useState<string>('');
     const [availableMealPlans, setAvailableMealPlans] = useState<string[]>([]);
-    const [selectedMealPlanToLoad, setSelectedMealPlanToLoad] = useState<string>('');
     const [showSaveModal, setShowSaveModal] = useState(false);
-    const [showLoadModal, setShowLoadModal] = useState(false);
     const [showTelegramSettings, setShowTelegramSettings] = useState(false);
 
-    // Load available meal plans
-    const loadAvailableMealPlans = async () => {
+    const loadAvailableMealPlans = useCallback(async () => {
         try {
-            const mealPlanNames = await recipeAPI.getMealPlanNames();
-            setAvailableMealPlans(mealPlanNames);
+            const names = await recipeAPI.getMealPlanNames();
+            setAvailableMealPlans(names);
         } catch (error) {
             console.error('Error fetching meal plan names:', error);
             setAvailableMealPlans([]);
         }
-    };
+    }, []);
 
-    // Save meal plan
+    const loadPlanByName = useCallback(async (name: string) => {
+        try {
+            const loaded = await recipeAPI.loadMealPlan(name);
+            setMealPlan(loaded);
+            setActivePlanName(name);
+        } catch (error) {
+            console.error('Error loading meal plan:', error);
+        }
+    }, []);
+
     const saveMealPlan = async () => {
         if (!mealPlanName.trim()) {
             showToast('Please enter a name for the meal plan', 'error');
@@ -87,51 +109,56 @@ const MealPlanning: React.FC = () => {
         }
 
         try {
-            await recipeAPI.saveMealPlan(mealPlanName.trim(), mealPlan);
-            showToast(`Meal plan "${mealPlanName}" saved successfully!`);
+            const name = mealPlanName.trim();
+            await recipeAPI.saveMealPlan(name, mealPlan);
+            showToast(`Meal plan "${name}" saved successfully!`);
             setMealPlanName('');
             setShowSaveModal(false);
-            await loadAvailableMealPlans(); // Refresh the list
+            setActivePlanName(name);
+            await loadAvailableMealPlans();
+            navigate(`/planning/${encodeURIComponent(name)}`, { replace: true });
         } catch (error) {
             console.error('Error saving meal plan:', error);
             showToast('Failed to save meal plan', 'error');
         }
     };
 
-    // Load meal plan
-    const loadMealPlan = async () => {
-        if (!selectedMealPlanToLoad) {
-            showToast('Please select a meal plan to load', 'error');
+    const handlePlanSelect = (name: string) => {
+        if (!name) {
+            setMealPlan({ ...EMPTY_PLAN });
+            setActivePlanName('');
+            navigate('/planning', { replace: true });
             return;
         }
-
-        try {
-            const loadedMealPlan = await recipeAPI.loadMealPlan(selectedMealPlanToLoad);
-            setMealPlan(loadedMealPlan);
-            showToast(`Meal plan "${selectedMealPlanToLoad}" loaded successfully!`);
-            setSelectedMealPlanToLoad('');
-            setShowLoadModal(false);
-        } catch (error) {
-            console.error('Error loading meal plan:', error);
-            showToast('Failed to load meal plan', 'error');
-        }
+        navigate(`/planning/${encodeURIComponent(name)}`);
     };
 
-    // Load recipes on component mount
+    // Load recipes + plan names on mount
     useEffect(() => {
-        const loadRecipes = async () => {
-            try {
-                const data = await recipeAPI.getRecipes();
-                setRecipes(data);
-            } catch (error) {
-                console.error('Error fetching recipes:', error);
-            }
-        };
+        recipeAPI.getRecipes()
+            .then(setRecipes)
+            .catch((e) => console.error('Error fetching recipes:', e));
 
-        loadRecipes();
         document.title = 'Meal Planning';
         loadAvailableMealPlans();
-    }, []);
+    }, [loadAvailableMealPlans]);
+
+    // When URL plan name changes, load that plan
+    useEffect(() => {
+        if (urlPlanName) {
+            const decoded = decodeURIComponent(urlPlanName);
+            if (decoded !== activePlanName) {
+                loadPlanByName(decoded);
+            }
+            document.title = `Meal Planning — ${decoded}`;
+        } else {
+            if (activePlanName) {
+                setMealPlan({ ...EMPTY_PLAN });
+                setActivePlanName('');
+            }
+            document.title = 'Meal Planning';
+        }
+    }, [urlPlanName]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const totalPortionsNeeded = mealPlan.people * mealPlan.mealsPerDay * 7;
     const totalPortionsAvailable = mealPlan.weeklyRecipes.reduce((sum, recipe) => sum + recipe.totalPortions, 0);
@@ -501,27 +528,57 @@ const MealPlanning: React.FC = () => {
             <VStack gap={6} align="stretch" width="100%" height="100%">
                 {/* Header */}
                 <Box>
-                    <Flex justify="space-between" align="center" mb={2}>
-                        <Heading size="lg">Weekly Meal Planning</Heading>
-                        <HStack gap={2}>
-                            <Button
-                                colorScheme="blue"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setShowSaveModal(true)}
+                    <Flex justify="space-between" align="center" mb={2} gap={4} wrap="wrap">
+                        <HStack gap={3} flex={1} minW={0}>
+                            <Heading size="lg" flexShrink={0}>Meal Plan</Heading>
+                            <select
+                                value={activePlanName}
+                                onChange={(e) => handlePlanSelect(e.target.value)}
+                                style={{
+                                    flex: 1,
+                                    maxWidth: '280px',
+                                    padding: '6px 10px',
+                                    border: '1px solid var(--chakra-colors-border)',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    backgroundColor: selectBg,
+                                    color: 'inherit',
+                                }}
                             >
-                                Save Plan
-                            </Button>
+                                <option value="">New plan</option>
+                                {availableMealPlans.map(name => (
+                                    <option key={name} value={name}>{name}</option>
+                                ))}
+                            </select>
+                        </HStack>
+                        <HStack gap={2} flexShrink={0}>
+                            {activePlanName && (
+                                <Button
+                                    colorScheme="blue"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                        try {
+                                            await recipeAPI.saveMealPlan(activePlanName, mealPlan);
+                                            showToast(`"${activePlanName}" saved!`);
+                                        } catch {
+                                            showToast('Failed to save', 'error');
+                                        }
+                                    }}
+                                >
+                                    Save
+                                </Button>
+                            )}
                             <Button
                                 colorScheme="green"
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                    setShowLoadModal(true);
-                                    loadAvailableMealPlans();
+                                    setMealPlanName(activePlanName || '');
+                                    setShowSaveModal(true);
                                 }}
                             >
-                                Load Plan
+                                Save As…
                             </Button>
                         </HStack>
                     </Flex>
@@ -600,7 +657,7 @@ const MealPlanning: React.FC = () => {
                                 {MEAL_TYPES.map(mealType => {
                                     const typedMealType = mealType as 'breakfast' | 'lunch' | 'dinner';
                                     return (
-                                        <Box as="tr" key={mealType} _hover={{ bg: 'gray.900' }}>
+                                        <Box as="tr" key={mealType} _hover={{ bg: rowHover }}>
                                             <Box as="td" p={3} fontWeight="semibold" textTransform="capitalize" borderBottom="1px" borderColor="gray.100">
                                                 {mealType}
                                             </Box>
@@ -617,13 +674,13 @@ const MealPlanning: React.FC = () => {
                                                         borderColor="gray.100"
                                                         cursor="pointer"
                                                         onClick={() => openMealModal(day, typedMealType)}
-                                                        _hover={{ bg: 'gray.800' }}
+                                                        _hover={{ bg: cellHover }}
                                                         position="relative"
                                                     >
                                                         {hasMeals ? (
                                                             <VStack align="stretch" gap={1}>
                                                                 {meals.map(meal => (
-                                                                    <Box key={meal.id} p={2} border="1px" borderColor={meal.recipeId === 'skip' ? 'gray.300' : 'blue.200'} borderRadius="md" bg={meal.recipeId === 'skip' ? 'gray.200' : 'blue.200'}>
+                                                                    <Box key={meal.id} p={2} border="1px" borderColor={meal.recipeId === 'skip' ? skipBorder : mealBorder} borderRadius="md" bg={meal.recipeId === 'skip' ? skipBg : mealBg}>
                                                                         <VStack align="stretch" gap={1}>
                                                                             <Text fontSize="xs" fontWeight="semibold">
                                                                                 {meal.recipeName}
@@ -697,7 +754,7 @@ const MealPlanning: React.FC = () => {
                                         borderRadius="md"
                                         bg="bg"
                                         mb={2}
-                                        _hover={{ bg: 'black.900' }}
+                                        _hover={{ bg: itemHover }}
                                     >
                                         <Flex justify="space-between" align="center">
                                             <HStack gap={2}>
@@ -823,7 +880,7 @@ const MealPlanning: React.FC = () => {
                                     borderRadius="md"
                                     bg="bg"
                                     mb={0}
-                                    _hover={{ bg: 'gray.100' }}
+                                    _hover={{ bg: itemHover }}
                                 >
                                     <HStack justify="space-between" align="center">
                                         <Text fontSize="md">{item.name}</Text>
@@ -844,7 +901,7 @@ const MealPlanning: React.FC = () => {
                                 borderRadius="md"
                                 bg="bg"
                                 mb={2}
-                                _hover={{ bg: 'gray.900' }}
+                                _hover={{ bg: itemHover }}
                             >
                             </Box>
                         </Box>
@@ -1099,96 +1156,6 @@ const MealPlanning: React.FC = () => {
                                         disabled={!mealPlanName.trim()}
                                     >
                                         Save
-                                    </Button>
-                                </HStack>
-                            </VStack>
-                        </Box>
-                    </Box>
-                )}
-
-                {/* Load Meal Plan Modal */}
-                {showLoadModal && (
-                    <Box
-                        position="fixed"
-                        top={0}
-                        left={0}
-                        right={0}
-                        bottom={0}
-                        bg="blackAlpha.600"
-                        zIndex={1000}
-                        display="flex"
-                        alignItems="center"
-                        justifyContent="center"
-                        p={4}
-                    >
-                        <Box
-                            bg="bg"
-                            borderRadius="md"
-                            p={6}
-                            maxW="400px"
-                            width="100%"
-                        >
-                            <VStack gap={4} align="stretch">
-                                <Flex justify="space-between" align="center">
-                                    <Heading size="md">Load Meal Plan</Heading>
-                                    <IconButton
-                                        aria-label="Close modal"
-                                        onClick={() => {
-                                            setShowLoadModal(false);
-                                            setSelectedMealPlanToLoad('');
-                                        }}
-                                        variant="ghost"
-                                        size="sm"
-                                    >
-                                        <CloseIcon />
-                                    </IconButton>
-                                </Flex>
-
-                                <Box>
-                                    <Text mb={2} fontWeight="semibold">Select Meal Plan</Text>
-                                    {availableMealPlans.length > 0 ? (
-                                        <select
-                                            value={selectedMealPlanToLoad}
-                                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedMealPlanToLoad(e.target.value)}
-                                            style={{
-                                                width: '100%',
-                                                padding: '8px',
-                                                border: '1px solid var(--chakra-colors-border)',
-                                                borderRadius: '4px',
-                                                fontSize: '14px',
-                                                backgroundColor: 'var(--chakra-colors-bg)',
-                                            }}
-                                        >
-                                            <option value="">Choose a meal plan to load</option>
-                                            {availableMealPlans.map(planName => (
-                                                <option key={planName} value={planName}>
-                                                    {planName}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <Text fontSize="sm" color="gray.500" fontStyle="italic">
-                                            No saved meal plans available
-                                        </Text>
-                                    )}
-                                </Box>
-
-                                <HStack justify="flex-end" pt={2}>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            setShowLoadModal(false);
-                                            setSelectedMealPlanToLoad('');
-                                        }}
-                                    >
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        colorScheme="green"
-                                        onClick={loadMealPlan}
-                                        disabled={!selectedMealPlanToLoad || availableMealPlans.length === 0}
-                                    >
-                                        Load
                                     </Button>
                                 </HStack>
                             </VStack>

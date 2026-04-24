@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,9 @@ import okaasan
 log = logging.getLogger("okaasan.updater")
 
 PYPI_URL = "https://pypi.org/pypi/okaasan/json"
+
+# systemd picks this up via RestartForceExitStatus to restart the service
+RESTART_EXIT_CODE = 42
 
 _latest_cache: dict = {"version": None, "ts": 0.0}
 _CACHE_TTL = 300  # 5 minutes
@@ -73,30 +77,15 @@ def _upgrade_cmd() -> list[str]:
     return [python, "-m", "pip", "install", "--upgrade", "okaasan"]
 
 
-def _restart_cmds() -> list[list[str]]:
-    return [
-        ["sudo", "systemctl", "restart", "okaasan.service"],
-        ["systemctl", "--user", "restart", "okaasan.service"],
-    ]
-
-
 def do_upgrade() -> tuple[bool, str]:
     """Install the latest version via uv (preferred) or pip fallback."""
     return _run(_upgrade_cmd(), timeout=120)
 
 
-def restart_service() -> tuple[bool, str]:
-    """Restart the systemd service (tries system-level, falls back to user-level)."""
-    ok, out = _run(["sudo", "systemctl", "restart", "okaasan.service"], timeout=30)
-    if ok:
-        return True, out
-
-    ok2, out2 = _run(
-        ["systemctl", "--user", "restart", "okaasan.service"], timeout=30,
-    )
-    if ok2:
-        return True, out2
-    return False, f"system: {out}\nuser: {out2}"
+def restart_service():
+    """Exit with RESTART_EXIT_CODE so systemd restarts us with the new code."""
+    log.info("Exiting with code %d for systemd restart", RESTART_EXIT_CODE)
+    os._exit(RESTART_EXIT_CODE)
 
 
 # ── SSE streaming upgrade ────────────────────────────────────
@@ -132,28 +121,12 @@ async def stream_upgrade() -> AsyncIterator[str]:
         return
 
     yield _sse("log", "Upgrade successful. Restarting service...")
-
-    for restart_cmd in _restart_cmds():
-        yield _sse("log", f"$ {' '.join(restart_cmd)}")
-        restart_lines: list[str] = []
-        rok = False
-        async for event in _stream_subprocess(restart_cmd, timeout=30):
-            if isinstance(event, str):
-                restart_lines.append(event)
-                yield _sse("log", event)
-            else:
-                rok = event
-        if rok:
-            yield _sse("log", "Service restarted successfully.")
-            yield _sse("done", json.dumps({
-                "status": "updated", "from": current, "restarted": True,
-            }))
-            return
-
-    yield _sse("log", "WARNING: Could not restart service automatically.")
     yield _sse("done", json.dumps({
-        "status": "updated", "from": current, "restarted": False,
+        "status": "updated", "from": current, "restarted": True,
     }))
+
+    await asyncio.sleep(1)
+    restart_service()
 
 
 async def _stream_subprocess(
@@ -214,16 +187,8 @@ async def check_and_update() -> dict:
     if not ok:
         return {"status": "error", "message": "Upgrade failed", "output": out}
 
-    rok, rout = await loop.run_in_executor(None, restart_service)
-    result = {
-        "status": "updated",
-        "from": okaasan.__version__,
-        "to": latest,
-        "restarted": rok,
-    }
-    if not rok:
-        result["output"] = rout
-    return result
+    restart_service()
+    return {"status": "updated", "from": okaasan.__version__, "to": latest, "restarted": True}
 
 
 async def _update_loop(interval_hours: float):

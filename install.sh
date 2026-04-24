@@ -91,7 +91,8 @@ Group=$RUN_GROUP
 ExecStart=$VENV/bin/uvicorn okaasan.server.run:entry --host 0.0.0.0 --port $PORT
 WorkingDirectory=$BASE
 Restart=on-failure
-RestartSec=5
+RestartForceExitStatus=42
+RestartSec=3
 Environment=PATH=$VENV/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=$HOME
 Environment=FLASK_STATIC=$DATA

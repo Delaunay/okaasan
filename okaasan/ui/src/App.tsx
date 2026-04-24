@@ -94,6 +94,7 @@ function App() {
                 <Route path="/pantry" element={<Pantry />} />
                 <Route path="/budget" element={<Budget />} />
                 <Route path="/planning" element={<MealPlanning />} />
+                <Route path="/planning/:planName" element={<MealPlanning />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/routine" element={<Routine />} />
                 <Route path="/tasks" element={<Tasks />} />

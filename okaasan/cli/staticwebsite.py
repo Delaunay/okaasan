@@ -79,6 +79,7 @@ class StaticWebsite(Command):
         skip_frontend = getattr(args, 'skip_frontend', False)
         base_path = getattr(args, 'base_path', '/')
         api_url = getattr(args, 'api_url', '/api')
+        self._base_path = base_path
 
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
@@ -296,17 +297,23 @@ class StaticWebsite(Command):
 
         Tries the freshly-built ui/dist first, then falls back to the
         pre-built static files bundled inside the installed package.
+
+        When using bundled (pre-built) files and the target base_path is not
+        ``/``, rewrites asset references in index.html so the browser loads
+        them from the correct sub-path on GitHub Pages (or any non-root host).
         """
         logger.info("Copying frontend build...")
 
         ui_dist = self.base_dir / "okaasan" / "ui" / "dist"
         bundled = self._bundled_static_dir()
 
+        needs_rebase = False
         if ui_dist.exists():
             src = ui_dist
             logger.info(f"Using freshly-built frontend from {src}")
         elif bundled.exists() and (bundled / "index.html").exists():
             src = bundled
+            needs_rebase = True
             logger.info(f"Using bundled static files from {src}")
         else:
             logger.error("No frontend files found — neither ui/dist nor bundled static/")
@@ -319,7 +326,39 @@ class StaticWebsite(Command):
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, dest_path)
 
+        base_path = getattr(self, '_base_path', '/')
+        if needs_rebase and base_path and base_path != '/':
+            self._rebase_index_html(base_path)
+
         logger.info("Frontend files copied")
+
+    def _rebase_index_html(self, base_path: str):
+        """Rewrite root-relative asset URLs in index.html for a non-root deploy.
+
+        Bundled files are built with ``base: '/'``, so ``index.html`` contains
+        references like ``src="/assets/…"`` and ``href="/assets/…"``.
+        This replaces them with the target ``base_path`` so the browser
+        resolves e.g. ``/my-repo/assets/…`` instead of ``/assets/…``.
+        """
+        import re
+
+        index_path = self.output_dir / "index.html"
+        if not index_path.exists():
+            return
+
+        html = index_path.read_text()
+
+        if not base_path.endswith('/'):
+            base_path += '/'
+
+        html = re.sub(
+            r'(src|href|content)="/',
+            rf'\1="{base_path}',
+            html,
+        )
+
+        index_path.write_text(html)
+        logger.info(f"Rebased index.html asset paths to {base_path}")
 
     def copy_uploads(self):
         """Copy uploaded files to the static build.

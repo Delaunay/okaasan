@@ -13,6 +13,7 @@ import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
 import { sidebarSections } from '../../layout/Layout';
+import SidebarSectionComponent from '../../layout/SidebarSection';
 import type { MealPlan, PlannedMeal } from '../../services/type';
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -373,42 +374,26 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
   );
 }
 
-// ── Static Home (big navigation buttons) ────────────────────
+// ── Static Home (reuses sidebar sections, all expanded) ─────
 
 const STATIC_SKIP = new Set(['Home', 'Settings']);
 
-function StaticHome({ cardBg, border, mutedText }: {
-  cardBg: string;
-  border: string;
-  mutedText: string;
-}) {
-  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title) && (s.items.length > 0 || s.href !== '/'));
+function StaticHome() {
+  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title));
+  const noop = () => {};
 
   return (
-    <SimpleGrid columns={{ base: 1, sm: 2, md: 3, lg: 4 }} gap={5}>
+    <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} gap={4}>
       {sections.map(section => (
-        <Link key={section.title} to={section.items[0]?.href || section.href} style={{ textDecoration: 'none' }}>
-          <Box
-            bg={cardBg}
-            borderRadius="xl"
-            border="1px solid"
-            borderColor={border}
-            p={6}
-            cursor="pointer"
-            transition="all 0.2s"
-            _hover={{ shadow: 'lg', transform: 'translateY(-2px)', borderColor: 'blue.300' }}
-            h="100%"
-          >
-            <Heading size="md" mb={2}>{section.title}</Heading>
-            {section.items.length > 0 && (
-              <VStack align="stretch" gap={1}>
-                {section.items.map(item => (
-                  <Text key={item.href} fontSize="sm" color={mutedText}>{item.name}</Text>
-                ))}
-              </VStack>
-            )}
-          </Box>
-        </Link>
+        <Box key={section.title}>
+          <SidebarSectionComponent
+            section={section}
+            isExpanded={true}
+            onMouseEnter={noop}
+            onMouseLeave={noop}
+            onItemClick={noop}
+          />
+        </Box>
       ))}
     </SimpleGrid>
   );
@@ -541,13 +526,19 @@ const Home = () => {
 
   return (
     <Box mx="auto" p={4}>
-      <Box mb={6}>
-        <Heading size="xl" mb={1}>{dayName}</Heading>
-        <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
-      </Box>
+      {_static ? (
+        <Box mb={6}>
+          <Heading size="xl" mb={1}>(O)KaaSan</Heading>
+        </Box>
+      ) : (
+        <Box mb={6}>
+          <Heading size="xl" mb={1}>{dayName}</Heading>
+          <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
+        </Box>
+      )}
 
       {_static ? (
-        <StaticHome cardBg={cardBg} border={border} mutedText={mutedText} />
+        <StaticHome />
       ) : (
         <>
           {weatherError === 'no-location' && (

@@ -212,7 +212,8 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     const filtered = allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title));
     if (!isStaticMode()) return filtered;
     return filtered.map(s => {
-      const items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_ITEMS.has(item.href));
+      let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_ITEMS.has(item.href));
+      if (s.title === 'Home') items = items.filter((item: { href: string }) => !item.href.startsWith('/day/'));
       return Object.assign({}, s, { items });
     });
   }, [hiddenSections]);

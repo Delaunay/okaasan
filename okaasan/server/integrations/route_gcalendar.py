@@ -90,6 +90,33 @@ def test_connection(request: Request):
 
 # ── Data endpoints ────────────────────────────────────────────
 
+@router.post("/add-calendar")
+async def add_calendar(request: Request):
+    """Verify access to a calendar by ID and save it as the selected calendar.
+
+    The user enters their calendar ID (usually their Gmail address).
+    We verify the service account can read it, then save the selection.
+    """
+    _init_config(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    cal_id = body.get("calendar_id", "").strip()
+    if not cal_id:
+        raise HTTPException(status_code=400, detail="calendar_id is required")
+
+    try:
+        info = gcalendar.verify_calendar_access(cal_id)
+        cfg = gcalendar.load_config()
+        cfg["calendar_id"] = cal_id
+        gcalendar.save_config(cfg)
+        return info
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=_error_detail(exc))
+
+
 @router.get("/calendars")
 def get_calendars(request: Request):
     """List all calendars the service account can see."""

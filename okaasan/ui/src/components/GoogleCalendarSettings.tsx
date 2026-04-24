@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Box, Button, Flex, Heading, HStack, Text, VStack, Badge,
+  Box, Button, Flex, Heading, HStack, Text, VStack, Badge, Input,
 } from '@chakra-ui/react';
 import { useColorModeValue } from './ui/color-mode';
 import { useToast } from './ui/toaster';
@@ -78,6 +78,47 @@ function ErrorPanel({ error, onDismiss }: { error: string; onDismiss: () => void
           <X size={14} />
         </Button>
       </Flex>
+    </Box>
+  );
+}
+
+function AddCalendarForm({ onAdd, loading, mutedText }: {
+  onAdd: (id: string) => void;
+  loading: boolean;
+  mutedText: string;
+}) {
+  const [calId, setCalId] = useState('');
+  return (
+    <Box mt={3} p={4} borderRadius="md" bg="orange.900" color="white" fontSize="sm">
+      <Text mb={2}>
+        No calendars found automatically. Enter your Google Calendar ID (usually your
+        Gmail address) to add it.
+      </Text>
+      <Text fontSize="xs" color="orange.200" mb={3}>
+        Make sure you've shared your calendar with the service account email in Step 4 first.
+      </Text>
+      <HStack gap={2}>
+        <Input
+          placeholder="your.email@gmail.com"
+          value={calId}
+          onChange={(e) => setCalId(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && calId.trim()) onAdd(calId.trim()); }}
+          size="sm"
+          bg="whiteAlpha.200"
+          border="1px solid"
+          borderColor="whiteAlpha.300"
+          _placeholder={{ color: 'whiteAlpha.600' }}
+          flex={1}
+        />
+        <Button
+          size="sm"
+          colorPalette="orange"
+          disabled={loading || !calId.trim()}
+          onClick={() => onAdd(calId.trim())}
+        >
+          {loading ? <Loader2 className="spin" size={14} /> : 'Add'}
+        </Button>
+      </HStack>
     </Box>
   );
 }
@@ -446,10 +487,24 @@ export default function GoogleCalendarSettings() {
           )}
 
           {calendarOpen && calendars.length === 0 && loading !== 'calendars' && (
-            <Box mt={3} p={3} borderRadius="md" bg="orange.900" color="white" fontSize="sm">
-              No calendars found. Make sure you've shared your calendar with the service
-              account email in Step 4.
-            </Box>
+            <AddCalendarForm
+              onAdd={async (id) => {
+                setLoading('add');
+                setLastError(null);
+                try {
+                  const info = await recipeAPI.addGCalCalendar(id);
+                  toast('success', `Calendar "${info.summary || id}" connected and selected`);
+                  setCalendarOpen(false);
+                  await fetchStatus();
+                } catch (e: any) {
+                  setLastError(e.message || 'Failed to access calendar. Make sure you shared it with the service account in Step 4.');
+                } finally {
+                  setLoading('');
+                }
+              }}
+              loading={loading === 'add'}
+              mutedText={mutedText}
+            />
           )}
         </Box>
       )}

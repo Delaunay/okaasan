@@ -87,11 +87,35 @@ def get_status() -> dict:
 
 # ── Google API helpers ───────────────────────────────────────
 
+_ipv4_patched = False
+
+def _ensure_ipv4():
+    """Prefer IPv4 for DNS resolution.
+
+    On some networks (e.g. home NAS), IPv6 connections to Google hang for
+    ~10-30s before falling back to IPv4.  This filters getaddrinfo results
+    to prefer AF_INET, eliminating the delay.
+    """
+    global _ipv4_patched
+    if _ipv4_patched:
+        return
+    import socket
+    _orig = socket.getaddrinfo
+
+    def _prefer_ipv4(*args, **kwargs):
+        results = _orig(*args, **kwargs)
+        ipv4 = [r for r in results if r[0] == socket.AF_INET]
+        return ipv4 if ipv4 else results
+
+    socket.getaddrinfo = _prefer_ipv4
+    _ipv4_patched = True
+
+
 def _get_service():
     from google.oauth2.service_account import Credentials
-    from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
-    import httplib2
+
+    _ensure_ipv4()
 
     kp = _key_path()
     if kp.is_file():
@@ -104,8 +128,8 @@ def _get_service():
                 "Upload one through Settings or set GOOGLE_SERVICE_ACCOUNT_FILE."
             )
         credentials = Credentials.from_service_account_file(cred_path, scopes=SCOPES)
-    authorized_http = AuthorizedHttp(credentials, http=httplib2.Http(timeout=30))
-    return build("calendar", "v3", http=authorized_http, cache_discovery=False)
+
+    return build("calendar", "v3", credentials=credentials, cache_discovery=False)
 
 
 def _calendar_id() -> str:
@@ -204,6 +228,20 @@ def fetch_year_events(
     start = datetime(y, 1, 1, tzinfo=timezone.utc)
     end = datetime(y, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
     return fetch_events(start, end, calendar_id=calendar_id)
+
+
+def verify_calendar_access(calendar_id: str) -> dict:
+    """Check that the service account can read events from *calendar_id*.
+
+    Returns basic calendar metadata on success.  Raises on failure.
+    """
+    service = _get_service()
+    cal = service.calendars().get(calendarId=calendar_id).execute()
+    return {
+        "id": cal["id"],
+        "summary": cal.get("summary"),
+        "description": cal.get("description"),
+    }
 
 
 def list_calendars() -> list[dict]:

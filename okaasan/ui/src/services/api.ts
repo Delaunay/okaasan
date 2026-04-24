@@ -892,6 +892,13 @@ class RecipeAPI {
     });
   }
 
+  async addGCalCalendar(calendarId: string): Promise<any> {
+    return this.request('/gcalendar/add-calendar', {
+      method: 'POST',
+      body: JSON.stringify({ calendar_id: calendarId }),
+    });
+  }
+
   async testGCal(): Promise<{ connected: boolean; calendars?: number; events_this_week?: number; sample_events?: any[]; error?: string }> {
     return this.request('/gcalendar/test', { method: 'POST' });
   }

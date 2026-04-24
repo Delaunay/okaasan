@@ -6,11 +6,11 @@ import {
 import { useColorModeValue } from './ui/color-mode';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
-  CloudFog, CalendarDays, UtensilsCrossed, ChevronRight,
+  CloudFog, Clock,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import {
-  formatDateRangeForServer, fromDateServer,
+  formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../utils/dateUtils';
 import type { MealPlan, PlannedMeal } from '../services/type';
 
@@ -92,19 +92,27 @@ function buildWeek(): Date[] {
   return dates;
 }
 
+interface DayEvent {
+  title: string;
+  start: Date;
+  end: Date;
+  color: string;
+  source: 'local' | 'google';
+}
+
 interface DayData {
   date: Date;
   iso: string;
   weatherCode?: number;
   tempMax?: number;
   tempMin?: number;
-  events: { title: string; source: 'local' | 'google' }[];
+  events: DayEvent[];
   meals: PlannedMeal[];
 }
 
-// ── Day Summary Card ─────────────────────────────────────────
+// ── Day Column ───────────────────────────────────────────────
 
-function DaySummaryCard({ day, cardBg, border, mutedText, isToday }: {
+function DayColumn({ day, cardBg, border, mutedText, isToday }: {
   day: DayData;
   cardBg: string;
   border: string;
@@ -113,11 +121,13 @@ function DaySummaryCard({ day, cardBg, border, mutedText, isToday }: {
 }) {
   const todayBorder = isToday ? 'blue.400' : border;
   const WeatherIcon = day.weatherCode != null ? getWeatherInfo(day.weatherCode).icon : null;
-  const dayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
+  const weatherLabel = day.weatherCode != null ? getWeatherInfo(day.weatherCode).label : '';
+  const dayName = day.date.toLocaleDateString('en-US', { weekday: 'short' });
   const dateLabel = day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const mealTypeOrder: Record<string, number> = { breakfast: 0, lunch: 1, dinner: 2 };
   const sortedMeals = [...day.meals].sort((a, b) => (mealTypeOrder[a.mealType] ?? 9) - (mealTypeOrder[b.mealType] ?? 9));
+  const sortedEvents = [...day.events].sort((a, b) => a.start.getTime() - b.start.getTime());
 
   const mealTypeColor: Record<string, string> = {
     breakfast: 'yellow',
@@ -125,68 +135,117 @@ function DaySummaryCard({ day, cardBg, border, mutedText, isToday }: {
     dinner: 'purple',
   };
 
+  const MEAL_SLOTS = [
+    { type: 'breakfast', short: 'B' },
+    { type: 'lunch', short: 'L' },
+    { type: 'dinner', short: 'D' },
+  ] as const;
+
+  const mealsByType: Record<string, PlannedMeal | undefined> = {};
+  for (const m of sortedMeals) {
+    if (!mealsByType[m.mealType]) mealsByType[m.mealType] = m;
+  }
+
   return (
-    <Link to={`/day/${day.iso}`} style={{ textDecoration: 'none' }}>
+    <Link to={`/day/${day.iso}`} style={{ textDecoration: 'none', display: 'block', minWidth: 0 }}>
       <Box
         bg={cardBg}
-        p={4}
         borderRadius="lg"
         border="2px solid"
         borderColor={todayBorder}
         cursor="pointer"
         transition="all 0.15s"
-        _hover={{ boxShadow: 'md', transform: 'translateY(-1px)' }}
+        _hover={{ boxShadow: 'md', borderColor: 'blue.300' }}
+        minW={{ base: '260px', md: 'auto' }}
+        w="100%"
+        h="100%"
+        display="flex"
+        flexDirection="column"
       >
-        <Flex justify="space-between" align="center">
-          <HStack gap={4} flex={1} minW={0} flexWrap="wrap">
-            {/* Day + date */}
-            <Box minW="130px">
-              <HStack gap={2}>
-                <Text fontWeight={isToday ? 'bold' : 'semibold'} fontSize="md">
-                  {isToday ? 'Today' : dayName}
-                </Text>
-                {isToday && <Badge colorPalette="blue" variant="subtle" size="sm">Today</Badge>}
-              </HStack>
+        {/* Header */}
+        <Box p={3} pb={2} borderBottom="1px solid" borderColor={border}>
+          <HStack justify="space-between">
+            <Box>
+              <Text fontWeight={isToday ? 'bold' : 'semibold'} fontSize="md">
+                {isToday ? 'Today' : dayName}
+              </Text>
               <Text fontSize="xs" color={mutedText}>{dateLabel}</Text>
             </Box>
-
-            {/* Weather */}
-            {WeatherIcon && day.tempMax != null && day.tempMin != null && (
-              <HStack gap={2} minW="90px">
-                <WeatherIcon size={18} />
-                <Text fontSize="sm" fontWeight="medium">
-                  {Math.round(day.tempMax)}° / {Math.round(day.tempMin)}°
-                </Text>
-              </HStack>
-            )}
-
-            {/* Events */}
-            {day.events.length > 0 && (
-              <HStack gap={1}>
-                <CalendarDays size={14} />
-                <Badge colorPalette="blue" variant="subtle" size="sm">
-                  {day.events.length} event{day.events.length !== 1 ? 's' : ''}
-                </Badge>
-              </HStack>
-            )}
-
-            {/* Meals */}
-            {sortedMeals.length > 0 && (
-              <HStack gap={1} flexWrap="wrap">
-                <UtensilsCrossed size={14} />
-                {sortedMeals.map((m, i) => (
-                  <Badge key={i} colorPalette={mealTypeColor[m.mealType] || 'gray'} variant="subtle" size="sm">
-                    {m.recipeName}
-                  </Badge>
-                ))}
-              </HStack>
-            )}
+            {isToday && <Badge colorPalette="blue" variant="subtle" size="sm">Today</Badge>}
           </HStack>
+        </Box>
 
-          <Box flexShrink={0} color={mutedText}>
-            <ChevronRight size={18} />
+        {/* Weather */}
+        {WeatherIcon && day.tempMax != null && day.tempMin != null && (
+          <Box px={3} py={2} borderBottom="1px solid" borderColor={border}>
+            <HStack gap={2}>
+              <WeatherIcon size={16} />
+              <Text fontSize="sm" fontWeight="medium">
+                {Math.round(day.tempMax)}° / {Math.round(day.tempMin)}°
+              </Text>
+            </HStack>
+            <Text fontSize="xs" color={mutedText}>{weatherLabel}</Text>
           </Box>
-        </Flex>
+        )}
+
+        {/* Meals — fixed 3-slot grid, only shown when there are meals */}
+        {sortedMeals.length > 0 && (
+          <Box px={3} py={2} borderBottom="1px solid" borderColor={border}>
+            <VStack align="stretch" gap={1}>
+              {MEAL_SLOTS.map(slot => {
+                const meal = mealsByType[slot.type];
+                return (
+                  <HStack key={slot.type} gap={2} h="22px">
+                    <Badge
+                      colorPalette={meal ? mealTypeColor[slot.type] : 'gray'}
+                      variant="subtle"
+                      size="sm"
+                      flexShrink={0}
+                      minW="16px"
+                      textAlign="center"
+                      opacity={meal ? 1 : 0.3}
+                    >
+                      {slot.short}
+                    </Badge>
+                    {meal ? (
+                      <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                        {meal.recipeName}
+                      </Text>
+                    ) : (
+                      <Text fontSize="xs" color={mutedText} opacity={0.4}>—</Text>
+                    )}
+                  </HStack>
+                );
+              })}
+            </VStack>
+          </Box>
+        )}
+
+        {/* Events */}
+        <Box p={3} flex={1}>
+          {sortedEvents.length > 0 ? (
+            <VStack align="stretch" gap={1}>
+              {sortedEvents.map((evt, i) => (
+                <HStack key={i} gap={2}>
+                  <Box w="3px" alignSelf="stretch" borderRadius="full" bg={evt.color} flexShrink={0} />
+                  <Box minW={0} flex={1}>
+                    <Text fontSize="xs" fontWeight="medium" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                      {evt.title}
+                    </Text>
+                    <HStack gap={1}>
+                      <Clock size={10} />
+                      <Text fontSize="xs" color={mutedText}>
+                        {formatTimeDisplay(evt.start)}
+                      </Text>
+                    </HStack>
+                  </Box>
+                </HStack>
+              ))}
+            </VStack>
+          ) : (
+            <Text fontSize="xs" color={mutedText} textAlign="center" py={1}>No events</Text>
+          )}
+        </Box>
       </Box>
     </Link>
   );
@@ -245,7 +304,7 @@ const Home = () => {
       }
     })();
 
-    // Fetch local events for the 7-day range
+    // Fetch local events for the full 7-day range
     recipeAPI.getEvents(weekStart, weekEnd)
       .then(localEvents => {
         setDays(prev => prev.map(d => {
@@ -255,15 +314,21 @@ const Home = () => {
             ...d,
             events: [
               ...d.events,
-              ...matching.map(e => ({ title: e.title, source: 'local' as const })),
+              ...matching.map(e => ({
+                title: e.title,
+                start: fromDateServer(e.datetime_start),
+                end: fromDateServer(e.datetime_end),
+                color: e.color || '#3182CE',
+                source: 'local' as const,
+              })),
             ],
           };
         }));
       })
       .catch(() => {});
 
-    // Fetch Google Calendar events
-    recipeAPI.getGCalWeekEvents()
+    // Fetch Google Calendar events for the full 7-day range
+    recipeAPI.getGCalEventsRange(weekStart, weekEnd)
       .then(gcalEvents => {
         setDays(prev => prev.map(d => {
           const dayStr = d.date.toDateString();
@@ -275,7 +340,13 @@ const Home = () => {
             ...d,
             events: [
               ...d.events,
-              ...matching.map((e: any) => ({ title: e.title, source: 'google' as const })),
+              ...matching.map((e: any) => ({
+                title: e.title,
+                start: new Date(e.datetime_start),
+                end: new Date(e.datetime_end),
+                color: e.color || '#4285F4',
+                source: 'google' as const,
+              })),
             ],
           };
         }));
@@ -300,7 +371,7 @@ const Home = () => {
   const todayStr = today.toDateString();
 
   return (
-    <Box maxW="900px" mx="auto" p={4}>
+    <Box mx="auto" p={4}>
       <Box mb={6}>
         <Heading size="xl" mb={1}>{dayName}</Heading>
         <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
@@ -312,30 +383,43 @@ const Home = () => {
           <Text color={mutedText}>Use the sidebar to navigate.</Text>
         </Box>
       ) : (
-        <VStack align="stretch" gap={3}>
+        <>
           {weatherError === 'no-location' && (
-            <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={border}>
+            <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={border} mb={4}>
               <HStack gap={2}>
                 <Cloud size={18} />
                 <Text fontSize="sm" color={mutedText}>No weather location set.</Text>
                 <Link to="/settings" style={{ textDecoration: 'none' }}>
-                  <Text fontSize="sm" color="blue.400" fontWeight="medium">Set location in Settings →</Text>
+                  <Text fontSize="sm" color="blue.400" fontWeight="medium">Set location in Settings</Text>
                 </Link>
               </HStack>
             </Box>
           )}
 
-          {days.map(d => (
-            <DaySummaryCard
-              key={d.iso}
-              day={d}
-              cardBg={cardBg}
-              border={border}
-              mutedText={mutedText}
-              isToday={d.date.toDateString() === todayStr}
-            />
-          ))}
-        </VStack>
+          {/* Horizontal scroll on mobile, flex columns on desktop */}
+          <Flex
+            gap={3}
+            overflowX={{ base: 'auto', lg: 'visible' }}
+            flexWrap={{ base: 'nowrap', lg: 'nowrap' }}
+            pb={{ base: 3, lg: 0 }}
+          >
+            {days.map(d => (
+              <Box
+                key={d.iso}
+                flex={{ base: '0 0 260px', lg: '1 1 0%' }}
+                minW={{ base: '260px', lg: 0 }}
+              >
+                <DayColumn
+                  day={d}
+                  cardBg={cardBg}
+                  border={border}
+                  mutedText={mutedText}
+                  isToday={d.date.toDateString() === todayStr}
+                />
+              </Box>
+            ))}
+          </Flex>
+        </>
       )}
     </Box>
   );

@@ -935,6 +935,10 @@ class RecipeAPI {
     return this.request(`/gcalendar/events/week${params}`);
   }
 
+  async getGCalEventsRange(start: string, end: string): Promise<any[]> {
+    return this.request(`/gcalendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+  }
+
   // Software update (returns raw Response for SSE streaming)
   async triggerUpdate(): Promise<Response> {
     const url = `${API_BASE_URL}/update`;

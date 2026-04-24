@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Box, Heading, Text, VStack, HStack, Flex, Badge,
+  Box, Heading, Text, VStack, HStack, Flex, Badge, Button,
 } from '@chakra-ui/react';
 import { useColorModeValue } from './ui/color-mode';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
-  CloudFog, Clock,
+  CloudFog, Clock, ExternalLink, MapPin, X, Users,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import {
@@ -92,12 +92,16 @@ function buildWeek(): Date[] {
   return dates;
 }
 
-interface DayEvent {
+export interface DayEvent {
   title: string;
   start: Date;
   end: Date;
   color: string;
   source: 'local' | 'google';
+  description?: string;
+  link?: string;
+  location?: string;
+  attendees?: string[];
 }
 
 interface DayData {
@@ -110,14 +114,119 @@ interface DayData {
   meals: PlannedMeal[];
 }
 
+// ── Event Detail Modal ───────────────────────────────────────
+
+export function EventModal({ event, onClose }: { event: DayEvent; onClose: () => void }) {
+  const border = useColorModeValue('#e2e8f0', '#2d3748');
+  const mutedText = useColorModeValue('#718096', '#a0aec0');
+
+  const dateLabel = event.start.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
+  const timeRange = `${formatTimeDisplay(event.start)} — ${formatTimeDisplay(event.end)}`;
+
+  return (
+    <Box
+      position="fixed"
+      top={0} left={0} right={0} bottom={0}
+      bg="rgba(0, 0, 0, 0.6)"
+      zIndex={1000}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <Box
+        bg="bg"
+        borderRadius="lg"
+        p={5}
+        maxW="480px"
+        w="90%"
+        maxH="80vh"
+        overflowY="auto"
+        boxShadow="xl"
+      >
+        <Flex justify="space-between" align="start" mb={4}>
+          <HStack gap={2} align="start">
+            <Box w="4px" h="24px" borderRadius="full" bg={event.color} flexShrink={0} mt={1} />
+            <Heading size="md">{event.title}</Heading>
+          </HStack>
+          <Button variant="ghost" onClick={onClose} size="sm" p={0} minW={0}>
+            <X size={18} />
+          </Button>
+        </Flex>
+
+        <VStack align="stretch" gap={3}>
+          {/* Time */}
+          <HStack gap={2}>
+            <Clock size={16} color={mutedText} />
+            <Box>
+              <Text fontSize="sm">{dateLabel}</Text>
+              <Text fontSize="sm" fontWeight="medium">{timeRange}</Text>
+            </Box>
+          </HStack>
+
+          {/* Location */}
+          {event.location && (
+            <HStack gap={2} align="start">
+              <MapPin size={16} color={mutedText} style={{ flexShrink: 0, marginTop: 2 }} />
+              <Text fontSize="sm">{event.location}</Text>
+            </HStack>
+          )}
+
+          {/* Attendees */}
+          {event.attendees && event.attendees.length > 0 && (
+            <HStack gap={2} align="start">
+              <Users size={16} color={mutedText} style={{ flexShrink: 0, marginTop: 2 }} />
+              <Box>
+                {event.attendees.map((a, i) => (
+                  <Text key={i} fontSize="xs" color={mutedText}>{a}</Text>
+                ))}
+              </Box>
+            </HStack>
+          )}
+
+          {/* Description */}
+          {event.description && (
+            <Box p={3} borderRadius="md" border="1px solid" borderColor={border}>
+              <Text fontSize="sm" whiteSpace="pre-wrap">{event.description}</Text>
+            </Box>
+          )}
+
+          {/* Source badge + link */}
+          <Flex justify="space-between" align="center" pt={2}>
+            <Badge
+              colorPalette={event.source === 'google' ? 'blue' : 'gray'}
+              variant="subtle"
+              size="sm"
+            >
+              {event.source === 'google' ? 'Google Calendar' : 'Local'}
+            </Badge>
+
+            {event.link && (
+              <a href={event.link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                <Button size="sm" variant="outline" colorPalette="blue">
+                  <ExternalLink size={14} />
+                  <Box ml={1}>Open in Google</Box>
+                </Button>
+              </a>
+            )}
+          </Flex>
+        </VStack>
+      </Box>
+    </Box>
+  );
+}
+
 // ── Day Column ───────────────────────────────────────────────
 
-function DayColumn({ day, cardBg, border, mutedText, isToday }: {
+function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
   day: DayData;
   cardBg: string;
   border: string;
   mutedText: string;
   isToday: boolean;
+  onEventClick: (evt: DayEvent) => void;
 }) {
   const todayBorder = isToday ? 'blue.400' : border;
   const WeatherIcon = day.weatherCode != null ? getWeatherInfo(day.weatherCode).icon : null;
@@ -226,7 +335,16 @@ function DayColumn({ day, cardBg, border, mutedText, isToday }: {
           {sortedEvents.length > 0 ? (
             <VStack align="stretch" gap={1}>
               {sortedEvents.map((evt, i) => (
-                <HStack key={i} gap={2}>
+                <HStack
+                  key={i}
+                  gap={2}
+                  px={1}
+                  py={0.5}
+                  borderRadius="md"
+                  cursor="pointer"
+                  _hover={{ bg: 'bg.muted' }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEventClick(evt); }}
+                >
                   <Box w="3px" alignSelf="stretch" borderRadius="full" bg={evt.color} flexShrink={0} />
                   <Box minW={0} flex={1}>
                     <Text fontSize="xs" fontWeight="medium" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
@@ -239,6 +357,9 @@ function DayColumn({ day, cardBg, border, mutedText, isToday }: {
                       </Text>
                     </HStack>
                   </Box>
+                  {evt.source === 'google' && (
+                    <ExternalLink size={10} color={mutedText} style={{ flexShrink: 0 }} />
+                  )}
                 </HStack>
               ))}
             </VStack>
@@ -261,6 +382,7 @@ const Home = () => {
 
   const [days, setDays] = useState<DayData[]>([]);
   const [weatherError, setWeatherError] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
 
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
@@ -320,6 +442,7 @@ const Home = () => {
                 end: fromDateServer(e.datetime_end),
                 color: e.color || '#3182CE',
                 source: 'local' as const,
+                description: e.description,
               })),
             ],
           };
@@ -346,6 +469,10 @@ const Home = () => {
                 end: new Date(e.datetime_end),
                 color: e.color || '#4285F4',
                 source: 'google' as const,
+                description: e.description,
+                link: e.link,
+                location: e.location,
+                attendees: e.attendees,
               })),
             ],
           };
@@ -415,11 +542,16 @@ const Home = () => {
                   border={border}
                   mutedText={mutedText}
                   isToday={d.date.toDateString() === todayStr}
+                  onEventClick={setSelectedEvent}
                 />
               </Box>
             ))}
           </Flex>
         </>
+      )}
+
+      {selectedEvent && (
+        <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
     </Box>
   );

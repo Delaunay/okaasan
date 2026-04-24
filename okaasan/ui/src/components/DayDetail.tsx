@@ -7,12 +7,13 @@ import { useColorModeValue } from './ui/color-mode';
 import {
   Cloud, Wind, Thermometer, Droplets, Sunrise, Sunset,
   CalendarDays, UtensilsCrossed, Clock, ChevronLeft, ChevronRight, ArrowLeft,
+  ExternalLink,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../utils/dateUtils';
-import { DAYS, getWeatherInfo, type WeatherData } from './Home';
+import { DAYS, getWeatherInfo, type WeatherData, type DayEvent, EventModal } from './Home';
 import type { Event, MealPlan, PlannedMeal } from '../services/type';
 
 function toISODate(d: Date): string {
@@ -141,6 +142,7 @@ function ScheduleSection({ date, cardBg, border, mutedText }: {
 }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [gcalEvents, setGcalEvents] = useState<any[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
 
   useEffect(() => {
     const startOfDay = formatDateRangeForServer(date, false);
@@ -177,6 +179,9 @@ function ScheduleSection({ date, cardBg, border, mutedText }: {
       color: e.color || '#4285F4',
       source: 'google' as const,
       description: e.description,
+      link: e.link,
+      location: e.location,
+      attendees: e.attendees,
     })),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -193,16 +198,29 @@ function ScheduleSection({ date, cardBg, border, mutedText }: {
       ) : (
         <VStack align="stretch" gap={2}>
           {allEvents.map((evt, i) => (
-            <HStack key={i} gap={3} p={2} borderRadius="md" border="1px solid" borderColor={border}>
+            <HStack
+              key={i}
+              gap={3}
+              p={2}
+              borderRadius="md"
+              border="1px solid"
+              borderColor={border}
+              cursor="pointer"
+              _hover={{ bg: 'bg.muted' }}
+              onClick={() => setSelectedEvent(evt)}
+            >
               <Box w="4px" alignSelf="stretch" borderRadius="full" bg={evt.color} flexShrink={0} />
               <Box flex={1} minW={0}>
                 <HStack justify="space-between">
                   <Text fontSize="sm" fontWeight="medium" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
                     {evt.title}
                   </Text>
-                  {evt.source === 'google' && (
-                    <Badge colorPalette="blue" variant="subtle" size="sm" flexShrink={0}>Google</Badge>
-                  )}
+                  <HStack gap={1} flexShrink={0}>
+                    {evt.source === 'google' && (
+                      <Badge colorPalette="blue" variant="subtle" size="sm">Google</Badge>
+                    )}
+                    {evt.link && <ExternalLink size={12} color={mutedText} />}
+                  </HStack>
                 </HStack>
                 <HStack gap={1}>
                   <Clock size={12} />
@@ -214,6 +232,10 @@ function ScheduleSection({ date, cardBg, border, mutedText }: {
             </HStack>
           ))}
         </VStack>
+      )}
+
+      {selectedEvent && (
+        <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
     </Box>
   );

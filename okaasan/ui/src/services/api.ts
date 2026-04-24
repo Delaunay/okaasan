@@ -905,6 +905,23 @@ class RecipeAPI {
     return this.request(`/weather/geocode?name=${encodeURIComponent(name)}`);
   }
 
+  async getWeatherLocation(): Promise<{ lat: number; lon: number; name: string } | null> {
+    const data: any = await this.request('/weather/location');
+    return data && data.lat != null ? data : null;
+  }
+
+  async saveWeatherLocation(lat: number, lon: number, name: string): Promise<any> {
+    return this.request('/weather/location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, name }),
+    });
+  }
+
+  async deleteWeatherLocation(): Promise<any> {
+    return this.request('/weather/location', { method: 'DELETE' });
+  }
+
   // Google Calendar events for today
   async getGCalWeekEvents(date?: string): Promise<any[]> {
     const params = date ? `?date=${date}` : '';

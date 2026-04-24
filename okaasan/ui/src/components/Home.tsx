@@ -1,23 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Box, Heading, Text, VStack, HStack, Flex, Badge, Card,
+  Box, Heading, Text, VStack, HStack, Flex, Badge,
 } from '@chakra-ui/react';
 import { useColorModeValue } from './ui/color-mode';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
-  CloudFog, Wind, Thermometer, Droplets, Sunrise, Sunset,
-  CalendarDays, UtensilsCrossed, Clock,
+  CloudFog, CalendarDays, UtensilsCrossed, ChevronRight,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import {
-  formatDateRangeForServer, fromDateServer, formatTimeDisplay,
+  formatDateRangeForServer, fromDateServer,
 } from '../utils/dateUtils';
-import type { Event, MealPlan, PlannedMeal } from '../services/type';
+import type { MealPlan, PlannedMeal } from '../services/type';
 
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const WMO_CODES: Record<number, { label: string; icon: typeof Sun }> = {
+export const WMO_CODES: Record<number, { label: string; icon: typeof Sun }> = {
   0: { label: 'Clear sky', icon: Sun },
   1: { label: 'Mainly clear', icon: Sun },
   2: { label: 'Partly cloudy', icon: Cloud },
@@ -43,11 +42,11 @@ const WMO_CODES: Record<number, { label: string; icon: typeof Sun }> = {
   99: { label: 'Thunderstorm + heavy hail', icon: CloudLightning },
 };
 
-function getWeatherInfo(code: number) {
+export function getWeatherInfo(code: number) {
   return WMO_CODES[code] || { label: `Code ${code}`, icon: Cloud };
 }
 
-interface WeatherData {
+export interface WeatherData {
   current?: {
     temperature_2m: number;
     apparent_temperature: number;
@@ -56,6 +55,7 @@ interface WeatherData {
     wind_speed_10m: number;
   };
   daily?: {
+    time: string[];
     temperature_2m_max: number[];
     temperature_2m_min: number[];
     weather_code: number[];
@@ -72,278 +72,52 @@ interface WeatherData {
   current_units?: Record<string, string>;
 }
 
-const LOCATION_KEY = 'okaasan_weather_location';
+// ── Helpers ──────────────────────────────────────────────────
 
-function getSavedLocation(): { lat: number; lon: number; name: string } | null {
-  try {
-    const saved = localStorage.getItem(LOCATION_KEY);
-    return saved ? JSON.parse(saved) : null;
-  } catch { return null; }
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function saveLocation(lat: number, lon: number, name: string) {
-  localStorage.setItem(LOCATION_KEY, JSON.stringify({ lat, lon, name }));
-}
-
-// ── Weather Card ──────────────────────────────────────────────
-
-function WeatherCard({ cardBg, border, mutedText }: { cardBg: string; border: string; mutedText: string }) {
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [locationName, setLocationName] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const fetchWeather = async () => {
-      const saved = getSavedLocation();
-      if (saved) {
-        setLocationName(saved.name);
-        try {
-          const data = await recipeAPI.getWeatherForecast(saved.lat, saved.lon, 1);
-          setWeather(data);
-        } catch { setError('Could not fetch weather'); }
-        return;
-      }
-
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            const { latitude, longitude } = pos.coords;
-            try {
-              const locations = await recipeAPI.geocode(`${latitude},${longitude}`);
-              const name = locations?.[0]?.name || 'Your location';
-              saveLocation(latitude, longitude, name);
-              setLocationName(name);
-            } catch { setLocationName('Your location'); }
-            try {
-              const data = await recipeAPI.getWeatherForecast(latitude, longitude, 1);
-              setWeather(data);
-            } catch { setError('Could not fetch weather'); }
-          },
-          () => setError('no-location'),
-          { timeout: 5000 }
-        );
-      } else {
-        setError('no-location');
-      }
-    };
-    fetchWeather();
-  }, []);
-
-  if (error) {
-    return (
-      <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
-        <HStack gap={2} mb={2}><Cloud size={20} /><Heading size="md">Weather</Heading></HStack>
-        {error === 'no-location' ? (
-          <HStack gap={2}>
-            <Text fontSize="sm" color={mutedText}>No location set.</Text>
-            <Link to="/settings" style={{ textDecoration: 'none' }}>
-              <Text fontSize="sm" color="blue.400" fontWeight="medium" cursor="pointer">Set location in Settings →</Text>
-            </Link>
-          </HStack>
-        ) : (
-          <Text fontSize="sm" color={mutedText}>{error}</Text>
-        )}
-      </Box>
-    );
+function buildWeek(): Date[] {
+  const dates: Date[] = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    dates.push(d);
   }
-
-  if (!weather?.current) {
-    return (
-      <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
-        <HStack gap={2} mb={2}><Cloud size={20} /><Heading size="md">Weather</Heading></HStack>
-        <Text fontSize="sm" color={mutedText}>Loading...</Text>
-      </Box>
-    );
-  }
-
-  const { current, daily, hourly } = weather;
-  const info = getWeatherInfo(current.weather_code);
-  const Icon = info.icon;
-
-  const now = new Date();
-  const currentHour = now.getHours();
-
-  const upcomingHours = hourly?.time
-    ?.map((t, i) => ({ time: t, temp: hourly.temperature_2m[i], code: hourly.weather_code[i], precip: hourly.precipitation_probability[i] }))
-    .filter(h => {
-      const hour = new Date(h.time).getHours();
-      return hour >= currentHour && hour <= 23;
-    })
-    .filter((_, i) => i % 2 === 0)
-    .slice(0, 6) || [];
-
-  return (
-    <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
-      <HStack justify="space-between" mb={3}>
-        <HStack gap={2}>
-          <Icon size={20} />
-          <Heading size="md">Weather</Heading>
-          {locationName && <Text fontSize="sm" color={mutedText}>— {locationName}</Text>}
-        </HStack>
-      </HStack>
-
-      <Flex gap={6} flexWrap="wrap" mb={4}>
-        <HStack gap={2}>
-          <Thermometer size={16} />
-          <Text fontSize="2xl" fontWeight="bold">{Math.round(current.temperature_2m)}°C</Text>
-        </HStack>
-        <VStack align="start" gap={0}>
-          <Text fontSize="sm" fontWeight="medium">{info.label}</Text>
-          <Text fontSize="xs" color={mutedText}>Feels like {Math.round(current.apparent_temperature)}°C</Text>
-        </VStack>
-        <HStack gap={3}>
-          <HStack gap={1}><Wind size={14} /><Text fontSize="xs">{current.wind_speed_10m} km/h</Text></HStack>
-          <HStack gap={1}><Droplets size={14} /><Text fontSize="xs">{current.relative_humidity_2m}%</Text></HStack>
-        </HStack>
-      </Flex>
-
-      {daily && (
-        <HStack gap={4} mb={3} fontSize="xs" color={mutedText}>
-          <HStack gap={1}><Sunrise size={14} /><Text>{new Date(daily.sunrise[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text></HStack>
-          <HStack gap={1}><Sunset size={14} /><Text>{new Date(daily.sunset[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text></HStack>
-          <Text>High {Math.round(daily.temperature_2m_max[0])}° / Low {Math.round(daily.temperature_2m_min[0])}°</Text>
-        </HStack>
-      )}
-
-      {upcomingHours.length > 0 && (
-        <Flex gap={2} overflowX="auto">
-          {upcomingHours.map((h, i) => {
-            const hInfo = getWeatherInfo(h.code);
-            const HIcon = hInfo.icon;
-            return (
-              <VStack key={i} gap={0} minW="50px" align="center" p={1}>
-                <Text fontSize="xs" color={mutedText}>{new Date(h.time).getHours()}:00</Text>
-                <HIcon size={14} />
-                <Text fontSize="xs" fontWeight="medium">{Math.round(h.temp)}°</Text>
-                {h.precip > 0 && <Text fontSize="xs" color="blue.400">{h.precip}%</Text>}
-              </VStack>
-            );
-          })}
-        </Flex>
-      )}
-    </Box>
-  );
+  return dates;
 }
 
-// ── Schedule Card ─────────────────────────────────────────────
-
-function ScheduleCard({ cardBg, border, mutedText }: { cardBg: string; border: string; mutedText: string }) {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [gcalEvents, setGcalEvents] = useState<any[]>([]);
-
-  useEffect(() => {
-    const today = new Date();
-    const startOfDay = formatDateRangeForServer(today, false);
-    const endOfDay = formatDateRangeForServer(today, true);
-
-    recipeAPI.getEvents(startOfDay, endOfDay)
-      .then(setEvents)
-      .catch(() => {});
-
-    recipeAPI.getGCalWeekEvents()
-      .then(evts => {
-        const todayStr = today.toDateString();
-        const todayEvents = evts.filter((e: any) => {
-          const start = e.datetime_start;
-          if (!start) return false;
-          return new Date(start).toDateString() === todayStr;
-        });
-        setGcalEvents(todayEvents);
-      })
-      .catch(() => {});
-  }, []);
-
-  const allEvents = [
-    ...events.map(e => ({
-      title: e.title,
-      start: fromDateServer(e.datetime_start),
-      end: fromDateServer(e.datetime_end),
-      color: e.color || '#3182CE',
-      source: 'local' as const,
-      description: e.description,
-    })),
-    ...gcalEvents.map(e => ({
-      title: e.title,
-      start: new Date(e.datetime_start),
-      end: new Date(e.datetime_end),
-      color: e.color || '#4285F4',
-      source: 'google' as const,
-      description: e.description,
-    })),
-  ].sort((a, b) => a.start.getTime() - b.start.getTime());
-
-  return (
-    <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
-      <HStack gap={2} mb={3}>
-        <CalendarDays size={20} />
-        <Heading size="md">Today's Schedule</Heading>
-        <Badge colorPalette="blue" variant="subtle" size="sm">{allEvents.length}</Badge>
-      </HStack>
-
-      {allEvents.length === 0 ? (
-        <Text fontSize="sm" color={mutedText}>No events scheduled for today.</Text>
-      ) : (
-        <VStack align="stretch" gap={2}>
-          {allEvents.map((evt, i) => (
-            <HStack key={i} gap={3} p={2} borderRadius="md" border="1px solid" borderColor={border}>
-              <Box w="4px" alignSelf="stretch" borderRadius="full" bg={evt.color} flexShrink={0} />
-              <Box flex={1} minW={0}>
-                <HStack justify="space-between">
-                  <Text fontSize="sm" fontWeight="medium" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                    {evt.title}
-                  </Text>
-                  {evt.source === 'google' && (
-                    <Badge colorPalette="blue" variant="subtle" size="sm" flexShrink={0}>Google</Badge>
-                  )}
-                </HStack>
-                <HStack gap={1}>
-                  <Clock size={12} />
-                  <Text fontSize="xs" color={mutedText}>
-                    {formatTimeDisplay(evt.start)} — {formatTimeDisplay(evt.end)}
-                  </Text>
-                </HStack>
-              </Box>
-            </HStack>
-          ))}
-        </VStack>
-      )}
-    </Box>
-  );
+interface DayData {
+  date: Date;
+  iso: string;
+  weatherCode?: number;
+  tempMax?: number;
+  tempMin?: number;
+  events: { title: string; source: 'local' | 'google' }[];
+  meals: PlannedMeal[];
 }
 
-// ── Meals Card ────────────────────────────────────────────────
+// ── Day Summary Card ─────────────────────────────────────────
 
-function MealsCard({ cardBg, border, mutedText }: { cardBg: string; border: string; mutedText: string }) {
-  const [todayMeals, setTodayMeals] = useState<PlannedMeal[]>([]);
-  const [planName, setPlanName] = useState('');
-  const accentBg = useColorModeValue('orange.50', 'orange.900');
+function DaySummaryCard({ day, cardBg, border, mutedText, isToday }: {
+  day: DayData;
+  cardBg: string;
+  border: string;
+  mutedText: string;
+  isToday: boolean;
+}) {
+  const todayBorder = isToday ? 'blue.400' : border;
+  const WeatherIcon = day.weatherCode != null ? getWeatherInfo(day.weatherCode).icon : null;
+  const dayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
+  const dateLabel = day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-  useEffect(() => {
-    const loadTodayMeals = async () => {
-      try {
-        const names = await recipeAPI.getMealPlanNames();
-        if (names.length === 0) return;
-
-        const latestName = names[names.length - 1];
-        const plan: MealPlan = await recipeAPI.loadMealPlan(latestName);
-        setPlanName(latestName);
-
-        const today = DAYS[new Date().getDay()];
-        const meals = plan.plannedMeals?.filter(m => m.day === today) || [];
-        setTodayMeals(meals);
-      } catch { /* no plan yet */ }
-    };
-    loadTodayMeals();
-  }, []);
-
-  const mealTypeOrder = { breakfast: 0, lunch: 1, dinner: 2 };
-  const sorted = [...todayMeals].sort((a, b) => mealTypeOrder[a.mealType] - mealTypeOrder[b.mealType]);
-
-  const mealTypeLabel: Record<string, string> = {
-    breakfast: 'Breakfast',
-    lunch: 'Lunch',
-    dinner: 'Dinner',
-  };
+  const mealTypeOrder: Record<string, number> = { breakfast: 0, lunch: 1, dinner: 2 };
+  const sortedMeals = [...day.meals].sort((a, b) => (mealTypeOrder[a.mealType] ?? 9) - (mealTypeOrder[b.mealType] ?? 9));
 
   const mealTypeColor: Record<string, string> = {
     breakfast: 'yellow',
@@ -352,46 +126,69 @@ function MealsCard({ cardBg, border, mutedText }: { cardBg: string; border: stri
   };
 
   return (
-    <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
-      <HStack gap={2} mb={3} justify="space-between">
-        <HStack gap={2}>
-          <UtensilsCrossed size={20} />
-          <Heading size="md">Today's Menu</Heading>
-        </HStack>
-        {planName && (
-          <Link to="/planning" style={{ textDecoration: 'none' }}>
-            <Badge colorPalette="orange" variant="subtle" size="sm" cursor="pointer">{planName}</Badge>
-          </Link>
-        )}
-      </HStack>
-
-      {sorted.length === 0 ? (
-        <VStack gap={2} align="stretch">
-          <Text fontSize="sm" color={mutedText}>No meals planned for today.</Text>
-          <Link to="/planning" style={{ textDecoration: 'none' }}>
-            <Text fontSize="sm" color="orange.500" fontWeight="medium" _hover={{ textDecoration: 'underline' }}>
-              Open Meal Planner →
-            </Text>
-          </Link>
-        </VStack>
-      ) : (
-        <VStack align="stretch" gap={2}>
-          {sorted.map((meal, i) => (
-            <Link key={i} to={`/recipes/${meal.recipeId}`} style={{ textDecoration: 'none' }}>
-              <HStack gap={3} p={3} borderRadius="md" bg={accentBg} transition="all 0.15s" _hover={{ opacity: 0.8 }}>
-                <Badge colorPalette={mealTypeColor[meal.mealType]} variant="subtle" size="sm" minW="70px" textAlign="center">
-                  {mealTypeLabel[meal.mealType]}
-                </Badge>
-                <Box flex={1}>
-                  <Text fontSize="sm" fontWeight="medium">{meal.recipeName}</Text>
-                  <Text fontSize="xs" color={mutedText}>{meal.portions} portion{meal.portions !== 1 ? 's' : ''}</Text>
-                </Box>
+    <Link to={`/day/${day.iso}`} style={{ textDecoration: 'none' }}>
+      <Box
+        bg={cardBg}
+        p={4}
+        borderRadius="lg"
+        border="2px solid"
+        borderColor={todayBorder}
+        cursor="pointer"
+        transition="all 0.15s"
+        _hover={{ boxShadow: 'md', transform: 'translateY(-1px)' }}
+      >
+        <Flex justify="space-between" align="center">
+          <HStack gap={4} flex={1} minW={0} flexWrap="wrap">
+            {/* Day + date */}
+            <Box minW="130px">
+              <HStack gap={2}>
+                <Text fontWeight={isToday ? 'bold' : 'semibold'} fontSize="md">
+                  {isToday ? 'Today' : dayName}
+                </Text>
+                {isToday && <Badge colorPalette="blue" variant="subtle" size="sm">Today</Badge>}
               </HStack>
-            </Link>
-          ))}
-        </VStack>
-      )}
-    </Box>
+              <Text fontSize="xs" color={mutedText}>{dateLabel}</Text>
+            </Box>
+
+            {/* Weather */}
+            {WeatherIcon && day.tempMax != null && day.tempMin != null && (
+              <HStack gap={2} minW="90px">
+                <WeatherIcon size={18} />
+                <Text fontSize="sm" fontWeight="medium">
+                  {Math.round(day.tempMax)}° / {Math.round(day.tempMin)}°
+                </Text>
+              </HStack>
+            )}
+
+            {/* Events */}
+            {day.events.length > 0 && (
+              <HStack gap={1}>
+                <CalendarDays size={14} />
+                <Badge colorPalette="blue" variant="subtle" size="sm">
+                  {day.events.length} event{day.events.length !== 1 ? 's' : ''}
+                </Badge>
+              </HStack>
+            )}
+
+            {/* Meals */}
+            {sortedMeals.length > 0 && (
+              <HStack gap={1} flexWrap="wrap">
+                <UtensilsCrossed size={14} />
+                {sortedMeals.map((m, i) => (
+                  <Badge key={i} colorPalette={mealTypeColor[m.mealType] || 'gray'} variant="subtle" size="sm">
+                    {m.recipeName}
+                  </Badge>
+                ))}
+              </HStack>
+            )}
+          </HStack>
+
+          <Box flexShrink={0} color={mutedText}>
+            <ChevronRight size={18} />
+          </Box>
+        </Flex>
+      </Box>
+    </Link>
   );
 }
 
@@ -403,6 +200,9 @@ const Home = () => {
   const mutedText = useColorModeValue('#718096', '#a0aec0');
   const _static = isStaticMode();
 
+  const [days, setDays] = useState<DayData[]>([]);
+  const [weatherError, setWeatherError] = useState('');
+
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -411,6 +211,94 @@ const Home = () => {
     document.title = '(O)KaaSan - Home';
   }, []);
 
+  useEffect(() => {
+    if (_static) return;
+
+    const week = buildWeek();
+    const initialDays: DayData[] = week.map(d => ({
+      date: d,
+      iso: toISODate(d),
+      events: [],
+      meals: [],
+    }));
+    setDays(initialDays);
+
+    const weekStart = formatDateRangeForServer(week[0], false);
+    const weekEnd = formatDateRangeForServer(week[6], true);
+
+    // Fetch weather
+    (async () => {
+      try {
+        const loc = await recipeAPI.getWeatherLocation();
+        if (!loc) { setWeatherError('no-location'); return; }
+        const weather: WeatherData = await recipeAPI.getWeatherForecast(loc.lat, loc.lon, 7);
+        if (weather.daily) {
+          setDays(prev => prev.map((d, i) => ({
+            ...d,
+            weatherCode: weather.daily!.weather_code[i],
+            tempMax: weather.daily!.temperature_2m_max[i],
+            tempMin: weather.daily!.temperature_2m_min[i],
+          })));
+        }
+      } catch {
+        setWeatherError('error');
+      }
+    })();
+
+    // Fetch local events for the 7-day range
+    recipeAPI.getEvents(weekStart, weekEnd)
+      .then(localEvents => {
+        setDays(prev => prev.map(d => {
+          const dayStr = d.date.toDateString();
+          const matching = localEvents.filter(e => fromDateServer(e.datetime_start).toDateString() === dayStr);
+          return {
+            ...d,
+            events: [
+              ...d.events,
+              ...matching.map(e => ({ title: e.title, source: 'local' as const })),
+            ],
+          };
+        }));
+      })
+      .catch(() => {});
+
+    // Fetch Google Calendar events
+    recipeAPI.getGCalWeekEvents()
+      .then(gcalEvents => {
+        setDays(prev => prev.map(d => {
+          const dayStr = d.date.toDateString();
+          const matching = gcalEvents.filter((e: any) => {
+            const start = e.datetime_start;
+            return start && new Date(start).toDateString() === dayStr;
+          });
+          return {
+            ...d,
+            events: [
+              ...d.events,
+              ...matching.map((e: any) => ({ title: e.title, source: 'google' as const })),
+            ],
+          };
+        }));
+      })
+      .catch(() => {});
+
+    // Fetch meal plan
+    (async () => {
+      try {
+        const names = await recipeAPI.getMealPlanNames();
+        if (names.length === 0) return;
+        const plan: MealPlan = await recipeAPI.loadMealPlan(names[names.length - 1]);
+        setDays(prev => prev.map(d => {
+          const dayOfWeek = DAYS[d.date.getDay()];
+          const meals = plan.plannedMeals?.filter(m => m.day === dayOfWeek) || [];
+          return { ...d, meals };
+        }));
+      } catch { /* no plan */ }
+    })();
+  }, [_static]);
+
+  const todayStr = today.toDateString();
+
   return (
     <Box maxW="900px" mx="auto" p={4}>
       <Box mb={6}>
@@ -418,18 +306,37 @@ const Home = () => {
         <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
       </Box>
 
-      <VStack align="stretch" gap={4}>
-        {!_static && <WeatherCard cardBg={cardBg} border={border} mutedText={mutedText} />}
-        {!_static && <ScheduleCard cardBg={cardBg} border={border} mutedText={mutedText} />}
-        {!_static && <MealsCard cardBg={cardBg} border={border} mutedText={mutedText} />}
+      {_static ? (
+        <Box textAlign="center" py={8}>
+          <Heading size="lg" mb={2} color="orange.500">Welcome to (O)KaaSan</Heading>
+          <Text color={mutedText}>Use the sidebar to navigate.</Text>
+        </Box>
+      ) : (
+        <VStack align="stretch" gap={3}>
+          {weatherError === 'no-location' && (
+            <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={border}>
+              <HStack gap={2}>
+                <Cloud size={18} />
+                <Text fontSize="sm" color={mutedText}>No weather location set.</Text>
+                <Link to="/settings" style={{ textDecoration: 'none' }}>
+                  <Text fontSize="sm" color="blue.400" fontWeight="medium">Set location in Settings →</Text>
+                </Link>
+              </HStack>
+            </Box>
+          )}
 
-        {_static && (
-          <Box textAlign="center" py={8}>
-            <Heading size="lg" mb={2} color="orange.500">Welcome to (O)KaaSan</Heading>
-            <Text color={mutedText}>Use the sidebar to navigate.</Text>
-          </Box>
-        )}
-      </VStack>
+          {days.map(d => (
+            <DaySummaryCard
+              key={d.iso}
+              day={d}
+              cardBg={cardBg}
+              border={border}
+              mutedText={mutedText}
+              isToday={d.date.toDateString() === todayStr}
+            />
+          ))}
+        </VStack>
+      )}
     </Box>
   );
 };

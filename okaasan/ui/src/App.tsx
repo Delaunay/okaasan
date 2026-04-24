@@ -8,6 +8,7 @@ import { ColorModeProvider } from "@/components/ui/color-mode"
 import Layout, { sidebarSections } from './layout/Layout';
 import { isStaticMode } from './services/api';
 import Home from './components/Home';
+import DayDetail from './components/DayDetail';
 import RecipeList from './components/RecipeList';
 import RecipeDetail from './components/RecipeDetail';
 import CreateRecipe from './components/CreateRecipe';
@@ -85,6 +86,7 @@ function App() {
                 })}
 
                 {/* Individual pages */}
+                <Route path="/day/:date" element={<DayDetail />} />
                 <Route path="/recipes" element={<RecipeList />} />
                 <Route path="/recipes/:identifier" element={<RecipeDetail />} />
                 <Route path="/create" element={<CreateRecipe />} />

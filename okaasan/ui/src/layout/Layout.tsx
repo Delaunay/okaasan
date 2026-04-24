@@ -41,11 +41,27 @@ async function getArticles(): Promise<SidebarItem[]> {
   }
 }
 
+function getWeekDayItems(): SidebarItem[] {
+  const items: SidebarItem[] = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const label = i === 0
+      ? 'Today'
+      : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    items.push({ name: label, href: `/day/${iso}` });
+  }
+  return items;
+}
+
 const getStaticSidebarSections = () => [
   {
     title: 'Home',
     href: '/',
-    items: []
+    isSelected: (location: Location) => location.pathname === '/' || location.pathname.startsWith('/day/'),
+    items: getWeekDayItems(),
   },
   {
     title: 'Cooking',

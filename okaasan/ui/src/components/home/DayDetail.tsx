@@ -12,8 +12,9 @@ import { recipeAPI, isStaticMode } from '../../services/api';
 import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
-import { DAYS, getWeatherInfo, type WeatherData, type DayEvent, EventModal } from './Home';
-import type { Event, MealPlan, PlannedMeal } from '../../services/type';
+import { DAYS, getWeatherInfo, type WeatherData, type DayEvent, EventModal, getDigestSlotsForDay } from './Home';
+import type { Event, MealPlan, PlannedMeal, WeeklyDigest, Task } from '../../services/type';
+import { CheckSquare } from 'lucide-react';
 
 function toISODate(d: Date): string {
   const y = d.getFullYear();
@@ -318,6 +319,83 @@ function MealsSection({ date, cardBg, border, mutedText }: {
   );
 }
 
+// ── Digest Tasks Section ─────────────────────────────────────
+
+function DigestTasksSection({ date, cardBg, border, mutedText }: {
+  date: Date;
+  cardBg: string;
+  border: string;
+  mutedText: string;
+}) {
+  const [digest, setDigest] = useState<WeeklyDigest | null>(null);
+
+  const fetchDigest = () => {
+    recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
+  };
+
+  useEffect(() => { fetchDigest(); }, [date]);
+
+  const slots = getDigestSlotsForDay(digest, date).filter(s => s.tasks.length > 0);
+
+  if (slots.length === 0) return null;
+
+  const handleToggle = async (task: Task) => {
+    await recipeAPI.updateTask(task.id!, { done: !task.done });
+    fetchDigest();
+  };
+
+  return (
+    <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
+      <HStack gap={2} mb={3}>
+        <CheckSquare size={20} />
+        <Heading size="md">Tasks</Heading>
+        <Badge colorPalette="orange" variant="subtle" size="sm">
+          {slots.reduce((n, s) => n + s.tasks.length, 0)}
+        </Badge>
+      </HStack>
+
+      <VStack align="stretch" gap={2}>
+        {slots.map((slot, si) =>
+          slot.tasks.map((task, ti) => (
+            <HStack
+              key={`${si}-${ti}`}
+              gap={3}
+              p={2}
+              borderRadius="md"
+              border="1px solid"
+              borderColor={border}
+            >
+              <input
+                type="checkbox"
+                checked={task.done}
+                onChange={() => handleToggle(task)}
+                style={{ width: '16px', height: '16px', accentColor: '#f56500', cursor: 'pointer', flexShrink: 0 }}
+              />
+              <Box flex={1} minW={0}>
+                <Text
+                  fontSize="sm"
+                  fontWeight="medium"
+                  style={{
+                    textDecoration: task.done ? 'line-through' : 'none',
+                    opacity: task.done ? 0.4 : 1,
+                  }}
+                >
+                  {task.breadcrumb || task.title}
+                </Text>
+                {task.time_estimate && (
+                  <Text fontSize="xs" color={mutedText}>
+                    {Math.round(task.time_estimate / 60 * 10) / 10}h
+                  </Text>
+                )}
+              </Box>
+            </HStack>
+          ))
+        )}
+      </VStack>
+    </Box>
+  );
+}
+
 // ── Day Detail Page ──────────────────────────────────────────
 
 const DayDetail = () => {
@@ -413,6 +491,7 @@ const DayDetail = () => {
         )}
 
         <ScheduleSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
+        <DigestTasksSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
         <MealsSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
       </VStack>
     </Box>

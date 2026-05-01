@@ -13,7 +13,7 @@ import {
 } from '../../utils/dateUtils';
 import { sidebarSections } from '../../layout/Layout';
 import SectionView from '../content/SectionView';
-import type { MealPlan, PlannedMeal } from '../../services/type';
+import type { MealPlan, PlannedMeal, WeeklyDigest, DigestSlot, Task } from '../../services/type';
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -221,13 +221,15 @@ export function EventModal({ event, onClose }: { event: DayEvent; onClose: () =>
 
 // ── Day Column ───────────────────────────────────────────────
 
-function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
+function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, digestSlots, onTaskToggle }: {
   day: DayData;
   cardBg: string;
   border: string;
   mutedText: string;
   isToday: boolean;
   onEventClick: (evt: DayEvent) => void;
+  digestSlots?: DigestSlot[];
+  onTaskToggle?: (task: Task) => void;
 }) {
   const todayBorder = isToday ? 'blue.400' : border;
   const WeatherIcon = day.weatherCode != null ? getWeatherInfo(day.weatherCode).icon : null;
@@ -266,7 +268,7 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
         cursor="pointer"
         transition="all 0.15s"
         _hover={{ boxShadow: 'md', borderColor: 'blue.300' }}
-        minW={{ base: '260px', md: 'auto' }}
+        minW={{ base: '180px', md: 0 }}
         w="100%"
         h="100%"
         display="flex"
@@ -368,9 +370,69 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick }: {
             <Text fontSize="xs" color={mutedText} textAlign="center" py={1}>No events</Text>
           )}
         </Box>
+
+        {/* Digest tasks — only slots that have tasks, ordered by event time */}
+        {digestSlots && digestSlots.filter(s => s.tasks.length > 0).length > 0 && (
+          <Box px={3} pb={3} borderTop="1px solid" borderColor={border} overflow="hidden" w="100%">
+            <Text fontSize="2xs" fontWeight="medium" color={mutedText} pt={2} pb={1}>Tasks</Text>
+            <VStack align="stretch" gap={1} w="100%">
+              {digestSlots
+                .filter(s => s.tasks.length > 0)
+                .map((slot, si) => (
+                  slot.tasks.map((task, ti) => (
+                    <Flex
+                      key={`${si}-${ti}`}
+                      gap={2}
+                      px={1}
+                      py={0.5}
+                      align="center"
+                      w="100%"
+                      overflow="hidden"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.done}
+                        onChange={(e) => { e.stopPropagation(); onTaskToggle?.(task); }}
+                        style={{ width: '12px', height: '12px', accentColor: '#f56500', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <Text
+                        fontSize="xs"
+                        overflow="hidden"
+                        textOverflow="ellipsis"
+                        whiteSpace="nowrap"
+                        maxWidth="250px"
+                        style={{
+                          textDecoration: task.done ? 'line-through' : 'none',
+                          opacity: task.done ? 0.4 : 1,
+                        }}
+                      >
+                        {task.breadcrumb || task.title}
+                      </Text>
+                    </Flex>
+                  ))
+                ))}
+            </VStack>
+          </Box>
+        )}
       </Box>
     </Link>
   );
+}
+
+export function getDigestSlotsForDay(digest: WeeklyDigest | null, dayDate: Date): DigestSlot[] {
+  if (!digest) return [];
+  const dayOfWeek = dayDate.getDay();
+  return digest.slots
+    .filter(s => {
+      if (!s.event.datetime_start) return false;
+      return new Date(s.event.datetime_start).getDay() === dayOfWeek;
+    })
+    .sort((a, b) => {
+      const aStart = a.event.datetime_start ? new Date(a.event.datetime_start).getTime() : 0;
+      const bStart = b.event.datetime_start ? new Date(b.event.datetime_start).getTime() : 0;
+      return aStart - bStart;
+    });
 }
 
 // ── Static Home (reuses SectionView cards) ──────────────────
@@ -398,6 +460,7 @@ const Home = () => {
   const [days, setDays] = useState<DayData[]>([]);
   const [weatherError, setWeatherError] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
+  const [digest, setDigest] = useState<WeeklyDigest | null>(null);
 
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
@@ -508,12 +571,15 @@ const Home = () => {
         }));
       } catch { /* no plan */ }
     })();
+
+    // Fetch weekly digest
+    recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
   }, [_static]);
 
   const todayStr = today.toDateString();
 
   return (
-    <Box mx="auto" p={4}>
+    <Box mx="auto" p={0} w="100%" overflow="hidden">
       {!_static && (
         <Box mb={6}>
           <Heading size="xl" mb={1}>{dayName}</Heading>
@@ -539,16 +605,18 @@ const Home = () => {
 
           {/* Horizontal scroll on mobile, flex columns on desktop */}
           <Flex
-            gap={3}
-            overflowX={{ base: 'auto', lg: 'visible' }}
+            gap={2}
+            overflowX={{ base: 'auto', lg: 'hidden' }}
             flexWrap={{ base: 'nowrap', lg: 'nowrap' }}
             pb={{ base: 3, lg: 0 }}
+            w="100%"
           >
             {days.map(d => (
               <Box
                 key={d.iso}
-                flex={{ base: '0 0 260px', lg: '1 1 0%' }}
-                minW={{ base: '260px', lg: 0 }}
+                flex={{ base: '0 0 180px', lg: 1 }}
+                minW={{ base: '180px', lg: 0 }}
+                overflow="hidden"
               >
                 <DayColumn
                   day={d}
@@ -557,10 +625,17 @@ const Home = () => {
                   mutedText={mutedText}
                   isToday={d.date.toDateString() === todayStr}
                   onEventClick={setSelectedEvent}
+                  digestSlots={getDigestSlotsForDay(digest, d.date)}
+                  onTaskToggle={async (task) => {
+                    await recipeAPI.updateTask(task.id!, { done: !task.done });
+                    const updated = await recipeAPI.getWeeklyDigest();
+                    setDigest(updated);
+                  }}
                 />
               </Box>
             ))}
           </Flex>
+
         </>
       )}
 

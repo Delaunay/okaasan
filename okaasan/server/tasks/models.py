@@ -30,6 +30,18 @@ class Task(Base):
     recuring = Column(Boolean, default=False)
     active = Column(Boolean, default=True)
 
+    # Tags: ["Work", "Sport", "Free"] — used for digest slot matching
+    tag = Column(JSON, nullable=True)
+
+    # DEPRECATED: use tags instead
+    time_slot = Column(String(50), nullable=True)
+
+    # How often this repeats: "daily", "weekly", "monthly", "yearly"
+    periodicity = Column(String(50), nullable=True)
+
+    # Estimated duration in minutes
+    time_estimate = Column(Integer, nullable=True)
+
     #
     extension = Column(JSON)
 
@@ -48,12 +60,18 @@ class Task(Base):
         cascade="save-update"
     )
 
+    @staticmethod
+    def capitalize_tags(tags):
+        if not tags:
+            return []
+        return [t.capitalize() for t in tags if t]
+
     def __repr__(self):
         return f'<Task {self.title}>'
 
 
     @staticmethod
-    def get_task_forest(session, task_ids):
+    def get_task_forest(session, task_ids, actionable_only=False):
         nodes = (
             session.query(Task)
             .filter(or_(Task.root_id.in_(task_ids), Task._id.in_(task_ids)))
@@ -76,9 +94,6 @@ class Task(Base):
 
         assert len(roots) == len(task_ids), "All roots should have been fetched"
 
-        # If the query order by task_id, it should do this loop in a single pass
-        # because parent need to be created first so their _id will be smaller
-        # than the children
         while len(children) > 0:
             missed = []
             for task in children:
@@ -93,7 +108,35 @@ class Task(Base):
             children = missed
             assert len(children) == 0, "All the children should have been sorted correctly"
 
-        return roots
+        if not actionable_only:
+            return roots
+
+        actionable = []
+
+        def walk(node, inherited_tags, breadcrumb):
+            own_tags = node.get("tag") or []
+            merged = list(dict.fromkeys(inherited_tags + own_tags))
+            effective_tags = Task.capitalize_tags(merged)
+
+            current_path = breadcrumb + [node["title"]]
+
+            kids = node.get("children", [])
+            undone_kids = [k for k in kids if not k.get("done")]
+
+            if not kids or not undone_kids:
+                if not node.get("done"):
+                    node["effective_tags"] = effective_tags
+                    node["breadcrumb"] = " / ".join(current_path)
+                    actionable.append(node)
+            else:
+                child_inherited = effective_tags + [node["title"].capitalize()]
+                for child in undone_kids:
+                    walk(child, child_inherited, current_path)
+
+        for root in roots:
+            walk(root, root.get("tag") or [], [])
+
+        return actionable
 
     @staticmethod
     def get_task_tree(session, task_id):
@@ -114,6 +157,9 @@ class Task(Base):
             'template': self.template,
             'recuring': self.recuring,
             'active': self.active,
+            'tag': Task.capitalize_tags(self.tag),
+            'periodicity': self.periodicity,
+            'time_estimate': self.time_estimate,
             'extension': self.extension,
             "priority": self.priority if self.priority is not None else 0,
             "children": []

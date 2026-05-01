@@ -20,7 +20,8 @@ import type {
   MealPlan,
   KeyValueEntry,
   Article,
-  ArticleBlock
+  ArticleBlock,
+  WeeklyDigest
 } from './type';
 
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
@@ -440,6 +441,10 @@ class RecipeAPI {
     return this.request<{ message: string }>(`/tasks/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async getWeeklyDigest(owner: string = 'default', routine: string = 'work'): Promise<WeeklyDigest> {
+    return this.request<WeeklyDigest>(`/tasks/weekly-digest?owner=${encodeURIComponent(owner)}&routine=${encodeURIComponent(routine)}`);
   }
 
   // SubTask methods

@@ -10,7 +10,22 @@ import {
     Flex,
 } from '@chakra-ui/react';
 import { recipeAPI } from '../../services/api';
-import type { Task } from '../../services/type';
+import type { Task, TaskPeriodicity } from '../../services/type';
+import { DEFAULT_TASK_TAGS } from '../../services/type';
+
+const PERIODICITIES: { value: TaskPeriodicity; label: string }[] = [
+    { value: 'daily', label: 'Daily' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'biweekly', label: 'Biweekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'yearly', label: 'Yearly' },
+];
+
+const TAG_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+    Work: { bg: 'blue.50', color: 'blue.700', border: 'blue.200' },
+    Sport: { bg: 'green.50', color: 'green.700', border: 'green.200' },
+    Free: { bg: 'purple.50', color: 'purple.700', border: 'purple.200' },
+};
 
 interface TaskNode {
     task: Task;
@@ -32,11 +47,25 @@ const Tasks: React.FC = () => {
         price_budget: 0,
         price_real: 0,
         people_count: 1,
+        tag: [],
+        recuring: false,
+        periodicity: undefined,
+        time_estimate: undefined,
     });
     const [editingSubtasks, setEditingSubtasks] = useState<Map<number, Task[]>>(new Map());
+    const [availableTags, setAvailableTags] = useState<string[]>([...DEFAULT_TASK_TAGS]);
 
     useEffect(() => {
         fetchTasks();
+        recipeAPI.getRoutineEvents('default', 'work')
+            .then(events => {
+                const titles = [...new Set(
+                    events.map(e => e.title).filter(Boolean)
+                        .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())
+                )];
+                if (titles.length > 0) setAvailableTags(titles);
+            })
+            .catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -147,10 +176,14 @@ const Tasks: React.FC = () => {
             title: '',
             description: '',
             datetime_deadline: '',
-            priority: 0, // Default priority is 0
+            priority: 0,
             price_budget: 0,
             price_real: 0,
             people_count: 1,
+            tag: [],
+            recuring: false,
+            periodicity: undefined,
+            time_estimate: undefined,
         });
         setShowForm(true);
     };
@@ -169,6 +202,9 @@ const Tasks: React.FC = () => {
             recuring: task.recuring || false,
             active: task.active !== false,
             done: task.done || false,
+            tag: task.tag || [],
+            periodicity: task.periodicity,
+            time_estimate: task.time_estimate,
         });
         setShowEditModal(true);
     };
@@ -183,9 +219,12 @@ const Tasks: React.FC = () => {
                     ...formData,
                     done: false,
                     template: false,
-                    recuring: false,
+                    recuring: formData.recuring || false,
                     active: true,
                     priority: formData.priority || 0,
+                    tag: formData.tag,
+                    periodicity: formData.periodicity,
+                    time_estimate: formData.time_estimate,
                 } as Omit<Task, 'id'>);
             }
 
@@ -206,6 +245,18 @@ const Tasks: React.FC = () => {
     const handleModalCancel = () => {
         setShowEditModal(false);
         setEditingTask(null);
+    };
+
+    const handleDeleteTask = async (task: Task) => {
+        if (!task.id) return;
+        try {
+            await recipeAPI.deleteTask(task.id);
+            fetchTasks();
+            setShowEditModal(false);
+            setEditingTask(null);
+        } catch (error) {
+            console.error('Error deleting task:', error);
+        }
     };
 
 
@@ -445,13 +496,35 @@ const Tasks: React.FC = () => {
 
                                 <VStack gap={2} align="stretch" flex={1}>
                                     <HStack gap={3} align="center">
-                                        <Text
-                                            fontWeight="medium"
-                                            fontSize="md"
-                                            flex={1}
-                                        >
-                                            {taskNode.task.title}
-                                        </Text>
+                                        <HStack gap={2} flex={1} align="center">
+                                            <Text
+                                                fontWeight="medium"
+                                                fontSize="md"
+                                            >
+                                                {taskNode.task.title}
+                                            </Text>
+                                            {(taskNode.task.tag || []).map((t) => (
+                                                <Box
+                                                    key={t}
+                                                    px={2}
+                                                    py={0.5}
+                                                    borderRadius="full"
+                                                    fontSize="xs"
+                                                    fontWeight="medium"
+                                                    bg={TAG_COLORS[t]?.bg || 'gray.100'}
+                                                    color={TAG_COLORS[t]?.color || 'gray.600'}
+                                                    border="1px solid"
+                                                    borderColor={TAG_COLORS[t]?.border || 'gray.200'}
+                                                >
+                                                    {t}
+                                                </Box>
+                                            ))}
+                                            {taskNode.task.recuring && taskNode.task.periodicity && (
+                                                <Text fontSize="xs" color="purple.500" fontWeight="medium">
+                                                    {taskNode.task.periodicity.charAt(0).toUpperCase() + taskNode.task.periodicity.slice(1)}
+                                                </Text>
+                                            )}
+                                        </HStack>
 
                                         <HStack gap={2}>
                                             {/* Up/Down buttons for root tasks */}
@@ -600,12 +673,27 @@ const Tasks: React.FC = () => {
                                 cursor: 'pointer'
                             }}
                         />
-                        <Text
-                            fontSize="sm"
-                            flex={1}
-                        >
-                            {taskNode.task.title}
-                        </Text>
+                        <HStack gap={1} flex={1} align="center">
+                            <Text fontSize="sm">
+                                {taskNode.task.title}
+                            </Text>
+                            {(taskNode.task.tag || []).map((t) => (
+                                <Box
+                                    key={t}
+                                    px={1.5}
+                                    py={0}
+                                    borderRadius="full"
+                                    fontSize="2xs"
+                                    fontWeight="medium"
+                                    bg={TAG_COLORS[t]?.bg || 'gray.100'}
+                                    color={TAG_COLORS[t]?.color || 'gray.600'}
+                                    border="1px solid"
+                                    borderColor={TAG_COLORS[t]?.border || 'gray.200'}
+                                >
+                                    {t}
+                                </Box>
+                            ))}
+                        </HStack>
                         <Button
                             size="xs"
                             variant="ghost"
@@ -750,6 +838,86 @@ const Tasks: React.FC = () => {
                                         min={1}
                                     />
                                 </Box>
+                            </HStack>
+
+                            <HStack gap={4}>
+                                <Box flex={1}>
+                                    <Text fontSize="sm" fontWeight="medium" mb={1}>Tags</Text>
+                                    <HStack gap={2} flexWrap="wrap">
+                                        {availableTags.map(tag => {
+                                            const selected = (formData.tag || []).includes(tag);
+                                            return (
+                                                <Box
+                                                    key={tag}
+                                                    px={3}
+                                                    py={1}
+                                                    borderRadius="full"
+                                                    fontSize="sm"
+                                                    fontWeight="medium"
+                                                    cursor="pointer"
+                                                    bg={selected ? (TAG_COLORS[tag]?.bg || 'gray.200') : 'transparent'}
+                                                    color={selected ? (TAG_COLORS[tag]?.color || 'gray.700') : 'gray.500'}
+                                                    border="1px solid"
+                                                    borderColor={selected ? (TAG_COLORS[tag]?.border || 'gray.300') : 'gray.300'}
+                                                    onClick={() => {
+                                                        const current = formData.tag || [];
+                                                        const next = selected ? current.filter(t => t !== tag) : [...current, tag];
+                                                        setFormData({ ...formData, tag: next });
+                                                    }}
+                                                >
+                                                    {tag}
+                                                </Box>
+                                            );
+                                        })}
+                                    </HStack>
+                                </Box>
+                                <Box flex={1}>
+                                    <Text fontSize="sm" fontWeight="medium" mb={1}>Time Estimate</Text>
+                                    <Input
+                                        type="number"
+                                        value={formData.time_estimate ? formData.time_estimate / 60 : ''}
+                                        onChange={(e) => setFormData({ ...formData, time_estimate: e.target.value ? Math.round(Number(e.target.value) * 60) : undefined })}
+                                        placeholder="hours"
+                                        step={0.5}
+                                        min={0}
+                                    />
+                                </Box>
+                            </HStack>
+
+                            <HStack gap={4}>
+                                <HStack gap={2} align="center">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.recuring || false}
+                                        onChange={(e) => setFormData({ ...formData, recuring: e.target.checked, periodicity: e.target.checked ? (formData.periodicity || 'weekly') : undefined })}
+                                        style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            accentColor: '#805AD5'
+                                        }}
+                                    />
+                                    <Text fontSize="sm" fontWeight="medium">Repeating</Text>
+                                </HStack>
+                                {formData.recuring && (
+                                    <Box flex={1} maxW="200px">
+                                        <select
+                                            value={formData.periodicity || ''}
+                                            onChange={(e) => setFormData({ ...formData, periodicity: (e.target.value || undefined) as Task['periodicity'] })}
+                                            style={{
+                                                padding: '8px',
+                                                borderRadius: '6px',
+                                                border: '1px solid var(--chakra-colors-border)',
+                                                width: '100%',
+                                                backgroundColor: 'var(--chakra-colors-bg)',
+                                            }}
+                                        >
+                                            <option value="">Select frequency</option>
+                                            {PERIODICITIES.map(p => (
+                                                <option key={p.value} value={p.value}>{p.label}</option>
+                                            ))}
+                                        </select>
+                                    </Box>
+                                )}
                             </HStack>
 
                             <HStack gap={4} justify="flex-end">
@@ -934,77 +1102,140 @@ const Tasks: React.FC = () => {
                                         />
                                     </Box>
 
+                                    {/* Tags */}
+                                    <Box>
+                                        <Text fontSize="sm" fontWeight="medium" mb={1}>Tags</Text>
+                                        <HStack gap={2} flexWrap="wrap">
+                                            {availableTags.map(tag => {
+                                                const selected = (formData.tag || []).includes(tag);
+                                                return (
+                                                    <Box
+                                                        key={tag}
+                                                        px={3}
+                                                        py={1}
+                                                        borderRadius="full"
+                                                        fontSize="sm"
+                                                        fontWeight="medium"
+                                                        cursor="pointer"
+                                                        bg={selected ? (TAG_COLORS[tag]?.bg || 'gray.200') : 'transparent'}
+                                                        color={selected ? (TAG_COLORS[tag]?.color || 'gray.700') : 'gray.500'}
+                                                        border="1px solid"
+                                                        borderColor={selected ? (TAG_COLORS[tag]?.border || 'gray.300') : 'gray.300'}
+                                                        onClick={() => {
+                                                            const current = formData.tag || [];
+                                                            const next = selected ? current.filter(t => t !== tag) : [...current, tag];
+                                                            setFormData({ ...formData, tag: next });
+                                                        }}
+                                                    >
+                                                        {tag}
+                                                    </Box>
+                                                );
+                                            })}
+                                        </HStack>
+                                    </Box>
+
+                                    {/* Time Estimate, Periodicity */}
+                                    <HStack gap={4}>
+                                        <Box flex={1}>
+                                            <Text fontSize="sm" fontWeight="medium" mb={1}>Time Estimate</Text>
+                                            <Input
+                                                type="number"
+                                                value={formData.time_estimate ? formData.time_estimate / 60 : ''}
+                                                onChange={(e) => setFormData({ ...formData, time_estimate: e.target.value ? Math.round(Number(e.target.value) * 60) : undefined })}
+                                                placeholder="hours"
+                                                step={0.5}
+                                                min={0}
+                                            />
+                                        </Box>
+                                        <Box flex={1}>
+                                            <Text fontSize="sm" fontWeight="medium" mb={1}>Periodicity</Text>
+                                            <select
+                                                value={formData.periodicity || ''}
+                                                onChange={(e) => {
+                                                    const val = (e.target.value || undefined) as Task['periodicity'];
+                                                    setFormData({ ...formData, periodicity: val, recuring: !!val });
+                                                }}
+                                                style={{
+                                                    padding: '8px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--chakra-colors-border)',
+                                                    width: '100%',
+                                                    backgroundColor: 'var(--chakra-colors-bg)',
+                                                }}
+                                            >
+                                                <option value="">Not repeating</option>
+                                                {PERIODICITIES.map(p => (
+                                                    <option key={p.value} value={p.value}>{p.label}</option>
+                                                ))}
+                                            </select>
+                                        </Box>
+                                    </HStack>
+
                                     {/* Status and Properties */}
                                     <Box>
                                         <Text fontSize="sm" fontWeight="medium" mb={2}>Status & Properties</Text>
-                                        <VStack gap={2} align="stretch">
-                                            <HStack gap={4}>
-                                                <HStack gap={2} align="center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.done || false}
-                                                        onChange={(e) => setFormData({ ...formData, done: e.target.checked })}
-                                                        style={{
-                                                            width: '16px',
-                                                            height: '16px',
-                                                            accentColor: '#f56500'
-                                                        }}
-                                                    />
-                                                    <Text fontSize="sm">Completed</Text>
-                                                </HStack>
-                                                <HStack gap={2} align="center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.template || false}
-                                                        onChange={(e) => setFormData({ ...formData, template: e.target.checked })}
-                                                        style={{
-                                                            width: '16px',
-                                                            height: '16px',
-                                                            accentColor: '#3182CE'
-                                                        }}
-                                                    />
-                                                    <Text fontSize="sm">Template</Text>
-                                                </HStack>
+                                        <HStack gap={4}>
+                                            <HStack gap={2} align="center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.done || false}
+                                                    onChange={(e) => setFormData({ ...formData, done: e.target.checked })}
+                                                    style={{
+                                                        width: '16px',
+                                                        height: '16px',
+                                                        accentColor: '#f56500'
+                                                    }}
+                                                />
+                                                <Text fontSize="sm">Completed</Text>
                                             </HStack>
-                                            <HStack gap={4}>
-                                                <HStack gap={2} align="center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.recuring || false}
-                                                        onChange={(e) => setFormData({ ...formData, recuring: e.target.checked })}
-                                                        style={{
-                                                            width: '16px',
-                                                            height: '16px',
-                                                            accentColor: '#805AD5'
-                                                        }}
-                                                    />
-                                                    <Text fontSize="sm">Recurring</Text>
-                                                </HStack>
-                                                <HStack gap={2} align="center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.active !== false}
-                                                        onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
-                                                        style={{
-                                                            width: '16px',
-                                                            height: '16px',
-                                                            accentColor: formData.active !== false ? '#38A169' : '#E53E3E'
-                                                        }}
-                                                    />
-                                                    <Text fontSize="sm">Active</Text>
-                                                </HStack>
+                                            <HStack gap={2} align="center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.template || false}
+                                                    onChange={(e) => setFormData({ ...formData, template: e.target.checked })}
+                                                    style={{
+                                                        width: '16px',
+                                                        height: '16px',
+                                                        accentColor: '#3182CE'
+                                                    }}
+                                                />
+                                                <Text fontSize="sm">Template</Text>
                                             </HStack>
-                                        </VStack>
+                                            <HStack gap={2} align="center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.active !== false}
+                                                    onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                                                    style={{
+                                                        width: '16px',
+                                                        height: '16px',
+                                                        accentColor: formData.active !== false ? '#38A169' : '#E53E3E'
+                                                    }}
+                                                />
+                                                <Text fontSize="sm">Active</Text>
+                                            </HStack>
+                                        </HStack>
                                     </Box>
 
                                     {/* Action Buttons */}
-                                    <HStack gap={3} justify="flex-end" pt={2}>
-                                        <Button onClick={handleModalCancel} variant="outline">
-                                            Cancel
-                                        </Button>
-                                        <Button type="submit" colorScheme="orange">
-                                            Save Changes
-                                        </Button>
+                                    <HStack gap={3} justify="space-between" pt={2}>
+                                        {editingTask?.id && (
+                                            <Button
+                                                variant="outline"
+                                                colorScheme="red"
+                                                onClick={() => handleDeleteTask(editingTask)}
+                                            >
+                                                Delete
+                                            </Button>
+                                        )}
+                                        <HStack gap={3} ml="auto">
+                                            <Button onClick={handleModalCancel} variant="outline">
+                                                Cancel
+                                            </Button>
+                                            <Button type="submit" colorScheme="orange">
+                                                Save Changes
+                                            </Button>
+                                        </HStack>
                                     </HStack>
                                 </VStack>
                             </form>

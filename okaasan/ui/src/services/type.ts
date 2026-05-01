@@ -149,6 +149,10 @@ export interface IngredientUnitsUsed {
 // Task Models
 // ============================================================================
 
+export type TaskPeriodicity = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
+export const DEFAULT_TASK_TAGS = ['Work', 'Sport', 'Free'] as const;
+
 export interface Task {
     id?: number;
     root_id?: number;
@@ -165,8 +169,26 @@ export interface Task {
     template: boolean;
     recuring: boolean;
     active: boolean;
+    tag?: string[];
+    periodicity?: TaskPeriodicity;
+    time_estimate?: number; // Duration in minutes
     extension?: any;
-    children?: Task[];  // Hierarchical children structure from backend
+    children?: Task[];
+    // Enriched by weekly-digest endpoint
+    effective_tags?: string[];
+    breadcrumb?: string;
+}
+
+export interface DigestSlot {
+    event: Event;
+    tasks: Task[];
+    slot_minutes: number;
+    used_minutes: number;
+}
+
+export interface WeeklyDigest {
+    slots: DigestSlot[];
+    unscheduled: Task[];
 }
 
 export interface SubTask {

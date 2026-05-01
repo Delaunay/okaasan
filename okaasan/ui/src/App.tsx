@@ -98,6 +98,7 @@ function App() {
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/routine" element={<Routine />} />
                 <Route path="/tasks" element={<Tasks />} />
+                <Route path="/tasks/:taskId" element={<Tasks />} />
                 <Route path="/ingredients" element={<Ingredients />} />
                 <Route path="/ingredients/:identifier" element={<IngredientDetail />} />
                 <Route path="/conversions" element={<UnitConversions />} />

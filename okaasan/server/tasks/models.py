@@ -17,6 +17,8 @@ class Task(Base):
     description = Column(Text)
     datetime_deadline = Column(DateTime)
     datetime_done = Column(DateTime)
+    datetime_started = Column(DateTime, nullable=True)
+    datetime_completed = Column(DateTime, nullable=True)
     done = Column(Boolean, default=False)
     priority = Column(Integer, default=0)
 
@@ -75,8 +77,7 @@ class Task(Base):
         nodes = (
             session.query(Task)
             .filter(or_(Task.root_id.in_(task_ids), Task._id.in_(task_ids)))
-            .order_by(Task.priority.desc(), Task._id)
-            .order_by(Task._id.asc())
+            .order_by(Task.priority.desc(), Task._id.asc())
             .all()
         )
 
@@ -150,6 +151,8 @@ class Task(Base):
             'title': self.title,
             'description': self.description,
             'datetime_deadline': self.datetime_deadline.isoformat() if self.datetime_deadline else None,
+            'datetime_started': self.datetime_started.isoformat() if self.datetime_started else None,
+            'datetime_completed': self.datetime_completed.isoformat() if self.datetime_completed else None,
             'done': self.done,
             'price_budget': self.price_budget,
             'price_real': self.price_real,

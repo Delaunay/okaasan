@@ -73,6 +73,29 @@ DEFAULT_TIME_ESTIMATE = 180  # 3 hours in minutes
 MAX_TASKS_PER_SLOT = 3
 
 
+def _build_breadcrumb_map(session):
+    """Build breadcrumb paths for all tasks using parent_id chain.
+    Returns dict of task_id -> breadcrumb string."""
+    all_tasks = session.query(Task._id, Task.title, Task.parent_id).all()
+    title_map = {t._id: t.title for t in all_tasks}
+    parent_map = {t._id: t.parent_id for t in all_tasks}
+
+    cache = {}
+    def get_path(tid):
+        if tid in cache:
+            return cache[tid]
+        parts = []
+        cur = tid
+        while cur is not None:
+            parts.append(title_map.get(cur, "?"))
+            cur = parent_map.get(cur)
+        parts.reverse()
+        cache[tid] = " / ".join(parts)
+        return cache[tid]
+
+    return get_path
+
+
 @router.get("/tasks/weekly-digest")
 def weekly_digest(
     owner: str = "default",
@@ -91,6 +114,7 @@ def weekly_digest(
             e.datetime_start if e.datetime_start else datetime.min,
         ))
 
+        # 1. Actionable tasks (not done)
         root_ids = (
             db.query(Task._id)
             .filter(Task.parent_id.is_(None), Task.done == False, Task.active == True)
@@ -102,7 +126,52 @@ def weekly_digest(
         else:
             actionable = []
 
-        # Index tasks by each tag they carry (capitalized)
+        # 2. Tasks completed recently (have datetime_completed) or in-progress (have datetime_started)
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start.replace(hour=0)
+        # Get last 7 days of completed/started tasks
+        from datetime import timedelta
+        week_ago = today_start - timedelta(days=7)
+
+        recent_tasks = (
+            db.query(Task)
+            .filter(
+                Task.active == True,
+                Task.done == True,
+                Task.datetime_completed >= week_ago,
+            )
+            .all()
+        )
+
+        in_progress_tasks = (
+            db.query(Task)
+            .filter(
+                Task.active == True,
+                Task.done == False,
+                Task.datetime_started != None,
+            )
+            .all()
+        )
+
+        get_breadcrumb = _build_breadcrumb_map(db)
+
+        completed_by_date = {}
+        for t in recent_tasks:
+            obj = t.to_json()
+            obj["breadcrumb"] = get_breadcrumb(t._id)
+            obj["effective_tags"] = Task.capitalize_tags(t.tag) if t.tag else []
+            date_key = t.datetime_completed.strftime("%Y-%m-%d") if t.datetime_completed else None
+            if date_key:
+                completed_by_date.setdefault(date_key, []).append(obj)
+
+        in_progress_list = []
+        for t in in_progress_tasks:
+            obj = t.to_json()
+            obj["breadcrumb"] = get_breadcrumb(t._id)
+            obj["effective_tags"] = Task.capitalize_tags(t.tag) if t.tag else []
+            in_progress_list.append(obj)
+
+        # 3. Index actionable tasks by tag
         by_tag = {}
         for task in actionable:
             tags = task.get("effective_tags") or []
@@ -146,6 +215,8 @@ def weekly_digest(
         return {
             "slots": slots,
             "unscheduled": unscheduled,
+            "completed_by_date": completed_by_date,
+            "in_progress": in_progress_list,
         }
     except Exception as e:
         print_exc()
@@ -175,6 +246,10 @@ async def update_task(task_id: int, request: Request, db: Session = Depends(get_
         if data.get('datetime_deadline'):
             task.datetime_deadline = datetime.fromisoformat(data.get('datetime_deadline').replace('Z', '+00:00'))
         task.done = data.get('done', task.done)
+        if 'datetime_started' in data:
+            task.datetime_started = datetime.fromisoformat(data['datetime_started'].replace('Z', '+00:00')) if data['datetime_started'] else None
+        if 'datetime_completed' in data:
+            task.datetime_completed = datetime.fromisoformat(data['datetime_completed'].replace('Z', '+00:00')) if data['datetime_completed'] else None
         task.priority = data.get('priority', task.priority)
         task.price_budget = data.get('price_budget', task.price_budget)
         task.price_real = data.get('price_real', task.price_real)

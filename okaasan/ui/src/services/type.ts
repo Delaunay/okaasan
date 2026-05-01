@@ -161,6 +161,8 @@ export interface Task {
     description?: string;
     datetime_deadline?: string;
     datetime_done?: string;
+    datetime_started?: string;
+    datetime_completed?: string;
     done: boolean;
     priority?: number;
     price_budget?: number;
@@ -189,6 +191,8 @@ export interface DigestSlot {
 export interface WeeklyDigest {
     slots: DigestSlot[];
     unscheduled: Task[];
+    completed_by_date: Record<string, Task[]>;
+    in_progress: Task[];
 }
 
 export interface SubTask {

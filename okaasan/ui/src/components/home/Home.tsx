@@ -14,6 +14,8 @@ import {
 import { sidebarSections } from '../../layout/Layout';
 import SectionView from '../content/SectionView';
 import type { MealPlan, PlannedMeal, WeeklyDigest, DigestSlot, Task } from '../../services/type';
+import { DEFAULT_TASK_TAGS } from '../../services/type';
+import { TaskFormModal, taskToFormData } from '../tasks/Tasks';
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -221,15 +223,17 @@ export function EventModal({ event, onClose }: { event: DayEvent; onClose: () =>
 
 // ── Day Column ───────────────────────────────────────────────
 
-function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, digestSlots, onTaskToggle }: {
+function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, onTaskClick, digestSlots, completedTasks, inProgressTasks }: {
   day: DayData;
   cardBg: string;
   border: string;
   mutedText: string;
   isToday: boolean;
   onEventClick: (evt: DayEvent) => void;
+  onTaskClick: (task: Task) => void;
   digestSlots?: DigestSlot[];
-  onTaskToggle?: (task: Task) => void;
+  completedTasks?: Task[];
+  inProgressTasks?: Task[];
 }) {
   const todayBorder = isToday ? 'blue.400' : border;
   const WeatherIcon = day.weatherCode != null ? getWeatherInfo(day.weatherCode).icon : null;
@@ -371,53 +375,61 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, dige
           )}
         </Box>
 
-        {/* Digest tasks — only slots that have tasks, ordered by event time */}
-        {digestSlots && digestSlots.filter(s => s.tasks.length > 0).length > 0 && (
-          <Box px={3} pb={3} borderTop="1px solid" borderColor={border} overflow="hidden" w="100%">
-            <Text fontSize="2xs" fontWeight="medium" color={mutedText} pt={2} pb={1}>Tasks</Text>
-            <VStack align="stretch" gap={1} w="100%">
-              {digestSlots
-                .filter(s => s.tasks.length > 0)
-                .map((slot, si) => (
-                  slot.tasks.map((task, ti) => (
-                    <Flex
-                      key={`${si}-${ti}`}
-                      gap={2}
-                      px={1}
-                      py={0.5}
-                      align="center"
-                      w="100%"
-                      overflow="hidden"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={task.done}
-                        onChange={(e) => { e.stopPropagation(); onTaskToggle?.(task); }}
-                        style={{ width: '12px', height: '12px', accentColor: '#f56500', cursor: 'pointer', flexShrink: 0 }}
-                      />
-                      <Text
-                        fontSize="xs"
-                        overflow="hidden"
-                        textOverflow="ellipsis"
-                        whiteSpace="nowrap"
-                        maxWidth="250px"
-                        style={{
-                          textDecoration: task.done ? 'line-through' : 'none',
-                          opacity: task.done ? 0.4 : 1,
-                        }}
-                      >
-                        {task.breadcrumb || task.title}
-                      </Text>
-                    </Flex>
-                  ))
+        {/* Digest tasks */}
+        {(() => {
+          const pending = digestSlots?.flatMap(s => s.tasks) || [];
+          const ip = inProgressTasks || [];
+          const done = completedTasks || [];
+          const total = pending.length + ip.length + done.length;
+          if (total === 0) return null;
+          return (
+            <Box px={3} pb={3} borderTop="1px solid" borderColor={border} overflow="hidden" w="100%">
+              <Text fontSize="2xs" fontWeight="medium" color={mutedText} pt={2} pb={1}>Tasks</Text>
+              <VStack align="stretch" gap={1} w="100%">
+                {ip.map(task => (
+                  <Flex key={`ip-${task.id}`} gap={2} px={1} py={0.5} align="center" w="100%" overflow="hidden"
+                    cursor="pointer" _hover={{ bg: 'bg.muted' }} borderRadius="sm"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTaskClick(task); }}>
+                    <Box w="8px" h="8px" borderRadius="full" bg="orange.400" flexShrink={0} />
+                    <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" fontWeight="medium">
+                      {task.breadcrumb || task.title}
+                    </Text>
+                  </Flex>
                 ))}
-            </VStack>
-          </Box>
-        )}
+                {pending.map((task, i) => (
+                  <Flex key={`p-${task.id || i}`} gap={2} px={1} py={0.5} align="center" w="100%" overflow="hidden"
+                    cursor="pointer" _hover={{ bg: 'bg.muted' }} borderRadius="sm"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTaskClick(task); }}>
+                    <Box w="8px" h="8px" borderRadius="full" border="1px solid" borderColor="gray.400" flexShrink={0} />
+                    <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                      {task.breadcrumb || task.title}
+                    </Text>
+                  </Flex>
+                ))}
+                {done.map(task => (
+                  <Flex key={`d-${task.id}`} gap={2} px={1} py={0.5} align="center" w="100%" overflow="hidden" opacity={0.4}
+                    cursor="pointer" _hover={{ opacity: 0.6 }} borderRadius="sm"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTaskClick(task); }}>
+                    <Box w="8px" h="8px" borderRadius="full" bg="green.400" flexShrink={0} />
+                    <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap"
+                      style={{ textDecoration: 'line-through' }}>
+                      {task.breadcrumb || task.title}
+                    </Text>
+                  </Flex>
+                ))}
+              </VStack>
+            </Box>
+          );
+        })()}
       </Box>
     </Link>
   );
+}
+
+export function getCompletedForDay(digest: WeeklyDigest | null, dayDate: Date): Task[] {
+  if (!digest?.completed_by_date) return [];
+  const key = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, '0')}-${String(dayDate.getDate()).padStart(2, '0')}`;
+  return digest.completed_by_date[key] || [];
 }
 
 export function getDigestSlotsForDay(digest: WeeklyDigest | null, dayDate: Date): DigestSlot[] {
@@ -460,6 +472,8 @@ const Home = () => {
   const [days, setDays] = useState<DayData[]>([]);
   const [weatherError, setWeatherError] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
+  const [editModal, setEditModal] = useState<{ data: Partial<Task>; taskId: number } | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([...DEFAULT_TASK_TAGS]);
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
 
   const today = new Date();
@@ -574,6 +588,17 @@ const Home = () => {
 
     // Fetch weekly digest
     recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
+
+    // Fetch available tags from routine events
+    recipeAPI.getRoutineEvents('default', 'work')
+      .then(events => {
+        const titles = [...new Set(
+          events.map(e => e.title).filter(Boolean)
+            .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())
+        )];
+        if (titles.length > 0) setAvailableTags(titles);
+      })
+      .catch(() => {});
   }, [_static]);
 
   const todayStr = today.toDateString();
@@ -625,12 +650,10 @@ const Home = () => {
                   mutedText={mutedText}
                   isToday={d.date.toDateString() === todayStr}
                   onEventClick={setSelectedEvent}
+                  onTaskClick={(task) => setEditModal({ data: taskToFormData(task), taskId: task.id! })}
                   digestSlots={getDigestSlotsForDay(digest, d.date)}
-                  onTaskToggle={async (task) => {
-                    await recipeAPI.updateTask(task.id!, { done: !task.done });
-                    const updated = await recipeAPI.getWeeklyDigest();
-                    setDigest(updated);
-                  }}
+                  completedTasks={getCompletedForDay(digest, d.date)}
+                  inProgressTasks={digest?.in_progress || []}
                 />
               </Box>
             ))}
@@ -641,6 +664,30 @@ const Home = () => {
 
       {selectedEvent && (
         <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
+      {editModal && (
+        <TaskFormModal
+          formData={editModal.data}
+          setFormData={(d) => setEditModal({ ...editModal, data: d })}
+          onSave={async (e) => {
+            e.preventDefault();
+            try {
+              await recipeAPI.updateTask(editModal.taskId, editModal.data);
+              recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
+              setEditModal(null);
+            } catch (err) { console.error('Error saving task:', err); }
+          }}
+          onCancel={() => setEditModal(null)}
+          onDelete={async () => {
+            try {
+              await recipeAPI.deleteTask(editModal.taskId);
+              recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
+              setEditModal(null);
+            } catch (err) { console.error('Error deleting task:', err); }
+          }}
+          isEditing={true}
+          availableTags={availableTags}
+        />
       )}
     </Box>
   );

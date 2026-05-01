@@ -13,6 +13,8 @@ import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
 import { DAYS, getWeatherInfo, type WeatherData, type DayEvent, EventModal, getDigestSlotsForDay } from './Home';
+import { TaskFormModal, taskToFormData } from '../tasks/Tasks';
+import { DEFAULT_TASK_TAGS } from '../../services/type';
 import type { Event, MealPlan, PlannedMeal, WeeklyDigest, Task } from '../../services/type';
 import { CheckSquare } from 'lucide-react';
 
@@ -321,6 +323,10 @@ function MealsSection({ date, cardBg, border, mutedText }: {
 
 // ── Digest Tasks Section ─────────────────────────────────────
 
+function toISODateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function DigestTasksSection({ date, cardBg, border, mutedText }: {
   date: Date;
   cardBg: string;
@@ -328,6 +334,8 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
   mutedText: string;
 }) {
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
+  const [editModal, setEditModal] = useState<{ data: Partial<Task>; taskId: number } | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([...DEFAULT_TASK_TAGS]);
 
   const fetchDigest = () => {
     recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
@@ -335,12 +343,66 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
 
   useEffect(() => { fetchDigest(); }, [date]);
 
+  useEffect(() => {
+    recipeAPI.getRoutineEvents('default', 'work')
+      .then(events => {
+        const titles = [...new Set(
+          events.map(e => e.title).filter(Boolean)
+            .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())
+        )];
+        if (titles.length > 0) setAvailableTags(titles);
+      })
+      .catch(() => {});
+  }, []);
+
+  const openTaskEdit = (task: Task) => {
+    setEditModal({ data: taskToFormData(task), taskId: task.id! });
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModal) return;
+    try {
+      await recipeAPI.updateTask(editModal.taskId, editModal.data);
+      fetchDigest();
+      setEditModal(null);
+    } catch (error) {
+      console.error('Error saving task:', error);
+    }
+  };
+
+  const handleEditDelete = async () => {
+    if (!editModal) return;
+    try {
+      await recipeAPI.deleteTask(editModal.taskId);
+      fetchDigest();
+      setEditModal(null);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
+  };
+
   const slots = getDigestSlotsForDay(digest, date).filter(s => s.tasks.length > 0);
+  const dateKey = toISODateStr(date);
+  const completedToday = digest?.completed_by_date?.[dateKey] || [];
+  const inProgress = digest?.in_progress || [];
 
-  if (slots.length === 0) return null;
+  // All pending tasks from slots
+  const pendingTasks = slots.flatMap(s => s.tasks);
+  const totalCount = pendingTasks.length + inProgress.length + completedToday.length;
 
-  const handleToggle = async (task: Task) => {
-    await recipeAPI.updateTask(task.id!, { done: !task.done });
+  if (totalCount === 0) return null;
+
+  const handleStart = async (task: Task) => {
+    await recipeAPI.updateTask(task.id!, { datetime_started: new Date().toISOString() });
+    fetchDigest();
+  };
+
+  const handleDone = async (task: Task) => {
+    await recipeAPI.updateTask(task.id!, {
+      done: true,
+      datetime_completed: new Date().toISOString(),
+    });
     fetchDigest();
   };
 
@@ -349,49 +411,134 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
       <HStack gap={2} mb={3}>
         <CheckSquare size={20} />
         <Heading size="md">Tasks</Heading>
-        <Badge colorPalette="orange" variant="subtle" size="sm">
-          {slots.reduce((n, s) => n + s.tasks.length, 0)}
-        </Badge>
+        <Badge colorPalette="orange" variant="subtle" size="sm">{totalCount}</Badge>
       </HStack>
 
       <VStack align="stretch" gap={2}>
-        {slots.map((slot, si) =>
-          slot.tasks.map((task, ti) => (
-            <HStack
-              key={`${si}-${ti}`}
-              gap={3}
-              p={2}
-              borderRadius="md"
-              border="1px solid"
-              borderColor={border}
-            >
-              <input
-                type="checkbox"
-                checked={task.done}
-                onChange={() => handleToggle(task)}
-                style={{ width: '16px', height: '16px', accentColor: '#f56500', cursor: 'pointer', flexShrink: 0 }}
-              />
-              <Box flex={1} minW={0}>
-                <Text
-                  fontSize="sm"
-                  fontWeight="medium"
-                  style={{
-                    textDecoration: task.done ? 'line-through' : 'none',
-                    opacity: task.done ? 0.4 : 1,
-                  }}
-                >
-                  {task.breadcrumb || task.title}
+        {/* In-progress tasks */}
+        {inProgress.map(task => (
+          <HStack
+            key={`ip-${task.id}`}
+            gap={3}
+            p={2}
+            borderRadius="md"
+            border="1px solid"
+            borderColor="orange.300"
+            bg="orange.50"
+          >
+            <Box flex={1} minW={0} cursor="pointer" onClick={() => openTaskEdit(task)}>
+              <Text fontSize="sm" fontWeight="medium" _hover={{ color: 'blue.500' }}>
+                {task.breadcrumb || task.title}
+              </Text>
+              {task.time_estimate && (
+                <Text fontSize="xs" color={mutedText}>
+                  {Math.round(task.time_estimate / 60 * 10) / 10}h
                 </Text>
-                {task.time_estimate && (
-                  <Text fontSize="xs" color={mutedText}>
-                    {Math.round(task.time_estimate / 60 * 10) / 10}h
+              )}
+            </Box>
+            <Badge colorPalette="orange" variant="subtle" size="sm">In progress</Badge>
+            <button
+              onClick={() => handleDone(task)}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                background: '#38A169',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Done
+            </button>
+          </HStack>
+        ))}
+
+        {/* Pending tasks from digest slots */}
+        {pendingTasks.map((task, i) => (
+          <HStack
+            key={`p-${task.id || i}`}
+            gap={3}
+            p={2}
+            borderRadius="md"
+            border="1px solid"
+            borderColor={border}
+          >
+            <Box flex={1} minW={0} cursor="pointer" onClick={() => openTaskEdit(task)}>
+              <Text fontSize="sm" fontWeight="medium" _hover={{ color: 'blue.500' }}>
+                {task.breadcrumb || task.title}
+              </Text>
+              {task.time_estimate && (
+                <Text fontSize="xs" color={mutedText}>
+                  {Math.round(task.time_estimate / 60 * 10) / 10}h
+                </Text>
+              )}
+            </Box>
+            <button
+              onClick={() => handleStart(task)}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                border: '1px solid #3182CE',
+                background: 'transparent',
+                color: '#3182CE',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Start
+            </button>
+          </HStack>
+        ))}
+
+        {/* Completed tasks */}
+        {completedToday.length > 0 && (
+          <>
+            <Text fontSize="xs" fontWeight="medium" color={mutedText} pt={1}>
+              Completed today
+            </Text>
+            {completedToday.map(task => (
+              <HStack
+                key={`d-${task.id}`}
+                gap={3}
+                p={2}
+                borderRadius="md"
+                border="1px solid"
+                borderColor={border}
+                opacity={0.5}
+                cursor="pointer"
+                _hover={{ opacity: 0.7 }}
+                onClick={() => openTaskEdit(task)}
+              >
+                <CheckSquare size={16} color="#38A169" style={{ flexShrink: 0 }} />
+                <Box flex={1} minW={0}>
+                  <Text
+                    fontSize="sm"
+                    fontWeight="medium"
+                    style={{ textDecoration: 'line-through' }}
+                  >
+                    {task.breadcrumb || task.title}
                   </Text>
-                )}
-              </Box>
-            </HStack>
-          ))
+                </Box>
+              </HStack>
+            ))}
+          </>
         )}
       </VStack>
+
+      {editModal && (
+        <TaskFormModal
+          formData={editModal.data}
+          setFormData={(d) => setEditModal({ ...editModal, data: d })}
+          onSave={handleEditSave}
+          onCancel={() => setEditModal(null)}
+          onDelete={handleEditDelete}
+          isEditing={true}
+          availableTags={availableTags}
+        />
+      )}
     </Box>
   );
 }
@@ -490,9 +637,9 @@ const DayDetail = () => {
           <WeatherSection weather={weather} isToday={isToday} cardBg={cardBg} border={border} mutedText={mutedText} />
         )}
 
+        <MealsSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
         <ScheduleSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
         <DigestTasksSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
-        <MealsSection date={date} cardBg={cardBg} border={border} mutedText={mutedText} />
       </VStack>
     </Box>
   );

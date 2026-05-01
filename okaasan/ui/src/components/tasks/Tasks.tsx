@@ -232,14 +232,12 @@ export function TaskFormModal({
 
                             <HStack gap={4}>
                                 <Box flex={1}>
-                                    <Text fontSize="sm" fontWeight="medium" mb={1}>Time Estimate</Text>
+                                    <Text fontSize="sm" fontWeight="medium" mb={1}>Time Estimate (min)</Text>
                                     <Input
                                         type="number"
-                                        value={formData.time_estimate ? formData.time_estimate / 60 : ''}
-                                        onChange={(e) => setFormData({ ...formData, time_estimate: e.target.value ? Math.round(Number(e.target.value) * 60) : undefined })}
-                                        placeholder="hours"
-                                        step={0.5}
-                                        min={0}
+                                        value={formData.time_estimate ?? ''}
+                                        onChange={(e) => setFormData({ ...formData, time_estimate: e.target.value ? Number(e.target.value) : undefined })}
+                                        placeholder="minutes"
                                     />
                                 </Box>
                                 <Box flex={1}>

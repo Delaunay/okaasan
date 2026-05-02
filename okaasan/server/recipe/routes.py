@@ -6,9 +6,10 @@ import traceback
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .models import Recipe, Ingredient, Category, RecipeIngredient, IngredientComposition
+from .nutrition_calculator import calculate_recipe_nutrition
 from ..decorators import expose
 
 log = logging.getLogger("okaasan.recipes")
@@ -197,6 +198,59 @@ async def create_recipe(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail=f"Internal error while creating recipe: {type(e).__name__}: {e}",
+        )
+
+
+@router.get("/recipes/{recipe_id}/nutrition/calculate")
+@expose(recipe_id=select(Recipe._id))
+def calculate_recipe_nutrition_endpoint(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    portion_weight_g: float | None = Query(
+        None,
+        gt=0,
+        description="Optional portion weight in grams for per-portion normalization. "
+                    "If not provided, normalizes per 100g."
+    ),
+):
+    """
+    Calculate nutrition for a recipe based on ingredient quantities.
+
+    This endpoint aggregates nutritional values from all ingredients in a recipe,
+    scaled by their quantities, and normalizes the results.
+
+    Args:
+        recipe_id: The ID of the recipe to calculate nutrition for
+        portion_weight_g: Optional portion weight in grams for per-portion normalization.
+                         If provided, results are normalized per portion.
+                         If not provided, results are normalized per 100g.
+
+    Returns:
+        A dictionary containing:
+        - recipe_id: The recipe ID
+        - calculation_time: When the calculation was performed (ISO format)
+        - error: Whether there was an error during calculation
+        - error_messages: List of error messages if any
+        - missing_nutrition_ingredients: List of ingredients without nutrition data
+        - normalization: Normalization type and value
+        - compositions: List of nutritional values with kind, name, quantity, unit, daily_value
+    """
+    log.info(
+        "Calculating nutrition for recipe %s with portion_weight_g=%s",
+        recipe_id, portion_weight_g
+    )
+
+    try:
+        result = calculate_recipe_nutrition(db, recipe_id, portion_weight_g)
+        return result
+    except Exception as e:
+        log.error(
+            "Unexpected error calculating nutrition for recipe %s:\n%s",
+            recipe_id, traceback.format_exc()
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error while calculating nutrition: {type(e).__name__}: {e}",
         )
 
 

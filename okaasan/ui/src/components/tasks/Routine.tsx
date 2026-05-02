@@ -80,19 +80,18 @@ const RoutineEvent: React.FC<RoutineEventProps> = ({
                 height={`${mockPosition?.height || 30}px`}
                 bg={displayEvent.color || "blue.500"}
                 color="white"
+                opacity={0.9}
                 p={2}
                 py={1}
                 borderRadius="md"
                 fontSize="sm"
                 fontWeight="bold"
                 zIndex={1000}
-                boxShadow="lg"
                 border="1px solid"
-                borderColor="blue.600"
+                borderColor={displayEvent.color || "blue.600"}
                 display="flex"
                 flexDirection="column"
                 justifyContent="space-between"
-                opacity={0.8}
                 userSelect="none"
                 pointerEvents="none"
                 style={{
@@ -244,9 +243,8 @@ const RoutineEvent: React.FC<RoutineEventProps> = ({
                 fontWeight="bold"
                 zIndex={isDraggingState ? 1000 : 1}
                 cursor={isDraggingState ? "grabbing" : "grab"}
-                boxShadow="lg"
                 border="1px solid"
-                borderColor="blue.600"
+                borderColor={event.color || "blue.600"}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onMouseUp={handleEventMouseUp}
@@ -254,11 +252,11 @@ const RoutineEvent: React.FC<RoutineEventProps> = ({
                 flexDirection="column"
                 justifyContent="space-between"
                 onMouseDown={handleMouseDown}
-                opacity={isDraggingState ? 0.8 : 1}
+                opacity={isDraggingState ? 0.85 : 0.95}
                 userSelect="none"
                 transition={isDraggingState ? "none" : "all 0.2s"}
                 _hover={{
-                    opacity: isDraggingState ? 0.8 : 0.9,
+                    opacity: 1,
                     transform: isDraggingState ? "scale(1.05)" : "scale(1.02)"
                 }}
                 style={{
@@ -302,8 +300,8 @@ const CursorBadge: React.FC<CursorBadgeProps> = ({ time, isVisible, position }) 
             position="fixed"
             left={`${position.x + 10}px`}
             top={`${position.y - 40}px`}
-            bg="blue.500"
-            color="white"
+            bg="var(--card-bg)"
+            color="var(--heading-color)"
             px={2}
             py={1}
             borderRadius="md"
@@ -311,9 +309,8 @@ const CursorBadge: React.FC<CursorBadgeProps> = ({ time, isVisible, position }) 
             fontWeight="bold"
             zIndex={10000}
             pointerEvents="none"
-            boxShadow="lg"
             border="1px solid"
-            borderColor="blue.600"
+            borderColor="var(--border-color)"
         >
             {time}
         </Box>
@@ -936,7 +933,7 @@ const Routine: React.FC<RoutineProps> = ({
             w="100%"
         >
             {/* Header with Owner and Routine Name */}
-            <Box mb={4} p={4} bg="bg" borderRadius="md" boxShadow="sm">
+            <Box mb={4} p={4} bg="bg" borderRadius="md">
                 <VStack gap={4} align="stretch">
                     <HStack justify="space-between" align="center">
                         <Heading size="lg">Routine Template</Heading>
@@ -947,7 +944,7 @@ const Routine: React.FC<RoutineProps> = ({
                                 bg="bg"
                                 borderRadius="md"
                                 border="1px solid"
-                                borderColor="blue.300"
+                                borderColor="var(--border-color)"
                             >
                                 <Text fontSize="sm" fontWeight="medium" color="blue.400">
                                     📋 Copied: {copiedDayName} ({copiedDayEvents.length} event{copiedDayEvents.length !== 1 ? 's' : ''})
@@ -972,9 +969,9 @@ const Routine: React.FC<RoutineProps> = ({
                                 style={{
                                     padding: '8px',
                                     borderRadius: '6px',
-                                    border: '1px solid var(--chakra-colors-border)',
+                                    border: '1px solid var(--border-color)',
                                     width: '100%',
-                                    backgroundColor: 'var(--chakra-colors-bg)'
+                                    backgroundColor: 'var(--card-bg)'
                                 }}
                             >
                                 <option value="work">Work</option>
@@ -1011,38 +1008,38 @@ const Routine: React.FC<RoutineProps> = ({
 
                             {showStats && (
                                 <Box
-                                    border="1px solid"
-                                    borderColor="gray.200"
-                                    borderRadius="md"
-                                    overflow="hidden"
-                                >
-                                    <Box overflowX="auto">
-                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                            <thead>
-                                                <tr style={{ backgroundColor: 'var(--chakra-colors-bg)' }}>
-                                                    <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Event
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Total Time
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Daily Avg
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Avg Block
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Longest
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        Frag
-                                                    </th>
-                                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--chakra-colors-border)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                                        %
-                                                    </th>
-                                                </tr>
-                                            </thead>
+                    border="1px solid"
+                    borderColor="var(--border-color)"
+                    borderRadius="md"
+                    overflow="hidden"
+                >
+                    <Box overflowX="auto">
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={{ backgroundColor: 'var(--card-bg)' }}>
+                                    <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Event
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Total Time
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Daily Avg
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Avg Block
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Longest
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        Frag
+                                    </th>
+                                    <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                        %
+                                    </th>
+                                </tr>
+                            </thead>
                                             <tbody>
                                                 {weekStats.map((stat, index) => {
                                                     const percentage = totalWeekMinutes > 0
@@ -1051,7 +1048,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                     const dailyAvgMinutes = stat.totalMinutes / 7;
                                                     const dailyAvgHours = dailyAvgMinutes / 60;
                                                     return (
-                                                        <tr key={index} style={{ borderBottom: '1px solid var(--chakra-colors-border)' }}>
+                                                        <tr key={index} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                                             <td style={{ padding: '8px' }}>
                                                                 <HStack gap={2}>
                                                                     <Box
@@ -1072,7 +1069,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                                 </Text>
                                                             </td>
                                                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                                <Text fontSize="sm" color="gray.600">
+                                                                <Text fontSize="sm" color="var(--muted-text)">
                                                                     {dailyAvgHours >= 1
                                                                         ? `${dailyAvgHours.toFixed(1)}h`
                                                                         : `${dailyAvgMinutes.toFixed(0)}m`
@@ -1080,7 +1077,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                                 </Text>
                                                             </td>
                                                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                                <Text fontSize="sm" color="gray.600">
+                                                                <Text fontSize="sm" color="var(--muted-text)">
                                                                     {stat.avgBlockDurationHours >= 1
                                                                         ? `${stat.avgBlockDurationHours.toFixed(1)}h`
                                                                         : `${stat.avgBlockDuration.toFixed(0)}m`
@@ -1088,7 +1085,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                                 </Text>
                                                             </td>
                                                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                                <Text fontSize="sm" color="gray.600">
+                                                                <Text fontSize="sm" color="var(--muted-text)">
                                                                     {stat.longestBlockHours >= 1
                                                                         ? `${stat.longestBlockHours.toFixed(1)}h`
                                                                         : `${stat.longestBlock.toFixed(0)}m`
@@ -1096,12 +1093,12 @@ const Routine: React.FC<RoutineProps> = ({
                                                                 </Text>
                                                             </td>
                                                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                                <Text fontSize="sm" color="gray.600">
+                                                                <Text fontSize="sm" color="var(--muted-text)">
                                                                     {stat.fragmentationIndex.toFixed(2)}
                                                                 </Text>
                                                             </td>
                                                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                                <Text fontSize="sm" color="gray.600">
+                                                                <Text fontSize="sm" color="var(--muted-text)">
                                                                     {percentage}%
                                                                 </Text>
                                                             </td>
@@ -1110,7 +1107,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                 })}
                                             </tbody>
                                             <tfoot>
-                                                <tr style={{ backgroundColor: 'var(--chakra-colors-bg)', fontWeight: 'bold' }}>
+                                                <tr style={{ backgroundColor: 'var(--card-bg)', fontWeight: 'bold' }}>
                                                     <td style={{ padding: '8px' }}>
                                                         <Text fontSize="sm" fontWeight="bold">Total Scheduled</Text>
                                                     </td>
@@ -1144,20 +1141,20 @@ const Routine: React.FC<RoutineProps> = ({
                                                     </td>
                                                 </tr>
                                                 {/* Unaccounted Time Row */}
-                                                <tr style={{ backgroundColor: 'var(--chakra-colors-bg)' }}>
+                                                <tr style={{ backgroundColor: 'var(--card-bg)' }}>
                                                     <td style={{ padding: '8px' }}>
                                                         <HStack gap={2}>
                                                             <Box
                                                                 width="12px"
                                                                 height="12px"
-                                                                bg="gray.300"
+                                                                bg="var(--muted-text)"
                                                                 borderRadius="sm"
                                                             />
-                                                            <Text fontSize="sm" fontStyle="italic" color="gray.600">Unaccounted Time</Text>
+                                                            <Text fontSize="sm" fontStyle="italic" color="var(--muted-text)">Unaccounted Time</Text>
                                                         </HStack>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">
+                                                        <Text fontSize="sm" color="var(--muted-text)">
                                                             {unaccountedHours >= 1
                                                                 ? `${unaccountedHours.toFixed(1)}h`
                                                                 : `${Math.max(0, unaccountedMinutes).toFixed(0)}m`
@@ -1165,7 +1162,7 @@ const Routine: React.FC<RoutineProps> = ({
                                                         </Text>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">
+                                                        <Text fontSize="sm" color="var(--muted-text)">
                                                             {(unaccountedHours / 7) >= 1
                                                                 ? `${(unaccountedHours / 7).toFixed(1)}h`
                                                                 : `${Math.max(0, unaccountedMinutes / 7).toFixed(0)}m`
@@ -1173,16 +1170,16 @@ const Routine: React.FC<RoutineProps> = ({
                                                         </Text>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">-</Text>
+                                                        <Text fontSize="sm" color="var(--muted-text)">-</Text>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">-</Text>
+                                                        <Text fontSize="sm" color="var(--muted-text)">-</Text>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">-</Text>
+                                                        <Text fontSize="sm" color="var(--muted-text)">-</Text>
                                                     </td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                                                        <Text fontSize="sm" color="gray.600">
+                                                        <Text fontSize="sm" color="var(--muted-text)">
                                                             {Math.max(0, (unaccountedMinutes / totalDayMinutes * 100)).toFixed(1)}%
                                                         </Text>
                                                     </td>
@@ -1202,7 +1199,7 @@ const Routine: React.FC<RoutineProps> = ({
                     templateColumns="80px repeat(7, 1fr)"
                     templateRows="50px 1fr"
                     gap={0.5}
-                    borderColor="gray.300"
+                    borderColor="var(--border-color)"
                     borderRadius="md"
                     bg="bg"
                     className="class-grid"
@@ -1212,7 +1209,7 @@ const Routine: React.FC<RoutineProps> = ({
                 >
                     <GridItem
                         border="1px solid"
-                        borderColor="gray.200"
+                        borderColor="var(--border-color)"
                         bg="bg"
                     />
 
@@ -1270,7 +1267,7 @@ const Routine: React.FC<RoutineProps> = ({
                         borderTop="1px solid"
                         borderLeft="1px solid"
                         borderRight="1px solid"
-                        borderColor="gray.200"
+                        borderColor="var(--border-color)"
                         bg="bg"
                         display="flex"
                         flexDirection="column"
@@ -1284,7 +1281,7 @@ const Routine: React.FC<RoutineProps> = ({
                                 alignItems="center"
                                 justifyContent="center"
                                 borderBottom="1px solid"
-                                borderColor="gray.200"
+                                borderColor="var(--border-color)"
                                 fontSize="sm"
                                 fontWeight="medium"
                             >
@@ -1326,11 +1323,10 @@ const Routine: React.FC<RoutineProps> = ({
                             fontSize="sm"
                             fontWeight="bold"
                             zIndex={1000}
-                            boxShadow="lg"
                             border="1px solid"
-                            borderColor="blue.600"
+                            borderColor={draggedEvent?.color || "blue.600"}
                             display="none"
-                            opacity={0.8}
+                            opacity={0.85}
                             userSelect="none"
                             pointerEvents="none"
                             style={{
@@ -1364,7 +1360,7 @@ const Routine: React.FC<RoutineProps> = ({
                                     borderTop="1px solid"
                                     borderLeft="1px solid"
                                     borderRight="1px solid"
-                                    borderColor="gray.200"
+                                    borderColor="var(--border-color)"
                                     bg="bg"
                                     _hover={{
                                         bg: "gray.200",
@@ -1385,7 +1381,7 @@ const Routine: React.FC<RoutineProps> = ({
                                             alignItems="center"
                                             justifyContent="center"
                                             borderBottom="1px solid"
-                                            borderColor="gray.200"
+                                            borderColor="var(--border-color)"
                                             fontSize="sm"
                                             fontWeight="medium"
                                         >

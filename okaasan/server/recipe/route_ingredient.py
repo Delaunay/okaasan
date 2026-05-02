@@ -14,7 +14,7 @@ def get_db(request: Request):
     yield from request.app.state.get_db()
 
 
-@router.get("/ingredients/{start}/{end}")
+@router.get("/ingredients/{start:int}/{end:int}")
 def get_ingredients_range(start: int, end: int, db: Session = Depends(get_db)):
     ingredients = db.query(Ingredient).offset(start).limit(end - start).all()
     return [ingredient.to_json() for ingredient in ingredients]
@@ -44,16 +44,6 @@ async def create_ingredient(request: Request, db: Session = Depends(get_db)):
 @expose(ingredient_id=select(Ingredient._id))
 def get_ingredient(ingredient_id: int, db: Session = Depends(get_db)):
     ingredient = db.get(Ingredient, ingredient_id)
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
-    return ingredient.to_json()
-
-
-@router.get("/ingredients/{ingredient_name:path}")
-@expose(ingredient_name=lambda: [])
-def get_ingredient_by_name(ingredient_name: str, db: Session = Depends(get_db)):
-    formatted_name = ingredient_name.replace('-', ' ')
-    ingredient = db.query(Ingredient).filter(Ingredient.name.ilike(f"%{formatted_name}%")).first()
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
     return ingredient.to_json()
@@ -199,3 +189,13 @@ def delete_ingredient_composition(composition_id: int, db: Session = Depends(get
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/ingredients/{ingredient_name:path}")
+@expose(ingredient_name=lambda: [])
+def get_ingredient_by_name(ingredient_name: str, db: Session = Depends(get_db)):
+    formatted_name = ingredient_name.replace('-', ' ')
+    ingredient = db.query(Ingredient).filter(Ingredient.name.ilike(f"%{formatted_name}%")).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    return ingredient.to_json()

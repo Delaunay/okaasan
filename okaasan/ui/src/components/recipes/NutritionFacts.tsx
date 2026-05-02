@@ -264,27 +264,27 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     };
 
     return (
-        <Box p={6} bg="bg" borderRadius="lg" border="2px solid" borderColor="gray.800">
-            <Flex justify="space-between" align="center" mb={2} pb={2} borderBottom="4px solid" borderColor="gray.800">
+        <Box p={6} bg="bg" borderRadius="lg" border="2px solid" style={{ borderColor: 'var(--nf-border)' }}>
+            <Flex justify="space-between" align="center" mb={2} pb={2} borderBottom="4px solid" style={{ borderColor: 'var(--nf-border)' }}>
                 <VStack align="start" gap={0}>
                     <HStack>
-                        <Text fontSize="2xl" fontWeight="bold" color="gray.800">
+                        <Text fontSize="2xl" fontWeight="bold" style={{ color: 'var(--nf-heading)' }}>
                             Nutrition Facts
                         </Text>
                         {sources && sources.length > 0 && (
                             <>
-                                <Text fontSize="1xl" color="gray.800">(</Text>
+                                <Text fontSize="1xl" style={{ color: 'var(--nf-heading)' }}>(</Text>
                                 <select
                                     value={selectedSource || (sources[0] || 'Default')}
                                     onChange={(e) => onSourceChange && onSourceChange(e.target.value)}
                                     style={{
                                         padding: '2px 8px',
                                         fontSize: '14px',
-                                        border: '1px solid var(--chakra-colors-border)',
+                                        border: '1px solid var(--border-color)',
                                         borderRadius: '4px',
-                                        backgroundColor: 'var(--chakra-colors-bg)',
+                                        backgroundColor: 'var(--input-bg)',
                                         cursor: 'pointer',
-                                        color: 'var(--chakra-colors-fg)',
+                                        color: 'var(--nf-heading)',
                                     }}
                                 >
                                     {sources.map((src) => (
@@ -293,12 +293,12 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                         </option>
                                     ))}
                                 </select>
-                                <Text fontSize="1xl" color="gray.800">)</Text>
+                                <Text fontSize="1xl" style={{ color: 'var(--nf-heading)' }}>)</Text>
                             </>
                         )}
                     </HStack>
                     <HStack gap={1}>
-                        <Text fontSize="sm" color="gray.600">Per</Text>
+                        <Text fontSize="sm" style={{ color: 'var(--nf-text-muted)' }}>Per</Text>
                         {isEditingDisplayRef ? (
                             <input
                                 type="number"
@@ -314,16 +314,18 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                 style={{
                                     width: '60px',
                                     padding: '2px 4px',
-                                    border: '1px solid var(--chakra-colors-blue-500)',
+                                    border: '1px solid var(--nf-accent-border)',
                                     borderRadius: '3px',
                                     fontSize: '14px',
                                     textAlign: 'center',
+                                    backgroundColor: 'var(--input-bg)',
+                                    color: 'var(--nf-text)',
                                 }}
                             />
                         ) : (
                             <Text
                                 fontSize="sm"
-                                color="blue.600"
+                                style={{ color: 'var(--nf-accent)' }}
                                 fontWeight="semibold"
                                 cursor="pointer"
                                 userSelect="none"
@@ -360,8 +362,8 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
 
             {/* Success Message */}
             {successMessage && (
-                <Box p={3} mb={3} bg="green.100" borderRadius="md" borderLeft="4px solid" borderColor="green.500">
-                    <Text fontSize="sm" color="green.800" fontWeight="medium">
+                <Box p={3} mb={3} borderRadius="md" borderLeft="4px solid" style={{ backgroundColor: 'var(--nf-success-bg)', borderColor: 'var(--nf-success-border)' }}>
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--nf-success-text)' }}>
                         ✓ {successMessage}
                     </Text>
                 </Box>
@@ -369,8 +371,8 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
 
             {/* Daily Value Header */}
             {processedCompositions.length > 0 && (
-                <Flex justify="flex-end" py={2} borderTop="2px solid" borderBottom="1px solid" borderColor="gray.800">
-                    <Text fontSize="xs" fontWeight="bold" color="gray.800">
+                <Flex justify="flex-end" py={2} borderTop="2px solid" borderBottom="1px solid" style={{ borderColor: 'var(--nf-border)' }}>
+                    <Text fontSize="xs" fontWeight="bold" style={{ color: 'var(--nf-heading)' }}>
                         % Daily Value*
                     </Text>
                 </Flex>
@@ -379,13 +381,13 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
             <VStack align="stretch" gap={0}>
                 {/* Add new composition form - Nutrition Facts style */}
                 {isAdding && (
-                    <Box bg="yellow.50" border="2px solid" borderColor="orange.400" borderRadius="md" p={3} mb={2}>
+                    <Box border="2px solid" borderRadius="md" p={3} mb={2} style={{ backgroundColor: 'var(--nf-add-bg)', borderColor: 'var(--nf-add-border)' }}>
                         <VStack align="stretch" gap={2}>
                             <Box mb={1} fontSize="xs">
-                                <Text as="span" fontWeight="bold" color="orange.800">
+                                <Text as="span" fontWeight="bold" style={{ color: 'var(--nf-add-heading)' }}>
                                     Add New Nutrient{' '}
                                 </Text>
-                                <Text as="span" color="gray.600">(Values per </Text>
+                                <Text as="span" style={{ color: 'var(--nf-text-muted)' }}>(Values per </Text>
                                 <input
                                     type="number"
                                     value={referenceQuantity}
@@ -393,15 +395,17 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                     style={{
                                         width: '45px',
                                         padding: '2px 4px',
-                                        border: '1px solid var(--chakra-colors-border)',
+                                        border: '1px solid var(--border-color)',
                                         borderRadius: '3px',
                                         fontSize: '12px',
                                         textAlign: 'center',
                                         marginLeft: '2px',
                                         marginRight: '2px',
+                                        backgroundColor: 'var(--input-bg)',
+                                        color: 'var(--nf-text)',
                                     }}
                                 />
-                                <Text as="span" color="gray.600">g, will normalize to 100g)</Text>
+                                <Text as="span" style={{ color: 'var(--nf-text-muted)' }}>g, will normalize to 100g)</Text>
                             </Box>
 
                             {/* Main row - nutrition facts style */}
@@ -416,10 +420,12 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                             width: '100px',
                                             flex: '1',
                                             padding: '4px 8px',
-                                            border: '1px solid var(--chakra-colors-border)',
+                                            border: '1px solid var(--border-color)',
                                             borderRadius: '4px',
                                             fontSize: '14px',
                                             fontWeight: 'bold',
+                                            backgroundColor: 'var(--input-bg)',
+                                            color: 'var(--nf-text)',
                                         }}
                                     />
                                     <input
@@ -431,9 +437,11 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                             width: '100px',
                                             flex: '1',
                                             padding: '4px 8px',
-                                            border: '1px solid var(--chakra-colors-border)',
+                                            border: '1px solid var(--border-color)',
                                             borderRadius: '4px',
                                             fontSize: '13px',
+                                            backgroundColor: 'var(--input-bg)',
+                                            color: 'var(--nf-text)',
                                         }}
                                     />
                                     <input
@@ -445,10 +453,12 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                         style={{
                                             width: '40px',
                                             padding: '4px 8px',
-                                            border: '1px solid var(--chakra-colors-border)',
+                                            border: '1px solid var(--border-color)',
                                             borderRadius: '4px',
                                             fontSize: '14px',
                                             textAlign: 'right',
+                                            backgroundColor: 'var(--input-bg)',
+                                            color: 'var(--nf-text)',
                                         }}
                                     />
                                     <input
@@ -459,9 +469,11 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                         style={{
                                             width: '30px',
                                             padding: '4px',
-                                            border: '1px solid var(--chakra-colors-border)',
+                                            border: '1px solid var(--border-color)',
                                             borderRadius: '4px',
                                             fontSize: '13px',
+                                            backgroundColor: 'var(--input-bg)',
+                                            color: 'var(--nf-text)',
                                         }}
                                     />
                                     <input
@@ -473,10 +485,12 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                         style={{
                                             width: '30px',
                                             padding: '4px 8px',
-                                            border: '1px solid var(--chakra-colors-border)',
+                                            border: '1px solid var(--border-color)',
                                             borderRadius: '4px',
                                             fontSize: '14px',
                                             textAlign: 'right',
+                                            backgroundColor: 'var(--input-bg)',
+                                            color: 'var(--nf-text)',
                                         }}
                                     />
                                     <Text fontSize="sm" fontWeight="bold" ml={-1}>%</Text>
@@ -500,11 +514,11 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                 {/* Existing compositions */}
                 {processedCompositions.length === 0 && !isAdding ? (
                     <Box textAlign="center" py={6} bg="bg" borderRadius="md">
-                        <Text fontSize="sm" color="gray.500" mb={2}>
+                        <Text fontSize="sm" mb={2} style={{ color: 'var(--nf-text-faint)' }}>
                             No nutritional composition data available
                         </Text>
                         {isReallyEditable && onAdd && (
-                            <Text fontSize="xs" color="gray.400">
+                            <Text fontSize="xs" style={{ color: 'var(--nf-text-faint)' }}>
                                 Click "Add" to insert nutritional information
                             </Text>
                         )}
@@ -517,17 +531,17 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                         return (
                             <Box
                                 key={isVirtual ? `virtual-${index}` : composition.id}
-                                bg={isEditing ? "gray.50" : "bg"}
+                                bg={isEditing ? undefined : "bg"}
                                 border={isEditing ? "1px solid" : "none"}
-                                borderColor={isEditing ? 'orange.300' : 'transparent'}
                                 borderRadius={isEditing ? "md" : "none"}
                                 p={isEditing ? 4 : 0}
+                                style={isEditing ? { backgroundColor: 'var(--nf-edit-bg)', borderColor: 'var(--nf-edit-border)' } : undefined}
                             >
                                 {isEditing ? (
                                     <VStack align="stretch" gap={3}>
                                         <SimpleGrid columns={2} gap={3}>
                                             <Box>
-                                                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                     Nutrient Name
                                                 </Text>
                                                 <input
@@ -537,14 +551,16 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                     style={{
                                                         width: '100%',
                                                         padding: '8px',
-                                                        border: '1px solid var(--chakra-colors-border)',
+                                                        border: '1px solid var(--border-color)',
                                                         borderRadius: '4px',
                                                         fontSize: '14px',
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        color: 'var(--nf-text)',
                                                     }}
                                                 />
                                             </Box>
                                             <Box>
-                                                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                     Kind
                                                 </Text>
                                                 <input
@@ -554,16 +570,18 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                     style={{
                                                         width: '100%',
                                                         padding: '8px',
-                                                        border: '1px solid var(--chakra-colors-border)',
+                                                        border: '1px solid var(--border-color)',
                                                         borderRadius: '4px',
                                                         fontSize: '14px',
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        color: 'var(--nf-text)',
                                                     }}
                                                 />
                                             </Box>
                                         </SimpleGrid>
 
                                         <Box>
-                                            <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                            <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                 Reference Quantity (g)
                                             </Text>
                                             <HStack gap={2}>
@@ -576,23 +594,25 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                     style={{
                                                         width: '100%',
                                                         padding: '8px',
-                                                        border: '1px solid var(--chakra-colors-border)',
+                                                        border: '1px solid var(--border-color)',
                                                         borderRadius: '4px',
                                                         fontSize: '14px',
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        color: 'var(--nf-text)',
                                                     }}
                                                 />
-                                                <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
+                                                <Text fontSize="xs" whiteSpace="nowrap" style={{ color: 'var(--nf-text-faint)' }}>
                                                     per {referenceQuantity}g
                                                 </Text>
                                             </HStack>
-                                            <Text fontSize="xs" color="gray.500" mt={1}>
+                                            <Text fontSize="xs" mt={1} style={{ color: 'var(--nf-text-faint)' }}>
                                                 Values will be normalized to per 100g
                                             </Text>
                                         </Box>
 
                                         <SimpleGrid columns={2} gap={3}>
                                             <Box>
-                                                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                     Quantity
                                                 </Text>
                                                 <input
@@ -603,14 +623,16 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                     style={{
                                                         width: '100%',
                                                         padding: '8px',
-                                                        border: '1px solid var(--chakra-colors-border)',
+                                                        border: '1px solid var(--border-color)',
                                                         borderRadius: '4px',
                                                         fontSize: '14px',
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        color: 'var(--nf-text)',
                                                     }}
                                                 />
                                             </Box>
                                             <Box>
-                                                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                     Unit
                                                 </Text>
                                                 <input
@@ -620,16 +642,18 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                     style={{
                                                         width: '100%',
                                                         padding: '8px',
-                                                        border: '1px solid var(--chakra-colors-border)',
+                                                        border: '1px solid var(--border-color)',
                                                         borderRadius: '4px',
                                                         fontSize: '14px',
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        color: 'var(--nf-text)',
                                                     }}
                                                 />
                                             </Box>
                                         </SimpleGrid>
 
                                         <Box>
-                                            <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                                            <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--nf-text-muted)' }}>
                                                 Daily Value (%)
                                             </Text>
                                             <input
@@ -641,12 +665,14 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                 style={{
                                                     width: '100%',
                                                     padding: '8px',
-                                                    border: '1px solid var(--chakra-colors-border)',
+                                                    border: '1px solid var(--border-color)',
                                                     borderRadius: '4px',
                                                     fontSize: '14px',
+                                                    backgroundColor: 'var(--input-bg)',
+                                                    color: 'var(--nf-text)',
                                                 }}
                                             />
-                                            <Text fontSize="xs" color="gray.500" mt={1}>
+                                            <Text fontSize="xs" mt={1} style={{ color: 'var(--nf-text-faint)' }}>
                                                 % of recommended daily value per {referenceQuantity}g
                                             </Text>
                                         </Box>
@@ -686,25 +712,24 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                 align="center"
                                                 py={2}
                                                 borderBottom="2px solid"
-                                                borderColor="gray.300"
                                                 onMouseEnter={() => setHoveredCategoryKind(composition.kind || null)}
                                                 onMouseLeave={() => setHoveredCategoryKind(null)}
                                                 position="relative"
+                                                style={{ borderColor: 'var(--nf-border-medium)' }}
                                             >
                                                 <HStack flex={1} gap={1}>
-                                                    <Text fontWeight="bold" color="gray.800" fontSize="md">
+                                                    <Text fontWeight="bold" fontSize="md" style={{ color: 'var(--nf-text)' }}>
                                                         {composition.kind}
                                                     </Text>
                                                     {composition.quantity && composition.unit && (
-                                                        <Text fontWeight="bold" color="gray.800" fontSize="md">
+                                                        <Text fontWeight="bold" fontSize="md" style={{ color: 'var(--nf-text)' }}>
                                                             {Number(composition.quantity * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}{composition.unit}
                                                         </Text>
                                                     )}
                                                 </HStack>
                                                 <HStack gap={2}>
-                                                    {/* Show daily value only if explicitly provided in DB */}
                                                     {composition.daily_value && composition.daily_value > 0 && (
-                                                        <Text fontWeight="bold" color="gray.800" fontSize="md">
+                                                        <Text fontWeight="bold" fontSize="md" style={{ color: 'var(--nf-text)' }}>
                                                             {Number(composition.daily_value * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}%
                                                         </Text>
                                                     )}
@@ -760,21 +785,21 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                 py={1}
                                                 pl={6}
                                                 borderBottom="1px solid"
-                                                borderColor="gray.100"
+                                                style={{ borderColor: 'var(--nf-border-subtle)' }}
                                             >
                                                 <HStack flex={1} gap={2}>
-                                                    <Text fontSize="sm" color="gray.700">
+                                                    <Text fontSize="sm" style={{ color: 'var(--nf-text-secondary)' }}>
                                                         {composition.name}
                                                     </Text>
                                                     {composition.quantity && composition.unit && (
-                                                        <Text fontSize="sm" color="gray.700">
+                                                        <Text fontSize="sm" style={{ color: 'var(--nf-text-secondary)' }}>
                                                             {Number(composition.quantity * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}{composition.unit}
                                                         </Text>
                                                     )}
                                                 </HStack>
                                                 <HStack gap={2}>
                                                     {composition.daily_value && composition.daily_value > 0 && (
-                                                        <Text fontSize="sm" color="gray.600">
+                                                        <Text fontSize="sm" style={{ color: 'var(--nf-text-muted)' }}>
                                                             {Number(composition.daily_value * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}%
                                                         </Text>
                                                     )}
@@ -810,21 +835,21 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                                 align="center"
                                                 py={2}
                                                 borderBottom="1px solid"
-                                                borderColor="gray.200"
+                                                style={{ borderColor: 'var(--nf-border-light)' }}
                                             >
                                                 <HStack flex={1} gap={2}>
-                                                    <Text fontWeight="semibold" color="gray.800" fontSize="sm">
+                                                    <Text fontWeight="semibold" fontSize="sm" style={{ color: 'var(--nf-text)' }}>
                                                         {composition.name || 'Nutrient'}
                                                     </Text>
                                                     {composition.quantity && composition.unit && (
-                                                        <Text fontSize="sm" color="gray.800">
+                                                        <Text fontSize="sm" style={{ color: 'var(--nf-text)' }}>
                                                             {Number(composition.quantity * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}{composition.unit}
                                                         </Text>
                                                     )}
                                                 </HStack>
                                                 <HStack gap={2}>
                                                     {composition.daily_value && composition.daily_value > 0 && (
-                                                        <Text fontSize="sm" color="gray.600">
+                                                        <Text fontSize="sm" style={{ color: 'var(--nf-text-muted)' }}>
                                                             {Number(composition.daily_value * displayMultiplier).toFixed(2).replace(/\.?0+$/, '')}%
                                                         </Text>
                                                     )}
@@ -864,8 +889,8 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
 
             {/* Footer note */}
             {processedCompositions.length > 0 && (
-                <Box mt={4} pt={3} borderTop="2px solid" borderColor="gray.800">
-                    <Text fontSize="xs" color="gray.600">
+                <Box mt={4} pt={3} borderTop="2px solid" style={{ borderColor: 'var(--nf-border)' }}>
+                    <Text fontSize="xs" style={{ color: 'var(--nf-text-muted)' }}>
                         * Percent Daily Values are based on a 2,000 calorie diet. Values shown per {displayReferenceQuantity}g.
                     </Text>
                 </Box>

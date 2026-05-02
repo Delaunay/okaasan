@@ -401,7 +401,7 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, onTa
                     cursor="pointer" _hover={{ bg: 'bg.muted' }} borderRadius="sm"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTaskClick(task); }}>
                     <Box w="8px" h="8px" borderRadius="full" border="1px solid" borderColor="gray.400" flexShrink={0} />
-                    <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                    <Text fontSize="xs" overflow="hidden" maxWidth="250px" textOverflow="ellipsis" whiteSpace="nowrap">
                       {task.breadcrumb || task.title}
                     </Text>
                   </Flex>
@@ -411,7 +411,7 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, onTa
                     cursor="pointer" _hover={{ opacity: 0.6 }} borderRadius="sm"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTaskClick(task); }}>
                     <Box w="8px" h="8px" borderRadius="full" bg="green.400" flexShrink={0} />
-                    <Text fontSize="xs" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap"
+                    <Text fontSize="xs" maxWidth="250px" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap"
                       style={{ textDecoration: 'line-through' }}>
                       {task.breadcrumb || task.title}
                     </Text>

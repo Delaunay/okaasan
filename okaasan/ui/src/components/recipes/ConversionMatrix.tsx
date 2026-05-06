@@ -19,28 +19,28 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
     if (loading) {
         return (
             <Box textAlign="center" py={8}>
-                <Spinner size="lg" color="blue.500" />
-                <Text mt={2} color="gray.600">Loading conversion matrix...</Text>
+                <Spinner size="lg" />
+                <Text mt={2} style={{ color: 'var(--muted-text)' }}>Loading conversion matrix...</Text>
             </Box>
         );
     }
 
     if (error) {
         return (
-            <Box p={4} bg="red.50" borderRadius="md" borderLeft="4px solid" borderColor="red.400">
-                <Text fontWeight="medium" color="red.800" mb={1}>Failed to load conversion matrix</Text>
-                <Text fontSize="sm" color="red.700">{error}</Text>
+            <Box p={4} borderRadius="md" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-red-bg)', borderColor: 'var(--panel-red-border)' }}>
+                <Text fontWeight="medium" mb={1} style={{ color: 'var(--panel-red-heading)' }}>Failed to load conversion matrix</Text>
+                <Text fontSize="sm" style={{ color: 'var(--panel-red-text)' }}>{error}</Text>
             </Box>
         );
     }
 
     if (!matrix || !matrix.conversions || Object.keys(matrix.conversions).length === 0) {
         return (
-            <Box textAlign="center" py={8} bg="gray.50" borderRadius="lg">
-                <Text fontSize="lg" color="gray.500" mb={2}>
+            <Box textAlign="center" py={8} borderRadius="lg" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                <Text fontSize="lg" mb={2} style={{ color: 'var(--muted-text)' }}>
                     No conversion data available
                 </Text>
-                <Text fontSize="sm" color="gray.400">
+                <Text fontSize="sm" style={{ color: 'var(--empty-text)' }}>
                     This ingredient doesn't have density information for volume-to-weight conversions.
                 </Text>
             </Box>
@@ -83,18 +83,18 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
     };
 
     return (
-        <Box p={6} bg="orange.50" borderRadius="lg" borderLeft="4px solid" borderColor="orange.400">
+        <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-orange-bg)', borderColor: 'var(--panel-orange-border)' }}>
             <VStack gap={4} align="stretch">
                 <Box>
                     <HStack justify="space-between" align="center" mb={2}>
-                        <Heading size="md" color="orange.800">
+                        <Heading size="md" style={{ color: 'var(--panel-orange-heading)' }}>
                             Conversion Matrix
                         </Heading>
-                        <Text fontSize="xs" bg="orange.200" px={2} py={1} borderRadius="md" color="orange.800">
+                        <Text fontSize="xs" px={2} py={1} borderRadius="md" style={{ backgroundColor: 'var(--panel-orange-border)', color: 'var(--panel-orange-heading)' }}>
                             1 volume = ? weight
                         </Text>
                     </HStack>
-                    <Text fontSize="sm" color="orange.700">
+                    <Text fontSize="sm" style={{ color: 'var(--panel-orange-text)' }}>
                         Shows how much weight you get from 1 unit of volume for <strong>{matrix.ingredient.name}</strong>
                         {matrix.ingredient.density && (
                             <> (density: {matrix.ingredient.density} g/ml)</>
@@ -103,15 +103,15 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
                 </Box>
 
                 <Box overflowX="auto">
-                    <table style={{ borderCollapse: 'collapse', backgroundColor: 'var(--chakra-colors-bg)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table style={{ borderCollapse: 'collapse', backgroundColor: 'var(--card-bg)', borderRadius: '8px', overflow: 'hidden' }}>
                         <thead>
-                            <tr style={{ backgroundColor: 'var(--chakra-colors-orange-200)' }}>
+                            <tr style={{ backgroundColor: 'var(--panel-orange-border)' }}>
                                 <th style={{
                                     padding: '12px',
                                     textAlign: 'left',
                                     fontWeight: 'bold',
-                                    color: 'var(--chakra-colors-orange-700)',
-                                    borderBottom: '2px solid var(--chakra-colors-orange-500)',
+                                    color: 'var(--panel-orange-heading)',
+                                    borderBottom: '2px solid var(--panel-orange-border)',
                                     minWidth: '120px'
                                 }}>
                                 </th>
@@ -120,13 +120,13 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
                                         padding: '12px',
                                         textAlign: 'center',
                                         fontWeight: 'bold',
-                                        color: 'var(--chakra-colors-orange-700)',
-                                        borderBottom: '2px solid var(--chakra-colors-orange-500)',
+                                        color: 'var(--panel-orange-heading)',
+                                        borderBottom: '2px solid var(--panel-orange-border)',
                                         minWidth: '80px'
                                     }}>
                                         <div>
                                             <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{weightUnit}</div>
-                                            <div style={{ fontSize: '12px', color: 'var(--chakra-colors-orange-600)', fontWeight: 'normal' }}>
+                                            <div style={{ fontSize: '12px', color: 'var(--panel-orange-text)', fontWeight: 'normal' }}>
                                                 {getUnitDisplayName(weightUnit)}
                                             </div>
                                         </div>
@@ -137,20 +137,20 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
                         <tbody>
                             {filteredVolumeUnits.map((volumeUnit, index) => (
                                 <tr key={volumeUnit} style={{
-                                    backgroundColor: index % 2 === 0 ? 'var(--chakra-colors-bg)' : 'var(--chakra-colors-orange-50)',
+                                    backgroundColor: index % 2 === 0 ? 'var(--card-bg)' : 'var(--panel-orange-bg)',
                                     transition: 'background-color 0.2s'
                                 }}>
                                     <td style={{
                                         padding: '12px',
                                         fontWeight: 'medium',
-                                        borderBottom: '1px solid var(--chakra-colors-orange-200)',
-                                        borderRight: '2px solid var(--chakra-colors-orange-500)'
+                                        borderBottom: '1px solid var(--border-color)',
+                                        borderRight: '2px solid var(--panel-orange-border)'
                                     }}>
                                         <div>
-                                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--chakra-colors-fg)' }}>
+                                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--heading-color)' }}>
                                                 {volumeUnit}
                                             </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--chakra-colors-gray-500)' }}>
+                                            <div style={{ fontSize: '12px', color: 'var(--muted-text)' }}>
                                                 {getUnitDisplayName(volumeUnit)}
                                             </div>
                                         </div>
@@ -163,13 +163,13 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
                                             <td key={`${volumeUnit}-${weightUnit}`} style={{
                                                 padding: '12px',
                                                 textAlign: 'center',
-                                                borderBottom: '1px solid var(--chakra-colors-orange-200)'
+                                                borderBottom: '1px solid var(--border-color)'
                                             }}>
                                                 <Text
                                                     fontSize="sm"
-                                                    color={isUnavailable ? 'gray.400' : 'gray.800'}
                                                     fontFamily={isUnavailable ? 'inherit' : 'mono'}
                                                     fontWeight={isUnavailable ? 'normal' : 'medium'}
+                                                    style={{ color: isUnavailable ? 'var(--empty-text)' : 'var(--heading-color)' }}
                                                 >
                                                     {formatValue(value)}
                                                 </Text>
@@ -182,7 +182,7 @@ const ConversionMatrix: React.FC<ConversionMatrixProps> = ({ matrix, loading, er
                     </table>
                 </Box>
 
-                <Box fontSize="xs" color="orange.600" pt={2} borderTop="1px solid" borderColor="orange.200">
+                <Box fontSize="xs" pt={2} borderTop="1px solid" style={{ color: 'var(--panel-orange-text)', borderColor: 'var(--border-color)' }}>
                     <Text>
                         <strong>How to read:</strong> Find your volume unit in the left column, then look across to find the equivalent weight.
                         For example, "1 cup = X grams" means 1 cup of {matrix.ingredient.name} weighs X grams.

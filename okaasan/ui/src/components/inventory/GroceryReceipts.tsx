@@ -15,6 +15,7 @@ import {
 } from '@chakra-ui/react';
 import { recipeAPI } from '../../services/api';
 import type { Ingredient } from '../../services/type';
+import ReceiptScanner, { type ParsedReceiptItem } from './ReceiptScanner';
 
 // Custom icon components
 const DeleteIcon = () => (
@@ -45,6 +46,12 @@ const PasteIcon = () => (
 const CloseIcon = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+    </svg>
+);
+
+const CameraIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M9.5 6.5v3h-3v-3h3M11 5H5v6h6V5zm-1.5 9.5v3h-3v-3h3M11 13H5v6h6v-6zm6.5-6.5v3h-3v-3h3M19 5h-6v6h6V5zm-6 8h1.5v1.5H13V13zm1.5 1.5H16V16h-1.5v-1.5zM16 13h1.5v1.5H16V13zm-3 3h1.5v1.5H13V16zm1.5 1.5H16V19h-1.5v-1.5zM16 16h1.5v1.5H16V16zm1.5-1.5H19V16h-1.5v-1.5zm0 3H19V19h-1.5v-1.5zM22 7h-2V4h-3V2h5v5zm0 15v-5h-2v3h-3v2h5zM2 22h5v-2H4v-3H2v5zM2 2v5h2V4h3V2H2z" />
     </svg>
 );
 
@@ -82,6 +89,7 @@ const GroceryReceipts: React.FC = () => {
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
     const [showPasteModal, setShowPasteModal] = useState(false);
     const [pastedText, setPastedText] = useState('');
+    const [showScanner, setShowScanner] = useState(false);
 
     // Receipt form state
     const [storeName, setStoreName] = useState('');
@@ -311,6 +319,19 @@ const GroceryReceipts: React.FC = () => {
         }
     };
 
+    const handleScannedItems = (scannedItems: ParsedReceiptItem[]) => {
+        const groceryOnly = scannedItems.filter(si => si.kind === 'item');
+        const converted: GroceryItem[] = groceryOnly.map(si => ({
+            name: si.name,
+            price: si.price,
+            quantity: 1,
+            unit: 'piece',
+            category: '',
+        }));
+        setItems(converted);
+        showMessage(`Imported ${converted.length} items from scanner!`, 'success');
+    };
+
     const validateForm = () => {
         if (!storeName.trim()) return 'Store name is required';
         if (!purchaseDate) return 'Purchase date is required';
@@ -398,14 +419,24 @@ const GroceryReceipts: React.FC = () => {
                             <ReceiptIcon />
                             <Heading size="lg">Add Grocery Receipt</Heading>
                         </Flex>
-                        <Button
-                            onClick={() => setShowPasteModal(true)}
-                            colorScheme="purple"
-                            variant="outline"
-                            size="md"
-                        >
-                            <PasteIcon /> Paste Receipt
-                        </Button>
+                        <HStack gap={2}>
+                            <Button
+                                onClick={() => setShowScanner(true)}
+                                colorScheme="blue"
+                                variant="outline"
+                                size="md"
+                            >
+                                <CameraIcon /> Scan Receipt
+                            </Button>
+                            <Button
+                                onClick={() => setShowPasteModal(true)}
+                                colorScheme="purple"
+                                variant="outline"
+                                size="md"
+                            >
+                                <PasteIcon /> Paste Receipt
+                            </Button>
+                        </HStack>
                     </Flex>
                     <Text color="gray.600">
                         Enter your grocery receipt details manually or paste receipt text to auto-populate.
@@ -617,6 +648,14 @@ const GroceryReceipts: React.FC = () => {
                     </Text>
                 </Box>
             </VStack>
+
+            {/* Receipt Scanner Modal */}
+            {showScanner && (
+                <ReceiptScanner
+                    onItemsParsed={handleScannedItems}
+                    onClose={() => setShowScanner(false)}
+                />
+            )}
 
             {/* Paste Receipt Modal */}
             {showPasteModal && (

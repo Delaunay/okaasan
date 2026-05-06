@@ -6,9 +6,13 @@ Since the CSV files are very large (2M+ rows), we use CSV iteration rather than 
 """
 
 import csv
+import logging
 import os
+import time
 from typing import List, Dict, Optional, Tuple
 from functools import lru_cache
+
+log = logging.getLogger("okaasan.usda")
 
 HERE = os.path.dirname(__file__)
 USDA_FOLDER = os.path.join(HERE, "..", "..", "..", "data", "usda")
@@ -36,17 +40,18 @@ class USDAReader:
         Returns:
             List of food items matching the query
         """
+        log.info("search_foods query=%r limit=%d data_type=%s file=%s", query, limit, data_type, self.food_csv)
+        t0 = time.monotonic()
         results = []
+        rows_scanned = 0
         query_lower = query.lower()
 
         with open(self.food_csv, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                print(query)
-                # Check if description matches query
+                rows_scanned += 1
                 description = row.get('description', '')
                 if query_lower in description.lower():
-                    # Apply data_type filter if specified
                     if data_type and row.get('data_type', '') != data_type:
                         continue
 
@@ -61,6 +66,8 @@ class USDAReader:
                     if len(results) >= limit:
                         break
 
+        elapsed = time.monotonic() - t0
+        log.info("search_foods done: %d results, %d rows scanned in %.2fs", len(results), rows_scanned, elapsed)
         return results
 
     @lru_cache(maxsize=128)
@@ -97,11 +104,15 @@ class USDAReader:
         Returns:
             List of nutrients with their amounts
         """
+        log.info("get_food_nutrients fdc_id=%s", fdc_id)
+        t0 = time.monotonic()
         nutrients = []
+        rows_scanned = 0
 
         with open(self.food_nutrient_csv, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                rows_scanned += 1
                 if row['fdc_id'] == fdc_id:
                     nutrient_id = row['nutrient_id']
                     nutrient_info = self.get_nutrient_info(nutrient_id)
@@ -113,7 +124,6 @@ class USDAReader:
                         except ValueError:
                             amount_float = 0.0
 
-                        # Try to parse percent daily value
                         pdv = row.get('percent_daily_value', '')
                         try:
                             pdv_float = float(pdv) if pdv else 0.0
@@ -128,6 +138,8 @@ class USDAReader:
                             'percent_daily_value': pdv_float
                         })
 
+        elapsed = time.monotonic() - t0
+        log.info("get_food_nutrients done: %d nutrients, %d rows scanned in %.2fs", len(nutrients), rows_scanned, elapsed)
         return nutrients
 
     def get_food_details(self, fdc_id: str) -> Optional[Dict]:
@@ -140,7 +152,9 @@ class USDAReader:
         Returns:
             Dict with food info and nutrients, or None if not found
         """
-        # First, find the food
+        log.info("get_food_details fdc_id=%s", fdc_id)
+        t0 = time.monotonic()
+
         food_info = None
         with open(self.food_csv, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -156,12 +170,15 @@ class USDAReader:
                     break
 
         if not food_info:
+            log.info("get_food_details fdc_id=%s not found in %.2fs", fdc_id, time.monotonic() - t0)
             return None
 
-        # Get all nutrients for this food
+        log.info("get_food_details found %r, fetching nutrients...", food_info['description'])
         nutrients = self.get_food_nutrients(fdc_id)
         food_info['nutrients'] = nutrients
 
+        elapsed = time.monotonic() - t0
+        log.info("get_food_details done: %d nutrients in %.2fs", len(nutrients), elapsed)
         return food_info
 
     @lru_cache(maxsize=128)

@@ -18,7 +18,8 @@ import {
   Heading,
 } from '@chakra-ui/react';
 import { recipeAPI, imagePath } from '../../services/api';
-import type { RecipeData, RecipeIngredient, Instruction } from '../../services/type';
+import type { RecipeData, RecipeIngredient, Instruction, RecipeNutritionResult, IngredientComposition } from '../../services/type';
+import NutritionFacts from './NutritionFacts';
 import { convert, getAvailableUnits } from '../../utils/unit_cvt';
 import { formatQuantity, parseFractionToDecimal } from '../../utils/fractions';
 import ImageUpload from './ImageUpload';
@@ -3005,6 +3006,30 @@ const Recipe: FC<RecipeProps> = ({
     }
   }, [recipe.title, isEditable, initialRecipe]);
 
+  // Nutrition calculation state
+  const [nutritionResult, setNutritionResult] = useState<RecipeNutritionResult | null>(null);
+  const [nutritionLoading, setNutritionLoading] = useState(false);
+  const [showNutritionErrors, setShowNutritionErrors] = useState(false);
+
+  const fetchNutrition = useCallback(async () => {
+    if (!recipe.id) return;
+    setNutritionLoading(true);
+    try {
+      const result = await recipeAPI.calculateRecipeNutrition(recipe.id);
+      setNutritionResult(result);
+    } catch (err) {
+      console.error('Failed to calculate nutrition:', err);
+    } finally {
+      setNutritionLoading(false);
+    }
+  }, [recipe.id]);
+
+  useEffect(() => {
+    if (recipe.id && !isEditable) {
+      fetchNutrition();
+    }
+  }, [recipe.id, isEditable, fetchNutrition]);
+
   // Load available units for each ingredient when not in edit mode
   useEffect(() => {
     if (!isEditable && recipe.ingredients && recipe.ingredients.length > 0) {
@@ -3704,6 +3729,91 @@ const Recipe: FC<RecipeProps> = ({
           onRemoveCategory={removeCategory}
           onUpdateCategory={updateCategoryStable}
         />
+
+        {/* Recipe Nutrition */}
+        {recipe.id && !isEditable && (
+          <Box>
+            <HStack mb={2} align="center" gap={2}>
+              <Text fontSize="lg" fontWeight="bold" style={{ color: 'var(--heading-color)' }}>
+                Recipe Nutrition
+              </Text>
+              {nutritionLoading && <Spinner size="sm" />}
+              {nutritionResult?.error && (
+                <Box
+                  position="relative"
+                  cursor="pointer"
+                  onMouseEnter={() => setShowNutritionErrors(true)}
+                  onMouseLeave={() => setShowNutritionErrors(false)}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--expense-color)">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  </svg>
+                  {showNutritionErrors && (
+                    <Box
+                      position="absolute"
+                      top="100%"
+                      left="0"
+                      zIndex={10}
+                      mt={1}
+                      p={3}
+                      borderRadius="md"
+                      border="1px solid"
+                      maxW="400px"
+                      minW="280px"
+                      style={{
+                        backgroundColor: 'var(--card-bg-raised)',
+                        borderColor: 'var(--border-color)',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      }}
+                    >
+                      <Text fontSize="sm" fontWeight="bold" mb={2} style={{ color: 'var(--expense-color)' }}>
+                        Incomplete Calculation
+                      </Text>
+                      {nutritionResult.error_messages.map((msg, i) => (
+                        <Text key={i} fontSize="xs" mb={1} style={{ color: 'var(--muted-text)' }}>
+                          {msg}
+                        </Text>
+                      ))}
+                      {nutritionResult.missing_nutrition_ingredients.length > 0 && (
+                        <Box mt={2} pt={2} borderTop="1px solid" style={{ borderColor: 'var(--border-color)' }}>
+                          <Text fontSize="xs" fontWeight="semibold" mb={1} style={{ color: 'var(--heading-color)' }}>
+                            Missing nutrition data:
+                          </Text>
+                          {nutritionResult.missing_nutrition_ingredients.map((mi, i) => (
+                            <Text key={i} fontSize="xs" style={{ color: 'var(--muted-text)' }}>
+                              {mi.name} — {mi.reason.replace(/_/g, ' ')}
+                            </Text>
+                          ))}
+                        </Box>
+                      )}
+                      {!nutritionResult.cached && (
+                        <Text fontSize="xs" mt={2} fontStyle="italic" style={{ color: 'var(--empty-text)' }}>
+                          Results not cached due to errors
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              )}
+              <Spacer />
+              <Button size="xs" variant="outline" onClick={fetchNutrition} disabled={nutritionLoading}>
+                Recalculate
+              </Button>
+            </HStack>
+            {nutritionResult && nutritionResult.compositions.length > 0 && (
+              <NutritionFacts
+                compositions={nutritionResult.compositions as IngredientComposition[]}
+                entityId={recipe.id}
+                editable={false}
+              />
+            )}
+            {nutritionResult && nutritionResult.compositions.length === 0 && !nutritionLoading && (
+              <Text fontSize="sm" style={{ color: 'var(--empty-text)' }}>
+                No nutrition data could be calculated for this recipe.
+              </Text>
+            )}
+          </Box>
+        )}
 
         {/* Recipe ID Display (for debugging) */}
         {recipe.id && (

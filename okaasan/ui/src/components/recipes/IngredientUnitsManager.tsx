@@ -92,27 +92,27 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
         return (
             <Box textAlign="center" py={6}>
                 <Spinner size="md" />
-                <Text mt={2} fontSize="sm" color="gray.600">Loading units data...</Text>
+                <Text mt={2} fontSize="sm" style={{ color: 'var(--muted-text)' }}>Loading units data...</Text>
             </Box>
         );
     }
 
     if (error) {
         return (
-            <Box p={4} bg="red.50" borderRadius="md" borderLeft="4px solid" borderColor="red.400">
-                <Text fontWeight="medium" color="red.800" mb={1}>Error loading units</Text>
-                <Text fontSize="sm" color="red.700">{error}</Text>
+            <Box p={4} borderRadius="md" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-red-bg)', borderColor: 'var(--panel-red-border)' }}>
+                <Text fontWeight="medium" mb={1} style={{ color: 'var(--panel-red-heading)' }}>Error loading units</Text>
+                <Text fontSize="sm" style={{ color: 'var(--panel-red-text)' }}>{error}</Text>
             </Box>
         );
     }
 
     if (!unitsData || unitsData.units_used.length === 0) {
         return (
-            <Box textAlign="center" py={6} bg="gray.50" borderRadius="lg">
-                <Text fontSize="md" color="gray.500" mb={2}>
+            <Box textAlign="center" py={6} borderRadius="lg" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                <Text fontSize="md" mb={2} style={{ color: 'var(--muted-text)' }}>
                     No units used yet
                 </Text>
-                <Text fontSize="sm" color="gray.400">
+                <Text fontSize="sm" style={{ color: 'var(--empty-text)' }}>
                     This ingredient hasn't been used in any recipes yet.
                 </Text>
             </Box>
@@ -120,13 +120,13 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
     }
 
     return (
-        <Box p={6} bg="green.50" borderRadius="lg" borderLeft="4px solid" borderColor="green.400">
+        <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-green-bg)', borderColor: 'var(--panel-green-border)' }}>
             <VStack gap={4} align="stretch">
                 <Box>
-                    <Heading size="md" color="green.800" mb={2}>
+                    <Heading size="md" mb={2} style={{ color: 'var(--panel-green-heading)' }}>
                         Units Used for {unitsData.ingredient.name}
                     </Heading>
-                    <Text fontSize="sm" color="green.700">
+                    <Text fontSize="sm" style={{ color: 'var(--panel-green-text)' }}>
                         These are the units currently used for this ingredient across {unitsData.total_uses} recipe entries.
                         Add conversions to make unit switching easier.
                     </Text>
@@ -134,20 +134,20 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
 
                 {/* Success Message */}
                 {successMessage && (
-                    <Box p={3} bg="green.100" borderRadius="md" border="1px solid" borderColor="green.300">
-                        <Text fontSize="sm" color="green.800" fontWeight="medium">{successMessage}</Text>
+                    <Box p={3} borderRadius="md" border="1px solid" style={{ backgroundColor: 'var(--panel-green-accent-bg)', borderColor: 'var(--panel-green-accent-border)' }}>
+                        <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-green-heading)' }}>{successMessage}</Text>
                     </Box>
                 )}
 
                 {/* Units List */}
                 <VStack gap={3} align="stretch">
                     {unitsData.units_used.map(unit => (
-                        <Box key={unit} p={4} bg="bg" borderRadius="md" shadow="sm">
+                        <Box key={unit} p={4} borderRadius="md" shadow="sm" style={{ backgroundColor: 'var(--card-bg-raised)', border: '1px solid var(--border-color)' }}>
                             <VStack gap={3} align="stretch">
                                 {/* Unit Header */}
                                 <HStack justify="space-between" align="center">
                                     <HStack>
-                                        <Text fontSize="lg" fontWeight="bold" color="gray.800">{unit}</Text>
+                                        <Text fontSize="lg" fontWeight="bold" style={{ color: 'var(--heading-color)' }}>{unit}</Text>
                                         <Badge colorScheme="green" variant="subtle">
                                             {unitsData.unit_usage_count[unit]} uses
                                         </Badge>
@@ -168,7 +168,7 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
                                 {/* Existing Conversions */}
                                 {unitsData.existing_conversions[unit] && unitsData.existing_conversions[unit].length > 0 && (
                                     <Box>
-                                        <Text fontSize="xs" color="gray.600" mb={1}>Existing conversions:</Text>
+                                        <Text fontSize="xs" mb={1} style={{ color: 'var(--muted-text)' }}>Existing conversions:</Text>
                                         <HStack wrap="wrap" gap={1}>
                                             {unitsData.existing_conversions[unit].map(toUnit => (
                                                 <Badge key={toUnit} colorScheme="blue" variant="outline" fontSize="xs">
@@ -181,8 +181,8 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
 
                                 {/* Recipe Usage */}
                                 <Box>
-                                    <Text fontSize="xs" color="gray.600" mb={1}>Used in recipes:</Text>
-                                    <Text fontSize="sm" color="gray.700">
+                                    <Text fontSize="xs" mb={1} style={{ color: 'var(--muted-text)' }}>Used in recipes:</Text>
+                                    <Text fontSize="sm" style={{ color: 'var(--heading-color)' }}>
                                         {unitsData.recipe_names[unit]?.slice(0, 3).join(', ')}
                                         {unitsData.recipe_names[unit]?.length > 3 && ` (+${unitsData.recipe_names[unit].length - 3} more)`}
                                     </Text>
@@ -190,9 +190,9 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
 
                                 {/* Conversion Form */}
                                 {activeConversion === unit && (
-                                    <Box p={3} bg="blue.50" borderRadius="md" border="1px solid" borderColor="blue.200">
+                                    <Box p={3} borderRadius="md" border="1px solid" style={{ backgroundColor: 'var(--panel-blue-bg)', borderColor: 'var(--panel-blue-border)' }}>
                                         <VStack gap={3} align="stretch">
-                                            <Text fontSize="sm" fontWeight="medium" color="blue.800">
+                                            <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-blue-heading)' }}>
                                                 Create conversion from {unit}
                                             </Text>
 
@@ -206,8 +206,9 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
                                                             width: '100%',
                                                             padding: '6px 8px',
                                                             borderRadius: '4px',
-                                                            border: '1px solid var(--chakra-colors-border)',
-                                                            backgroundColor: 'var(--chakra-colors-bg)',
+                                                            border: '1px solid var(--border-color)',
+                                                            backgroundColor: 'var(--input-bg)',
+                                                            color: 'var(--heading-color)',
                                                             fontSize: '14px'
                                                         }}
                                                     >
@@ -236,7 +237,7 @@ const IngredientUnitsManager: React.FC<IngredientUnitsManagerProps> = ({ ingredi
                                                 </Box>
                                             </SimpleGrid>
 
-                                            <Text fontSize="xs" color="blue.600">
+                                            <Text fontSize="xs" style={{ color: 'var(--panel-blue-text)' }}>
                                                 Example: If 1 {unit} = 240 ml, enter "240" and select "ml"
                                             </Text>
 

@@ -55,6 +55,44 @@
   /* Settings */
   --icon-color: #2b6cb0;
 
+  /* Ingredient Detail panels */
+  --panel-blue-bg: #ebf8ff;
+  --panel-blue-border: #4299e1;
+  --panel-blue-heading: #2c5282;
+  --panel-blue-text: #2b6cb0;
+
+  --panel-orange-bg: #fffaf0;
+  --panel-orange-border: #ed8936;
+  --panel-orange-heading: #9c4221;
+  --panel-orange-text: #c05621;
+
+  --panel-purple-bg: #faf5ff;
+  --panel-purple-border: #9f7aea;
+  --panel-purple-heading: #553c9a;
+  --panel-purple-text: #6b46c1;
+
+  --panel-teal-bg: #e6fffa;
+  --panel-teal-border: #38b2ac;
+  --panel-teal-heading: #234e52;
+  --panel-teal-text: #2c7a7b;
+
+  --panel-red-bg: #fff5f5;
+  --panel-red-border: #fc8181;
+  --panel-red-heading: #c53030;
+  --panel-red-text: #e53e3e;
+
+  --panel-green-bg: #f0fff4;
+  --panel-green-border: #68d391;
+  --panel-green-heading: #276749;
+  --panel-green-text: #2f855a;
+  --panel-green-accent-bg: #c6f6d5;
+  --panel-green-accent-border: #9ae6b4;
+
+  --dropdown-bg: #fff;
+  --dropdown-border: #e2e8f0;
+  --dropdown-hover: #f7fafc;
+  --dropdown-divider: #edf2f7;
+
   /* Nutrition Facts */
   --nf-border: #1a202c;
   --nf-border-medium: #cbd5e0;
@@ -131,6 +169,44 @@
 
   /* Settings */
   --icon-color: #90cdf4;
+
+  /* Ingredient Detail panels */
+  --panel-blue-bg: #1a365d;
+  --panel-blue-border: #2b6cb0;
+  --panel-blue-heading: #90cdf4;
+  --panel-blue-text: #63b3ed;
+
+  --panel-orange-bg: #3c2415;
+  --panel-orange-border: #dd6b20;
+  --panel-orange-heading: #fbd38d;
+  --panel-orange-text: #f6ad55;
+
+  --panel-purple-bg: #2d2150;
+  --panel-purple-border: #805ad5;
+  --panel-purple-heading: #d6bcfa;
+  --panel-purple-text: #b794f4;
+
+  --panel-teal-bg: #1a3a3a;
+  --panel-teal-border: #319795;
+  --panel-teal-heading: #81e6d9;
+  --panel-teal-text: #4fd1c5;
+
+  --panel-red-bg: #3b1a1a;
+  --panel-red-border: #fc8181;
+  --panel-red-heading: #feb2b2;
+  --panel-red-text: #fc8181;
+
+  --panel-green-bg: #1c4532;
+  --panel-green-border: #38a169;
+  --panel-green-heading: #68d391;
+  --panel-green-text: #48bb78;
+  --panel-green-accent-bg: #22543d;
+  --panel-green-accent-border: #38a169;
+
+  --dropdown-bg: #1a202c;
+  --dropdown-border: #2d3748;
+  --dropdown-hover: #2d3748;
+  --dropdown-divider: #2d3748;
 
   /* Nutrition Facts */
   --nf-border: #e2e8f0;

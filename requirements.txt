@@ -12,3 +12,5 @@ argklass
 usda_fdc
 google-api-python-client
 google-auth
+easyocr
+piper-tts

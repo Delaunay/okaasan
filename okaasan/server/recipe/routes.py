@@ -242,6 +242,32 @@ def calculate_recipe_nutrition_endpoint(
 
     try:
         result = calculate_recipe_nutrition(db, recipe_id, portion_weight_g)
+
+        if not result.get("error"):
+            try:
+                db.query(IngredientComposition).filter_by(recipe_id=recipe_id).delete()
+                for comp in result.get("compositions", []):
+                    db.add(IngredientComposition(
+                        recipe_id=recipe_id,
+                        kind=comp.get("kind"),
+                        name=comp.get("name"),
+                        quantity=comp.get("quantity"),
+                        unit=comp.get("unit"),
+                        daily_value=comp.get("daily_value"),
+                        source="calculated",
+                    ))
+                db.commit()
+                result["cached"] = True
+            except Exception as cache_err:
+                db.rollback()
+                log.warning(
+                    "Failed to cache nutrition for recipe %s: %s",
+                    recipe_id, cache_err,
+                )
+                result["cached"] = False
+        else:
+            result["cached"] = False
+
         return result
     except Exception as e:
         log.error(

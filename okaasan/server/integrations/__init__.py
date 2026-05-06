@@ -21,11 +21,10 @@ def register_integrations(app: "FastAPI", engine: "Engine") -> None:
 
     # --- USDA (FoodData Central API + local CSV) ---
     try:
-        from .route_usda import create_usda_routers
+        from .route_usda import create_usda_router
 
-        fdc_router, csv_router = create_usda_routers(engine)
-        app.include_router(fdc_router)
-        app.include_router(csv_router)
+        usda_router = create_usda_router(engine)
+        app.include_router(usda_router)
     except Exception as exc:
         log.warning("USDA routes not available: %s", exc)
 
@@ -60,3 +59,11 @@ def register_integrations(app: "FastAPI", engine: "Engine") -> None:
         app.include_router(weather_router)
     except Exception as exc:
         log.warning("Weather routes not available: %s", exc)
+
+    # --- OCR (receipt scanning) ---
+    try:
+        from .ocr.route_ocr import router as ocr_router
+
+        app.include_router(ocr_router)
+    except Exception as exc:
+        log.warning("OCR routes not available: %s", exc)

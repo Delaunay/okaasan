@@ -91,7 +91,9 @@ const IngredientCompositionManager: FC<IngredientCompositionManagerProps> = ({ i
             const data = await recipeAPI.getIngredientCompositions(ingredientId, source);
             const sorted = sortIngredientCompositions(data);
             setCompositions(sorted);
-            setSelectedSource(sorted[0].source);
+            if (sorted.length > 0 && sorted[0].source) {
+                setSelectedSource(sorted[0].source);
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load compositions');
         } finally {

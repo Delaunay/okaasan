@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import logging
 import os
 import csv
 import time
 import traceback
-from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..models import Ingredient, IngredientComposition
 from .usda.usda_reader import USDAReader
+
+log = logging.getLogger("okaasan.usda.routes")
 
 HERE = os.path.dirname(__file__)
 USDA_FOLDER = os.path.join(HERE, "..", "..", "data", "usda")
@@ -30,20 +32,20 @@ def get_db_from_engine(engine):
     return get_db
 
 
-def create_usda_routers(engine):
-    fdc_router = APIRouter()
-    csv_router = APIRouter()
-
+def create_usda_router(engine):
+    router = APIRouter()
     get_db = get_db_from_engine(engine)
 
-    # FDC API routes
+    log.info("Initializing USDA reader from %s", USDA_FOLDER)
+    usda_reader = USDAReader(USDA_FOLDER)
+
+    # Try to load the FDC library for analyze/nutrient-group features
+    fdc_client = None
+    fdc_extras = {}
     try:
         from usda_fdc.client import FdcClient
-        from usda_fdc.models import SearchResult, Food
-        from usda_fdc.analysis.recipe import parse_ingredient as _parse_ingredient
         from usda_fdc.analysis import analyze_food, DriType, Gender
-        from usda_fdc.analysis.recipe import create_recipe, analyze_recipe as _analyze_recipe
-        from usda_fdc.analysis.nutrients import get_nutrient_by_usda_id, NUTRIENT_GROUPS
+        from usda_fdc.analysis.nutrients import NUTRIENT_GROUPS
 
         class RateLimitedClient(FdcClient):
             def __init__(self, api_key, requests_per_minute=10, **kwargs):
@@ -62,73 +64,52 @@ def create_usda_routers(engine):
                 return result
 
         api_key = os.getenv("FDC_API_KEY")
-        client = RateLimitedClient(api_key)
-
-        @fdc_router.get("/usda/search/{name}")
-        def search_usda_foods(name: str):
-            rows: SearchResult = client.search(name, data_type="Foundation")
-            return [asdict(row) for row in rows.foods]
-
-        @fdc_router.get("/usda/food/{fdc_id:int}")
-        def get_food(fdc_id: int):
-            food: Food = client.get_food(fdc_id, nutrients=None)
-            return asdict(food)
-
-        @fdc_router.get("/usda/analyze/{fdc_id:int}")
-        def analyze_ingredient(fdc_id: int):
-            try:
-                food = client.get_food(fdc_id)
-                analysis = analyze_food(
-                    food, dri_type=DriType.RDA, gender=Gender.MALE, serving_size=100.0
-                )
-                return asdict(analysis)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-        @fdc_router.get("/usda/nutrient/group/{name}")
-        def get_nutrient(name: str):
-            original_name = name
-            name_lower = name.split(",")[0].lower()
-            dname = name_lower.capitalize()
-
-            if 'total lipid' in name_lower:
-                return {"name": "", "group": "Fat"}
-            if 'fatty' in name_lower:
-                n = original_name.split(",")[1].replace("total", "").strip().capitalize()
-                return {"name": n, "group": "Fat"}
-            if 'fat' in name_lower:
-                return {"name": dname, "group": 'Fat'}
-            if 'vitamin' in name_lower:
-                return {"name": dname, "group": 'Vitamin'}
-            if 'energy' in name_lower:
-                return {"name": "", "group": "Calories"}
-
-            for group, items in NUTRIENT_GROUPS.items():
-                if name_lower in items:
-                    if group == 'macronutrient':
-                        return {"name": dname, "group": dname}
-                    return {"name": dname, "group": group.capitalize()}
-
-            return {"name": dname, "group": 'Others'}
+        if api_key:
+            fdc_client = RateLimitedClient(api_key)
+            fdc_extras = {
+                "analyze_food": analyze_food,
+                "DriType": DriType,
+                "Gender": Gender,
+                "NUTRIENT_GROUPS": NUTRIENT_GROUPS,
+            }
+            log.info("FDC API client initialized (rate-limited)")
+        else:
+            log.info("FDC_API_KEY not set, FDC API features disabled")
     except (ImportError, ModuleNotFoundError):
-        pass
+        traceback.print_exc()
+    except Exception:
+        traceback.print_exc()
 
-    # CSV-based USDA routes
-    usda_reader = USDAReader(USDA_FOLDER)
+    # --- Search ---
 
-    @csv_router.get("/usda/search")
-    def search_usda_csv(q: str = "", limit: int = 20, data_type: str = "foundation_food"):
+    def _do_search(q: str, limit: int = 20, data_type: str = "foundation_food"):
         if not q:
             raise HTTPException(status_code=400, detail="Query parameter 'q' is required")
         limit = min(max(1, limit), 100)
+        log.info("search q=%r limit=%d data_type=%s", q, limit, data_type)
+        t0 = time.monotonic()
         try:
             results = usda_reader.search_foods(q, limit=limit, data_type=data_type)
-            return {"query": q, "count": len(results), "results": results}
+            log.info("search done: %d results in %.2fs", len(results), time.monotonic() - t0)
+            return results
         except Exception as e:
+            log.error("search failed after %.2fs: %s", time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/usda/food/{fdc_id}")
-    def get_usda_food_details(fdc_id: str):
+    @router.get("/usda/search/{name:path}")
+    def search_usda_by_name(name: str, limit: int = 20, data_type: str = "foundation_food"):
+        return _do_search(name, limit, data_type)
+
+    @router.get("/usda/search")
+    def search_usda(q: str = "", limit: int = 20, data_type: str = "foundation_food"):
+        return _do_search(q, limit, data_type)
+
+    # --- Food details ---
+
+    @router.get("/usda/food/{fdc_id}")
+    def get_food_details(fdc_id: str):
+        log.info("food details fdc_id=%s", fdc_id)
+        t0 = time.monotonic()
         try:
             food_details = usda_reader.get_food_details(fdc_id)
             if not food_details:
@@ -138,28 +119,90 @@ def create_usda_routers(engine):
                 category = usda_reader.get_food_category(category_id)
                 if category:
                     food_details['category'] = category
+            log.info("food details done in %.2fs", time.monotonic() - t0)
             return food_details
         except HTTPException:
             raise
         except Exception as e:
+            log.error("food details failed after %.2fs: %s", time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/usda/food/{fdc_id}/nutrients")
-    def get_usda_food_nutrients(fdc_id: str):
+    # --- Nutrients ---
+
+    @router.get("/usda/food/{fdc_id}/nutrients")
+    def get_food_nutrients(fdc_id: str):
+        log.info("food nutrients fdc_id=%s", fdc_id)
+        t0 = time.monotonic()
         try:
             nutrients = usda_reader.get_food_nutrients(fdc_id)
             if not nutrients:
                 food_details = usda_reader.get_food_details(fdc_id)
                 if not food_details:
                     raise HTTPException(status_code=404, detail=f"Food with FDC ID {fdc_id} not found")
+                log.info("food nutrients: 0 nutrients in %.2fs", time.monotonic() - t0)
                 return {"fdc_id": fdc_id, "count": 0, "nutrients": []}
+            log.info("food nutrients done: %d nutrients in %.2fs", len(nutrients), time.monotonic() - t0)
             return {"fdc_id": fdc_id, "count": len(nutrients), "nutrients": nutrients}
         except HTTPException:
             raise
         except Exception as e:
+            log.error("food nutrients failed after %.2fs: %s", time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.post("/usda/apply")
+    # --- Analyze (requires FDC library) ---
+
+    @router.get("/usda/analyze/{fdc_id:int}")
+    def analyze_ingredient(fdc_id: int):
+        if not fdc_client:
+            raise HTTPException(status_code=501, detail="FDC API not available (usda_fdc not installed or FDC_API_KEY not set)")
+        from dataclasses import asdict
+        try:
+            analyze_food = fdc_extras["analyze_food"]
+            DriType = fdc_extras["DriType"]
+            Gender = fdc_extras["Gender"]
+            food = fdc_client.get_food(fdc_id)
+            analysis = analyze_food(
+                food, dri_type=DriType.RDA, gender=Gender.MALE, serving_size=100.0
+            )
+            return asdict(analysis)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # --- Nutrient group (requires FDC library) ---
+
+    @router.get("/usda/nutrient/group/{name}")
+    def get_nutrient_group(name: str):
+        if not fdc_extras.get("NUTRIENT_GROUPS"):
+            raise HTTPException(status_code=501, detail="FDC API not available (usda_fdc not installed)")
+
+        NUTRIENT_GROUPS = fdc_extras["NUTRIENT_GROUPS"]
+        original_name = name
+        name_lower = name.split(",")[0].lower()
+        dname = name_lower.capitalize()
+
+        if 'total lipid' in name_lower:
+            return {"name": "", "group": "Fat"}
+        if 'fatty' in name_lower:
+            n = original_name.split(",")[1].replace("total", "").strip().capitalize()
+            return {"name": n, "group": "Fat"}
+        if 'fat' in name_lower:
+            return {"name": dname, "group": 'Fat'}
+        if 'vitamin' in name_lower:
+            return {"name": dname, "group": 'Vitamin'}
+        if 'energy' in name_lower:
+            return {"name": "", "group": "Calories"}
+
+        for group, items in NUTRIENT_GROUPS.items():
+            if name_lower in items:
+                if group == 'macronutrient':
+                    return {"name": dname, "group": dname}
+                return {"name": dname, "group": group.capitalize()}
+
+        return {"name": dname, "group": 'Others'}
+
+    # --- Apply USDA data to ingredient ---
+
+    @router.post("/usda/apply")
     async def apply_usda_to_ingredient(request: Request, db: Session = Depends(get_db)):
         try:
             data = await request.json()
@@ -169,6 +212,7 @@ def create_usda_routers(engine):
             ingredient_id = data.get('ingredient_id')
             fdc_id = data.get('fdc_id')
             overwrite = data.get('overwrite', False)
+            log.info("apply ingredient_id=%s fdc_id=%s overwrite=%s", ingredient_id, fdc_id, overwrite)
 
             if not ingredient_id:
                 raise HTTPException(status_code=400, detail="ingredient_id is required")
@@ -179,9 +223,11 @@ def create_usda_routers(engine):
             if not ingredient:
                 raise HTTPException(status_code=404, detail=f"Ingredient with ID {ingredient_id} not found")
 
+            t0 = time.monotonic()
             food_details = usda_reader.get_food_details(fdc_id)
             if not food_details:
                 raise HTTPException(status_code=404, detail=f"USDA food with FDC ID {fdc_id} not found")
+            log.info("apply: fetched food details in %.2fs", time.monotonic() - t0)
 
             if overwrite:
                 db.query(IngredientComposition).filter_by(ingredient_id=ingredient_id, source='USDA').delete()
@@ -216,6 +262,7 @@ def create_usda_routers(engine):
                 added_count += 1
 
             db.commit()
+            log.info("apply done: added %d compositions in %.2fs", added_count, time.monotonic() - t0)
             updated_ingredient = db.query(Ingredient).filter_by(_id=ingredient_id).first()
             return {
                 "success": True,
@@ -228,11 +275,13 @@ def create_usda_routers(engine):
             raise
         except Exception as e:
             db.rollback()
-            traceback.print_exc()
+            log.exception("apply failed")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @csv_router.get("/usda/nutrient-list")
-    def get_usda_nutrient_list():
+    # --- Nutrient list ---
+
+    @router.get("/usda/nutrient-list")
+    def get_nutrient_list():
         try:
             nutrients = []
             with open(usda_reader.nutrient_csv, 'r', encoding='utf-8') as f:
@@ -248,4 +297,4 @@ def create_usda_routers(engine):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    return fdc_router, csv_router
+    return router

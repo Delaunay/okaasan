@@ -21,7 +21,8 @@ import type {
   KeyValueEntry,
   Article,
   ArticleBlock,
-  WeeklyDigest
+  WeeklyDigest,
+  RecipeNutritionResult,
 } from './type';
 
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
@@ -269,6 +270,16 @@ class RecipeAPI {
     });
   }
 
+  // Recipe Nutrition methods
+  async calculateRecipeNutrition(recipeId: number, portionWeightG?: number): Promise<RecipeNutritionResult> {
+    const params = portionWeightG ? `?portion_weight_g=${portionWeightG}` : '';
+    return this.request<RecipeNutritionResult>(`/recipes/${recipeId}/nutrition/calculate${params}`);
+  }
+
+  async getRecipeNutrition(recipeId: number): Promise<IngredientComposition[]> {
+    return this.request<IngredientComposition[]>(`/recipes/nutrition/${recipeId}`);
+  }
+
   // Category methods
   async getCategories(): Promise<Category[]> {
     return this.request<Category[]>('/categories');
@@ -363,6 +374,33 @@ class RecipeAPI {
       console.error('Image upload failed:', error);
       throw error;
     }
+  }
+
+  async scanReceipt(
+    imageBlob: Blob,
+    lang: string = 'en',
+  ): Promise<{
+    lines: Array<{ text: string; bbox: [number, number, number, number]; confidence: number }>;
+    image_width: number;
+    image_height: number;
+  }> {
+    if (isStaticMode()) {
+      throw new Error('OCR scanning is not supported in static mode');
+    }
+
+    const formData = new FormData();
+    formData.append('file', imageBlob, 'receipt.png');
+    formData.append('lang', lang);
+
+    const url = `${API_BASE_URL}/ocr/scan`;
+    const response = await fetch(url, { method: 'POST', body: formData });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `OCR failed: ${response.status}`);
+    }
+
+    return response.json();
   }
 
   async downloadImage(file: File, articlePath: string): Promise<{ url: string; filename: string }> {
@@ -949,6 +987,7 @@ class RecipeAPI {
     const url = `${API_BASE_URL}/update`;
     return fetch(url, { method: 'POST' });
   }
+
 }
 
 // Export a singleton instance

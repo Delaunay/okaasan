@@ -89,6 +89,29 @@ export interface IngredientComposition {
     source?: string;
 }
 
+export interface MissingNutritionIngredient {
+    ingredient_id?: number;
+    ingredient_recipe_id?: number;
+    recipe_ingredient_id?: number;
+    name: string;
+    reason: string;
+}
+
+export interface RecipeNutritionResult {
+    recipe_id: number;
+    calculation_time: string;
+    error: boolean;
+    error_messages: string[];
+    missing_nutrition_ingredients: MissingNutritionIngredient[];
+    normalization: {
+        type: string;
+        value: number;
+        unit: string;
+    };
+    compositions: IngredientComposition[];
+    cached?: boolean;
+}
+
 export interface IngredientSubstitution {
     id?: number;
     reason?: string; // Reason of the replacement (nut allergy, lactose intolerance)

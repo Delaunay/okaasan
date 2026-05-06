@@ -104,10 +104,10 @@ const ContentEditable: FC<ContentEditableProps> = ({ content, onContentChange, c
       style={{
         minHeight: multiline ? '60px' : 'auto',
         padding: isEditable ? '8px' : '0',
-        border: isEditable ? '1px solid var(--chakra-colors-border)' : 'none',
+        border: isEditable ? '1px solid var(--border-color)' : 'none',
         borderRadius: isEditable ? '4px' : '0',
         outline: 'none',
-        backgroundColor: isEditable ? 'var(--chakra-colors-bg)' : 'transparent',
+        backgroundColor: isEditable ? 'var(--input-bg)' : 'transparent',
       }}
       data-placeholder={placeholder}
     >
@@ -204,14 +204,14 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
 
       {/* Ingredient Icon/Placeholder */}
       <Box
-        bg="gray.200"
         height="120px"
         display="flex"
         alignItems="center"
         justifyContent="center"
         position="relative"
+        style={{ backgroundColor: 'var(--surface-muted)' }}
       >
-        <Text color="gray.500" fontSize="4xl">🥬</Text>
+        <Text fontSize="4xl" style={{ color: 'var(--muted-text)' }}>🥬</Text>
         {!isStatic && (
           <Box position="absolute" top={2} right={2}>
             {isEditing ? (
@@ -297,11 +297,11 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
             >
               <Text
                 fontSize="sm"
-                color="gray.600"
                 overflow="hidden"
                 textOverflow="ellipsis"
                 display="-webkit-box"
                 style={{
+                  color: 'var(--muted-text)',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: "vertical"
                 }}
@@ -351,10 +351,10 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
 
       {/* Edit Form */}
       {isEditing && !isStatic && (
-        <Box px={3} pb={3} borderTop="1px solid" borderColor="gray.200">
+        <Box px={3} pb={3} borderTop="1px solid" style={{ borderColor: 'var(--border-color)' }}>
           <VStack align="stretch" gap={3} mt={3}>
             <Box>
-              <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">Description</Text>
+              <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--muted-text)' }}>Description</Text>
               <ContentEditable
                 content={ingredient.description || ''}
                 onContentChange={handleUpdate('description')}
@@ -367,7 +367,7 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
 
             <SimpleGrid columns={2} gap={2}>
               <Box>
-                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--muted-text)' }}>
                   Calories (per 100g)
                 </Text>
                 <ContentEditable
@@ -380,7 +380,7 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
               </Box>
 
               <Box>
-                <Text fontSize="xs" fontWeight="medium" mb={1} color="gray.600">
+                <Text fontSize="xs" fontWeight="medium" mb={1} style={{ color: 'var(--muted-text)' }}>
                   Density (g/ml)
                 </Text>
                 <ContentEditable
@@ -524,9 +524,9 @@ const Ingredients = () => {
   if (error) {
     return (
       <Box maxW="6xl" mx="auto" p={6}>
-        <Box p={4} bg="red.50" borderRadius="md" borderLeft="4px solid" borderColor="red.400">
-          <Text fontWeight="medium" color="red.800" mb={2}>Error Loading Ingredients</Text>
-          <Text fontSize="sm" color="red.700">{error}</Text>
+        <Box p={4} borderRadius="md" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-red-bg)', borderColor: 'var(--panel-red-border)' }}>
+          <Text fontWeight="medium" mb={2} style={{ color: 'var(--panel-red-heading)' }}>Error Loading Ingredients</Text>
+          <Text fontSize="sm" style={{ color: 'var(--panel-red-text)' }}>{error}</Text>
         </Box>
         <Button mt={4} onClick={loadIngredients}>
           Retry
@@ -540,11 +540,11 @@ const Ingredients = () => {
       <VStack gap={6} align="stretch">
         {/* Static Mode Notice */}
         {isStatic && (
-          <Box p={4} bg="blue.50" borderRadius="md" borderLeft="4px solid" borderColor="blue.400">
-            <Text fontWeight="medium" color="blue.800" mb={1}>
+          <Box p={4} borderRadius="md" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-blue-bg)', borderColor: 'var(--panel-blue-border)' }}>
+            <Text fontWeight="medium" mb={1} style={{ color: 'var(--panel-blue-heading)' }}>
               📖 Ingredients Reference
             </Text>
-            <Text fontSize="sm" color="blue.700">
+            <Text fontSize="sm" style={{ color: 'var(--panel-blue-text)' }}>
               You're viewing the ingredients database in read-only mode. Creating or editing ingredients is not available in this version.
             </Text>
           </Box>
@@ -553,7 +553,7 @@ const Ingredients = () => {
         <Flex align="center" wrap="wrap" gap={4}>
           <VStack align="start" gap={1}>
             <Text fontSize="3xl" fontWeight="bold">Ingredients Database</Text>
-            <Text color="gray.600">
+            <Text style={{ color: 'var(--muted-text)' }}>
               {isStatic
                 ? 'Browse the ingredient database and view detailed information.'
                 : 'Click on any ingredient to view detailed information, or use the edit button to modify ingredients.'
@@ -608,7 +608,7 @@ const Ingredients = () => {
           </SimpleGrid>
         ) : (
           <Box textAlign="center" py={12}>
-            <Text fontSize="lg" color="gray.500" mb={4}>
+            <Text fontSize="lg" mb={4} style={{ color: 'var(--muted-text)' }}>
               {isStatic ? 'No ingredients available in this static version.' : 'No ingredients found'}
             </Text>
             {!isStatic && (

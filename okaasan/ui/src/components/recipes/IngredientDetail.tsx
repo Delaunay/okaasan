@@ -224,9 +224,9 @@ const IngredientDetail = () => {
   if (error) {
     return (
       <Box py={6}>
-        <Box p={4} bg="red.50" borderRadius="md" borderLeft="4px solid" borderColor="red.400" mb={4}>
-          <Text fontWeight="medium" color="red.800" mb={1}>Error</Text>
-          <Text fontSize="sm" color="red.700">{error}</Text>
+        <Box p={4} borderRadius="md" borderLeft="4px solid" mb={4} style={{ backgroundColor: 'var(--panel-red-bg)', borderColor: 'var(--panel-red-border)' }}>
+          <Text fontWeight="medium" mb={1} style={{ color: 'var(--panel-red-heading)' }}>Error</Text>
+          <Text fontSize="sm" style={{ color: 'var(--panel-red-text)' }}>{error}</Text>
         </Box>
         <Button onClick={() => navigate('/ingredients')} colorScheme="blue">
           Back to Ingredients
@@ -238,7 +238,7 @@ const IngredientDetail = () => {
   if (!ingredient) {
     return (
       <Box textAlign="center" py={10}>
-        <Text fontSize="lg" color="gray.600" mb={4}>
+        <Text fontSize="lg" mb={4} style={{ color: 'var(--muted-text)' }}>
           Ingredient not found
         </Text>
         <Button onClick={() => navigate('/ingredients')} colorScheme="blue">
@@ -277,14 +277,16 @@ const IngredientDetail = () => {
         {saveMessage && (
           <Box
             p={3}
-            bg={saveMessage.type === 'success' ? 'green.50' : 'red.50'}
             borderRadius="md"
             borderLeft="4px solid"
-            borderColor={saveMessage.type === 'success' ? 'green.400' : 'red.400'}
+            style={{
+              backgroundColor: saveMessage.type === 'success' ? 'var(--panel-green-bg)' : 'var(--panel-red-bg)',
+              borderColor: saveMessage.type === 'success' ? 'var(--panel-green-border)' : 'var(--panel-red-border)',
+            }}
           >
             <Text
               fontSize="sm"
-              color={saveMessage.type === 'success' ? 'green.700' : 'red.700'}
+              style={{ color: saveMessage.type === 'success' ? 'var(--panel-green-text)' : 'var(--panel-red-text)' }}
             >
               {saveMessage.text}
             </Text>
@@ -309,7 +311,7 @@ const IngredientDetail = () => {
               {ingredient.name}
             </Text>
           )}
-          <HStack gap={4} fontSize="sm" color="gray.500">
+          <HStack gap={4} fontSize="sm" style={{ color: 'var(--muted-text)' }}>
             <Text>ID: {ingredient.id}</Text>
             <Text>•</Text>
             <Text>Ingredient Details</Text>
@@ -317,8 +319,8 @@ const IngredientDetail = () => {
         </Box>
 
         {/* Properties */}
-        <Box p={6} bg="blue.50" borderRadius="lg" borderLeft="4px solid" borderColor="blue.400">
-          <Text fontSize="lg" fontWeight="semibold" mb={2} color="blue.800">
+        <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-blue-bg)', borderColor: 'var(--panel-blue-border)' }}>
+          <Text fontSize="lg" fontWeight="semibold" mb={2} style={{ color: 'var(--panel-blue-heading)' }}>
             Description
           </Text>
           {isEditMode ? (
@@ -329,7 +331,7 @@ const IngredientDetail = () => {
               minH="100px"
             />
           ) : (
-            <Text color="blue.700" lineHeight="1.6" fontSize="md">
+            <Text lineHeight="1.6" fontSize="md" style={{ color: 'var(--panel-blue-text)' }}>
               {displayIngredient?.description || 'No description'}
             </Text>
           )}
@@ -337,8 +339,8 @@ const IngredientDetail = () => {
 
         {/* USDA Food Mapping */}
         {isEditMode && (
-          <Box p={6} bg="orange.50" borderRadius="lg" borderLeft="4px solid" borderColor="orange.400">
-            <Text fontSize="lg" fontWeight="semibold" mb={3} color="orange.800">
+          <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-orange-bg)', borderColor: 'var(--panel-orange-border)' }}>
+            <Text fontSize="lg" fontWeight="semibold" mb={3} style={{ color: 'var(--panel-orange-heading)' }}>
               USDA Food Mapping
             </Text>
             <VStack align="stretch" gap={2}>
@@ -390,28 +392,27 @@ const IngredientDetail = () => {
                     top="100%"
                     left={0}
                     right={0}
-                    bg="bg"
                     border="1px solid"
-                    borderColor="gray.200"
                     borderRadius="md"
                     shadow="md"
                     zIndex={1000}
                     maxH="200px"
                     overflowY="auto"
                     mt={1}
+                    style={{ backgroundColor: 'var(--dropdown-bg)', borderColor: 'var(--dropdown-border)' }}
                   >
                     {usdaSuggestions.map((food, index) => (
                       <Box
                         key={food.fdc_id}
                         p={2}
                         cursor="pointer"
-                        _hover={{ bg: "gray.100" }}
+                        _hover={{ bg: "var(--dropdown-hover)" }}
                         onMouseDown={(e) => {
                           e.preventDefault();
                           handleUsdaSelect(food.fdc_id);
                         }}
                         borderBottom={index < usdaSuggestions.length - 1 ? "1px solid" : "none"}
-                        borderColor="gray.100"
+                        style={{ borderColor: 'var(--dropdown-divider)' }}
                       >
                         <VStack align="start" gap={0}>
                           <Text fontSize="sm">{food.description}</Text>
@@ -419,7 +420,7 @@ const IngredientDetail = () => {
                             <Badge colorScheme="orange" fontSize="xs">
                               {food.fdc_id}
                             </Badge>
-                            <Text fontSize="xs" color="gray.500">
+                            <Text fontSize="xs" style={{ color: 'var(--muted-text)' }}>
                               {food.data_type?.replace('_', ' ')}
                             </Text>
                           </HStack>
@@ -429,7 +430,7 @@ const IngredientDetail = () => {
                   </Box>
                 )}
               </Box>
-              <Text fontSize="xs" color="orange.700">
+              <Text fontSize="xs" style={{ color: 'var(--panel-orange-text)' }}>
                 Link this ingredient to USDA FoodData Central for automatic nutritional information
               </Text>
             </VStack>
@@ -437,9 +438,9 @@ const IngredientDetail = () => {
         )}
 
         {!isEditMode && displayIngredient?.fdc_id && (
-          <Box p={4} bg="orange.50" borderRadius="lg" borderLeft="4px solid" borderColor="orange.400">
+          <Box p={4} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-orange-bg)', borderColor: 'var(--panel-orange-border)' }}>
             <HStack justify="space-between">
-              <Text fontSize="sm" fontWeight="medium" color="orange.800">
+              <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-heading)' }}>
                 USDA Food Mapping
               </Text>
               <Badge colorScheme="orange" fontSize="sm">
@@ -453,7 +454,7 @@ const IngredientDetail = () => {
         <SimpleGrid columns={{ base: 1, md: 2 }} gap={6}>
           {/* Nutritional Information */}
           <GridItem rowSpan={{ base: 1, md: 3 }}>
-            <Box borderRadius="lg" borderColor="green.400">
+            <Box borderRadius="lg" style={{ borderColor: 'var(--panel-green-border)' }}>
               {/* Ingredient Composition Manager */}
               {ingredient?.id && (
                 <IngredientCompositionManager
@@ -464,16 +465,16 @@ const IngredientDetail = () => {
             </Box>
           </GridItem>
 
-          <Box p={6} bg="purple.50" borderRadius="lg" borderLeft="4px solid" borderColor="purple.400">
+          <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-purple-bg)', borderColor: 'var(--panel-purple-border)' }}>
             {/* Description */}
             <Box>
-              <Text fontSize="lg" fontWeight="semibold" mb={4} color="purple.800">
+              <Text fontSize="lg" fontWeight="semibold" mb={4} style={{ color: 'var(--panel-purple-heading)' }}>
                 Properties
               </Text>
               <VStack align="stretch" gap={3}>
                 {/* Density */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Density (g/ml):
                   </Text>
                   {isEditMode ? (
@@ -486,7 +487,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.density ? `${displayIngredient.density} g/ml` : 'Not specified'}
                     </Text>
                   )}
@@ -494,7 +495,7 @@ const IngredientDetail = () => {
 
                 {/* Calories */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Calories (per 100g):
                   </Text>
                   {isEditMode ? (
@@ -507,7 +508,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.calories ? `${displayIngredient.calories} kcal` : 'Not specified'}
                     </Text>
                   )}
@@ -515,7 +516,7 @@ const IngredientDetail = () => {
 
                 {/* Item Average Weight */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Avg Item Weight (g):
                   </Text>
                   {isEditMode ? (
@@ -528,7 +529,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.item_avg_weight ? `${displayIngredient.item_avg_weight} g` : 'Not specified'}
                     </Text>
                   )}
@@ -536,7 +537,7 @@ const IngredientDetail = () => {
 
                 {/* Price Low */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Price (Low):
                   </Text>
                   {isEditMode ? (
@@ -549,7 +550,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.price_low ? `$${displayIngredient.price_low}` : 'Not specified'}
                     </Text>
                   )}
@@ -557,7 +558,7 @@ const IngredientDetail = () => {
 
                 {/* Price Medium */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Price (Medium):
                   </Text>
                   {isEditMode ? (
@@ -570,7 +571,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.price_medium ? `$${displayIngredient.price_medium}` : 'Not specified'}
                     </Text>
                   )}
@@ -578,7 +579,7 @@ const IngredientDetail = () => {
 
                 {/* Price High */}
                 <HStack justify="space-between">
-                  <Text fontSize="sm" color="purple.700" fontWeight="medium">
+                  <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-purple-text)' }}>
                     Price (High):
                   </Text>
                   {isEditMode ? (
@@ -591,7 +592,7 @@ const IngredientDetail = () => {
                       w="150px"
                     />
                   ) : (
-                    <Text fontSize="md" fontWeight="bold" color="purple.800">
+                    <Text fontSize="md" fontWeight="bold" style={{ color: 'var(--panel-purple-heading)' }}>
                       {displayIngredient?.price_high ? `$${displayIngredient.price_high}` : 'Not specified'}
                     </Text>
                   )}
@@ -602,9 +603,9 @@ const IngredientDetail = () => {
 
           {/* Custom Properties (Extension) */}
           {(isEditMode || (displayIngredient?.extension && Object.keys(displayIngredient.extension).length > 0)) && (
-            <Box p={6} bg="teal.50" borderRadius="lg" borderLeft="4px solid" borderColor="teal.400">
+            <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-teal-bg)', borderColor: 'var(--panel-teal-border)' }}>
               <HStack justify="space-between" mb={4}>
-                <Text fontSize="lg" fontWeight="semibold" color="teal.800">
+                <Text fontSize="lg" fontWeight="semibold" style={{ color: 'var(--panel-teal-heading)' }}>
                   Custom Properties
                 </Text>
                 {isEditMode && (
@@ -653,10 +654,10 @@ const IngredientDetail = () => {
                         </>
                       ) : (
                         <>
-                          <Text fontSize="sm" color="teal.700" fontWeight="medium">
+                          <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-teal-text)' }}>
                             {key}:
                           </Text>
-                          <Text fontSize="md" color="teal.800">
+                          <Text fontSize="md" style={{ color: 'var(--panel-teal-heading)' }}>
                             {String(value)}
                           </Text>
                         </>
@@ -665,7 +666,7 @@ const IngredientDetail = () => {
                   ))}
                 </VStack>
               ) : (
-                <Text fontSize="sm" color="teal.600" fontStyle="italic">
+                <Text fontSize="sm" fontStyle="italic" style={{ color: 'var(--panel-teal-text)' }}>
                   No custom properties yet. Click "Add Property" to create one.
                 </Text>
               )}
@@ -677,14 +678,14 @@ const IngredientDetail = () => {
 
             {/* Unit Systems */}
             {(isEditMode || displayIngredient?.unit) && (
-              <Box p={6} bg="orange.50" borderRadius="lg" borderLeft="4px solid" borderColor="orange.400">
-                <Text fontSize="lg" fontWeight="semibold" mb={4} color="orange.800">
+              <Box p={6} borderRadius="lg" borderLeft="4px solid" style={{ backgroundColor: 'var(--panel-orange-bg)', borderColor: 'var(--panel-orange-border)' }}>
+                <Text fontSize="lg" fontWeight="semibold" mb={4} style={{ color: 'var(--panel-orange-heading)' }}>
                   Unit Systems
                 </Text>
                 <SimpleGrid columns={{ base: 1, md: 1 }} gap={4}>
                   {/* Metric */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       Metric:
                     </Text>
                     {isEditMode ? (
@@ -696,7 +697,7 @@ const IngredientDetail = () => {
                         placeholder="e.g., kg, L"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.metric || 'Not specified'}
                       </Text>
                     )}
@@ -704,7 +705,7 @@ const IngredientDetail = () => {
 
                   {/* US Customary */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       US Customary:
                     </Text>
                     {isEditMode ? (
@@ -716,7 +717,7 @@ const IngredientDetail = () => {
                         placeholder="e.g., cup, oz"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.us_customary || 'Not specified'}
                       </Text>
                     )}
@@ -724,7 +725,7 @@ const IngredientDetail = () => {
 
                   {/* US Legal */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       US Legal:
                     </Text>
                     {isEditMode ? (
@@ -735,7 +736,7 @@ const IngredientDetail = () => {
                         w="150px"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.us_legal || 'Not specified'}
                       </Text>
                     )}
@@ -743,7 +744,7 @@ const IngredientDetail = () => {
 
                   {/* Canada */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       Canada:
                     </Text>
                     {isEditMode ? (
@@ -754,7 +755,7 @@ const IngredientDetail = () => {
                         w="150px"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.canada || 'Not specified'}
                       </Text>
                     )}
@@ -762,7 +763,7 @@ const IngredientDetail = () => {
 
                   {/* Australia */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       Australia:
                     </Text>
                     {isEditMode ? (
@@ -773,7 +774,7 @@ const IngredientDetail = () => {
                         w="150px"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.australia || 'Not specified'}
                       </Text>
                     )}
@@ -781,7 +782,7 @@ const IngredientDetail = () => {
 
                   {/* UK */}
                   <HStack justify="space-between">
-                    <Text fontSize="sm" color="orange.700" fontWeight="medium">
+                    <Text fontSize="sm" fontWeight="medium" style={{ color: 'var(--panel-orange-text)' }}>
                       UK:
                     </Text>
                     {isEditMode ? (
@@ -792,7 +793,7 @@ const IngredientDetail = () => {
                         w="150px"
                       />
                     ) : (
-                      <Text fontSize="md" color="orange.800">
+                      <Text fontSize="md" style={{ color: 'var(--panel-orange-heading)' }}>
                         {displayIngredient?.unit?.uk || 'Not specified'}
                       </Text>
                     )}
@@ -820,7 +821,7 @@ const IngredientDetail = () => {
 
 
         {/* Actions */}
-        <Box pt={4} borderTop="1px solid" borderColor="gray.200">
+        <Box pt={4} borderTop="1px solid" style={{ borderColor: 'var(--border-color)' }}>
           <HStack gap={3}>
             <Button onClick={() => navigate('/ingredients')} variant="outline">
               Back to All Ingredients

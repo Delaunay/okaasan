@@ -79,6 +79,10 @@ class Event(Base):
     owner = Column(String(200))
     name = Column(String(200))
 
+    # Google Calendar sync
+    google_event_id = Column(String(255), nullable=True, index=True)
+    source = Column(String(50), default='local')
+
     extension = Column(JSON)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -112,5 +116,8 @@ class Event(Base):
             'active': self.active,
             'owner': self.owner,
             'name': self.name,
+            'google_event_id': self.google_event_id,
+            'source': self.source or 'local',
+            'extension': self.extension,
             'created_by': self.created_by,
         }

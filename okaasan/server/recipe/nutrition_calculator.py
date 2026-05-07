@@ -250,6 +250,8 @@ def calculate_recipe_nutrition(
             result["error_messages"].append("Recipe not found")
             return result
 
+        result["servings"] = recipe.servings
+
         recipe_ingredients = list(recipe.recipe_ingredients or [])
         if not recipe_ingredients:
             result["error"] = True

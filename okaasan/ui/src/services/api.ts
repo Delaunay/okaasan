@@ -25,6 +25,8 @@ import type {
   RecipeNutritionResult,
   AuditEntry,
   FeedReport,
+  GCalSyncResult,
+  CompletePastTasksResult,
 } from './type';
 
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
@@ -982,6 +984,25 @@ class RecipeAPI {
 
   async getGCalEventsRange(start: string, end: string): Promise<any[]> {
     return this.request(`/gcalendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+  }
+
+  async syncGCalEvents(start?: string, end?: string): Promise<GCalSyncResult> {
+    const params = new URLSearchParams();
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    const query = params.toString();
+    return this.request(`/gcalendar/sync${query ? `?${query}` : ''}`, { method: 'POST' });
+  }
+
+  async exportToGCal(eventIds: number[]): Promise<{ exported: number; updated: number }> {
+    return this.request('/gcalendar/export', {
+      method: 'POST',
+      body: JSON.stringify({ event_ids: eventIds }),
+    });
+  }
+
+  async completePastTasks(): Promise<CompletePastTasksResult> {
+    return this.request('/events/complete-past-tasks', { method: 'POST' });
   }
 
   // Software update (returns raw Response for SSE streaming)

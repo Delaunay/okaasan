@@ -109,6 +109,7 @@ export interface RecipeNutritionResult {
         unit: string;
     };
     total_weight_g?: number;
+    servings?: number;
     compositions: IngredientComposition[];
     cached?: boolean;
 }
@@ -248,10 +249,23 @@ export interface Event {
     recuring: boolean;
     active: boolean;
     extension?: any;
-    guests?: any; // JSON list of guest names or IDs
-    task?: number; // Task ID reference
+    guests?: any;
+    task?: number;
     owner?: string;
     name?: string;
+    google_event_id?: string;
+    source?: 'local' | 'google';
+}
+
+export interface GCalSyncResult {
+    created: number;
+    updated: number;
+    unchanged: number;
+}
+
+export interface CompletePastTasksResult {
+    completed: Task[];
+    count: number;
 }
 
 // ============================================================================

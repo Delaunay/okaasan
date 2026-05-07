@@ -19,7 +19,7 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 _config_dir: Optional[Path] = None
 
@@ -242,6 +242,31 @@ def verify_calendar_access(calendar_id: str) -> dict:
         "summary": cal.get("summary"),
         "description": cal.get("description"),
     }
+
+
+def create_google_event(
+    event_data: dict,
+    calendar_id: Optional[str] = None,
+) -> dict:
+    """Create an event on Google Calendar. Returns the created event."""
+    service = _get_service()
+    cal_id = calendar_id or _calendar_id()
+    return service.events().insert(calendarId=cal_id, body=event_data).execute()
+
+
+def update_google_event(
+    google_event_id: str,
+    event_data: dict,
+    calendar_id: Optional[str] = None,
+) -> dict:
+    """Update an existing event on Google Calendar. Returns the updated event."""
+    service = _get_service()
+    cal_id = calendar_id or _calendar_id()
+    return (
+        service.events()
+        .update(calendarId=cal_id, eventId=google_event_id, body=event_data)
+        .execute()
+    )
 
 
 def list_calendars() -> list[dict]:

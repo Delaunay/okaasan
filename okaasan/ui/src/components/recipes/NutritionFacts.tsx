@@ -46,6 +46,7 @@ interface NutritionFactsProps {
     entityId: number;
     editable?: boolean;
     totalWeightG?: number;
+    servings?: number;
     onAdd?: (data: Omit<IngredientComposition, 'id' | 'ingredient_id'>) => Promise<void>;
     onEdit?: (id: number, data: Partial<IngredientComposition>) => Promise<void>;
     onDelete?: (id: number) => Promise<void>;
@@ -61,6 +62,7 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     entityId,
     editable = true,
     totalWeightG,
+    servings,
     onAdd,
     onEdit,
     onDelete,
@@ -300,60 +302,76 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                             </>
                         )}
                     </HStack>
-                    <HStack gap={1}>
-                        <Text fontSize="sm" style={{ color: 'var(--nf-text-muted)' }}>Per</Text>
-                        {isEditingDisplayRef ? (
-                            <input
-                                type="number"
-                                value={displayReferenceQuantity}
-                                onChange={(e) => setDisplayReferenceQuantity(parseFloat(e.target.value) || 100)}
-                                onBlur={() => setIsEditingDisplayRef(false)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        setIsEditingDisplayRef(false);
-                                    }
-                                }}
-                                autoFocus
-                                style={{
-                                    width: '60px',
-                                    padding: '2px 4px',
-                                    border: '1px solid var(--nf-accent-border)',
-                                    borderRadius: '3px',
-                                    fontSize: '14px',
-                                    textAlign: 'center',
-                                    backgroundColor: 'var(--input-bg)',
-                                    color: 'var(--nf-text)',
-                                }}
-                            />
-                        ) : (
-                            <Text
-                                fontSize="sm"
-                                style={{ color: 'var(--nf-accent)' }}
-                                fontWeight="semibold"
-                                cursor="pointer"
-                                userSelect="none"
-                                onClick={() => setIsEditingDisplayRef(true)}
-                                _hover={{ textDecoration: 'underline' }}
-                            >
-                                {displayReferenceQuantity}g
-                            </Text>
-                        )}
-                        {totalWeightG && (
-                            <Text
-                                fontSize="xs"
-                                style={{ color: displayReferenceQuantity === totalWeightG ? 'var(--nf-accent)' : 'var(--nf-text-muted)' }}
-                                cursor="pointer"
-                                userSelect="none"
-                                onClick={() => setDisplayReferenceQuantity(
-                                    displayReferenceQuantity === totalWeightG ? 100 : totalWeightG
+                    {(() => {
+                        const portionW = totalWeightG && servings && servings > 0
+                            ? Math.round(totalWeightG / servings * 100) / 100
+                            : undefined;
+                        const isFullActive = totalWeightG != null && Math.abs(displayReferenceQuantity - totalWeightG) < 0.1;
+                        const isPortionActive = portionW != null && !isFullActive && Math.abs(displayReferenceQuantity - portionW) < 0.1;
+                        const isCustomActive = !isPortionActive && !isFullActive;
+
+                        const segStyle = (active: boolean) => ({
+                            padding: '4px 8px',
+                            cursor: 'pointer' as const,
+                            userSelect: 'none' as const,
+                            fontSize: '13px',
+                            fontWeight: active ? 700 : 400,
+                            color: active ? 'var(--nf-accent)' : 'var(--nf-text-muted)',
+                            backgroundColor: active ? 'var(--nf-accent-bg, rgba(0,0,0,0.05))' : 'transparent',
+                        });
+
+                        return (
+                            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--nf-border-medium, #ccc)', borderRadius: '6px', overflow: 'hidden' }}>
+                                <div
+                                    style={segStyle(isCustomActive)}
+                                    onClick={(e) => { e.stopPropagation(); setIsEditingDisplayRef(true); }}
+                                >
+                                    <span style={{ color: 'var(--nf-text-muted)' }}>Per </span>
+                                    {isEditingDisplayRef ? (
+                                        <input
+                                            type="number"
+                                            value={displayReferenceQuantity}
+                                            onChange={(e) => setDisplayReferenceQuantity(parseFloat(e.target.value) || 100)}
+                                            onBlur={() => setIsEditingDisplayRef(false)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingDisplayRef(false); }}
+                                            autoFocus
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                                width: '50px',
+                                                padding: '1px 4px',
+                                                border: '1px solid var(--nf-accent-border)',
+                                                borderRadius: '3px',
+                                                fontSize: '13px',
+                                                textAlign: 'center',
+                                                backgroundColor: 'var(--input-bg)',
+                                                color: 'var(--nf-text)',
+                                            }}
+                                        />
+                                    ) : (
+                                        <span style={{ fontWeight: 600, color: 'var(--nf-accent)' }}>
+                                            {Math.round(displayReferenceQuantity * 100) / 100}g
+                                        </span>
+                                    )}
+                                </div>
+                                {portionW != null && (
+                                    <div
+                                        style={{ ...segStyle(isPortionActive), borderLeft: '1px solid var(--nf-border-medium, #ccc)' }}
+                                        onClick={(e) => { e.stopPropagation(); setIsEditingDisplayRef(false); setDisplayReferenceQuantity(portionW); }}
+                                    >
+                                        1 Portion
+                                    </div>
                                 )}
-                                _hover={{ textDecoration: 'underline' }}
-                                fontWeight={displayReferenceQuantity === totalWeightG ? "bold" : "normal"}
-                            >
-                                ({displayReferenceQuantity === totalWeightG ? "per 100g" : `full recipe: ${totalWeightG}g`})
-                            </Text>
-                        )}
-                    </HStack>
+                                {totalWeightG != null && (
+                                    <div
+                                        style={{ ...segStyle(isFullActive), borderLeft: '1px solid var(--nf-border-medium, #ccc)' }}
+                                        onClick={(e) => { e.stopPropagation(); setIsEditingDisplayRef(false); setDisplayReferenceQuantity(totalWeightG); }}
+                                    >
+                                        Full
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </VStack>
                 <HStack gap={2}>
                     <Button
@@ -937,7 +955,9 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                     <Text fontSize="xs" style={{ color: 'var(--nf-text-muted)' }}>
                         * Percent Daily Values are based on a 2,000 calorie diet.
                         {totalWeightG && displayReferenceQuantity === totalWeightG
-                            ? ` Values shown for full recipe (${totalWeightG}g).`
+                            ? ` Values shown for full recipe (${Math.round(totalWeightG)}g).`
+                            : totalWeightG && servings && servings > 0 && Math.abs(displayReferenceQuantity - totalWeightG / servings) < 0.1
+                            ? ` Values shown per serving (1/${servings} of recipe, ~${Math.round(totalWeightG / servings)}g).`
                             : ` Values shown per ${displayReferenceQuantity}g.`
                         }
                     </Text>

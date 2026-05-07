@@ -5,7 +5,7 @@ import {
 } from '@chakra-ui/react';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
-  CloudFog, Clock, ExternalLink, MapPin, X, Users,
+  CloudFog, Clock, ExternalLink, MapPin, X, Users, RefreshCw,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../../services/api';
 import {
@@ -96,6 +96,7 @@ function buildWeek(): Date[] {
 }
 
 export interface DayEvent {
+  id?: number;
   title: string;
   start: Date;
   end: Date;
@@ -105,6 +106,8 @@ export interface DayEvent {
   link?: string;
   location?: string;
   attendees?: string[];
+  task?: number;
+  google_event_id?: string;
 }
 
 interface DayData {
@@ -364,6 +367,9 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, onTa
                       </Text>
                     </HStack>
                   </Box>
+                  {evt.task && (
+                    <Badge colorPalette="purple" variant="subtle" fontSize="2xs" px={1} flexShrink={0}>T</Badge>
+                  )}
                   {evt.source === 'google' && (
                     <ExternalLink size={10} color={mutedText} style={{ flexShrink: 0 }} />
                   )}
@@ -475,6 +481,7 @@ const Home = () => {
   const [editModal, setEditModal] = useState<{ data: Partial<Task>; taskId: number } | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([...DEFAULT_TASK_TAGS]);
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
@@ -518,59 +525,38 @@ const Home = () => {
       }
     })();
 
-    // Fetch local events for the full 7-day range
-    recipeAPI.getEvents(weekStart, weekEnd)
-      .then(localEvents => {
-        setDays(prev => prev.map(d => {
-          const dayStr = d.date.toDateString();
-          const matching = localEvents.filter(e => fromDateServer(e.datetime_start).toDateString() === dayStr);
-          return {
-            ...d,
-            events: [
-              ...d.events,
-              ...matching.map(e => ({
+    const loadEvents = () => {
+      recipeAPI.getEvents(weekStart, weekEnd)
+        .then(allEvents => {
+          setDays(prev => prev.map(d => {
+            const dayStr = d.date.toDateString();
+            const matching = allEvents.filter(e => fromDateServer(e.datetime_start).toDateString() === dayStr);
+            return {
+              ...d,
+              events: matching.map(e => ({
+                id: e.id,
                 title: e.title,
                 start: fromDateServer(e.datetime_start),
                 end: fromDateServer(e.datetime_end),
-                color: e.color || '#3182CE',
-                source: 'local' as const,
+                color: e.color || (e.source === 'google' ? '#4285F4' : '#3182CE'),
+                source: (e.source || 'local') as 'local' | 'google',
                 description: e.description,
+                task: e.task,
+                google_event_id: e.google_event_id,
               })),
-            ],
-          };
-        }));
-      })
-      .catch(() => {});
+            };
+          }));
+        })
+        .catch(() => {});
+    };
 
-    // Fetch Google Calendar events for the full 7-day range
-    recipeAPI.getGCalEventsRange(weekStart, weekEnd)
-      .then(gcalEvents => {
-        setDays(prev => prev.map(d => {
-          const dayStr = d.date.toDateString();
-          const matching = gcalEvents.filter((e: any) => {
-            const start = e.datetime_start;
-            return start && new Date(start).toDateString() === dayStr;
-          });
-          return {
-            ...d,
-            events: [
-              ...d.events,
-              ...matching.map((e: any) => ({
-                title: e.title,
-                start: new Date(e.datetime_start),
-                end: new Date(e.datetime_end),
-                color: e.color || '#4285F4',
-                source: 'google' as const,
-                description: e.description,
-                link: e.link,
-                location: e.location,
-                attendees: e.attendees,
-              })),
-            ],
-          };
-        }));
-      })
-      .catch(() => {});
+    // Sync Google Calendar events into local DB, then load all events
+    recipeAPI.syncGCalEvents(weekStart, weekEnd)
+      .then(() => loadEvents())
+      .catch(() => loadEvents());
+
+    // Auto-complete tasks linked to past events
+    recipeAPI.completePastTasks().catch(() => {});
 
     // Fetch meal plan
     (async () => {
@@ -606,10 +592,51 @@ const Home = () => {
   return (
     <Box mx="auto" p={0} w="100%" overflow="hidden">
       {!_static && (
-        <Box mb={6}>
-          <Heading size="xl" mb={1}>{dayName}</Heading>
-          <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
-        </Box>
+        <Flex mb={6} justify="space-between" align="flex-start">
+          <Box>
+            <Heading size="xl" mb={1}>{dayName}</Heading>
+            <Text fontSize="lg" color={mutedText}>{dateStr}</Text>
+          </Box>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSyncing(true);
+              const week = buildWeek();
+              const ws = formatDateRangeForServer(week[0], false);
+              const we = formatDateRangeForServer(week[6], true);
+              recipeAPI.syncGCalEvents(ws, we)
+                .then(() => recipeAPI.completePastTasks())
+                .then(() => recipeAPI.getEvents(ws, we))
+                .then(allEvents => {
+                  setDays(prev => prev.map(d => {
+                    const dayStr2 = d.date.toDateString();
+                    const matching = allEvents.filter(e => fromDateServer(e.datetime_start).toDateString() === dayStr2);
+                    return {
+                      ...d,
+                      events: matching.map(e => ({
+                        id: e.id,
+                        title: e.title,
+                        start: fromDateServer(e.datetime_start),
+                        end: fromDateServer(e.datetime_end),
+                        color: e.color || (e.source === 'google' ? '#4285F4' : '#3182CE'),
+                        source: (e.source || 'local') as 'local' | 'google',
+                        description: e.description,
+                        task: e.task,
+                        google_event_id: e.google_event_id,
+                      })),
+                    };
+                  }));
+                })
+                .catch(() => {})
+                .finally(() => setSyncing(false));
+            }}
+            disabled={syncing}
+          >
+            <RefreshCw size={14} className={syncing ? 'spin' : ''} />
+            <Box ml={1}>{syncing ? 'Syncing...' : 'Sync'}</Box>
+          </Button>
+        </Flex>
       )}
 
       {_static ? (

@@ -9,8 +9,9 @@ import {
     Text,
     Heading,
 } from '@chakra-ui/react';
+import { Upload } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
-import type { Event } from '../../services/type';
+import type { Event, Task } from '../../services/type';
 import { datetimeLocalToServer, serverToDatetimeLocal } from '../../utils/dateUtils';
 
 interface EventModalProps {
@@ -53,8 +54,11 @@ const EventModal: React.FC<EventModalProps> = ({
         done: false,
         template: false,
         recuring: false,
-        active: true
+        active: true,
+        task: null as number | null,
     });
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [exporting, setExporting] = useState(false);
 
     // Use utility function for consistent datetime formatting
 
@@ -81,7 +85,8 @@ const EventModal: React.FC<EventModalProps> = ({
             done: false,
             template: false,
             recuring: false,
-            active: true
+            active: true,
+            task: null as number | null,
         };
     };
 
@@ -89,7 +94,6 @@ const EventModal: React.FC<EventModalProps> = ({
     useEffect(() => {
         if (isOpen) {
             if (isEditing && event) {
-                // Editing mode - populate with existing event data
                 setFormData({
                     title: event.title || '',
                     description: event.description || '',
@@ -101,13 +105,14 @@ const EventModal: React.FC<EventModalProps> = ({
                     done: event.done || false,
                     template: event.template || false,
                     recuring: event.recuring || false,
-                    active: event.active !== false
+                    active: event.active !== false,
+                    task: event.task ?? null,
                 });
             } else {
-                // Creating mode - use initial date/time
                 setFormData(createInitialFormData());
             }
             setError('');
+            recipeAPI.getTasks().then(setTasks).catch(() => {});
         }
     }, [isOpen, event, initialDate, initialTime, isEditing]);
 
@@ -144,11 +149,11 @@ const EventModal: React.FC<EventModalProps> = ({
         setError('');
 
         try {
-            // Convert datetime-local format to server format using utility function
             const eventData = {
                 ...formData,
                 datetime_start: datetimeLocalToServer(formData.datetime_start),
                 datetime_end: datetimeLocalToServer(formData.datetime_end),
+                task: formData.task || undefined,
             };
 
             let resultEvent: Event;
@@ -338,22 +343,72 @@ const EventModal: React.FC<EventModalProps> = ({
                                 ))}
                             </select>
                         </Box>
+
+                        <Box>
+                            <Text mb={2} fontWeight="medium">Linked Task</Text>
+                            <select
+                                name="task"
+                                value={formData.task ?? ''}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        task: val ? parseInt(val, 10) : null,
+                                    }));
+                                }}
+                                style={{
+                                    padding: '8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--chakra-colors-border)',
+                                    width: '100%'
+                                }}
+                            >
+                                <option value="">No linked task</option>
+                                {tasks.map(t => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.title}{t.template ? ' (template)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </Box>
                     </VStack>
 
                     <HStack gap={3} mt={6} justify="space-between">
-                        {/* Delete button - only show when editing */}
-                        {isEditing ? (
-                            <Button
-                                colorScheme="red"
-                                variant="outline"
-                                onClick={handleDelete}
-                                loading={isDeleting}
-                            >
-                                {isDeleting ? 'Deleting...' : 'Delete'}
-                            </Button>
-                        ) : (
-                            <Box /> // Empty space to maintain layout
-                        )}
+                        <HStack gap={2}>
+                            {isEditing ? (
+                                <Button
+                                    colorScheme="red"
+                                    variant="outline"
+                                    onClick={handleDelete}
+                                    loading={isDeleting}
+                                >
+                                    {isDeleting ? 'Deleting...' : 'Delete'}
+                                </Button>
+                            ) : (
+                                <Box />
+                            )}
+                            {isEditing && event?.id && !event.google_event_id && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={exporting}
+                                    onClick={async () => {
+                                        if (!event.id) return;
+                                        setExporting(true);
+                                        try {
+                                            await recipeAPI.exportToGCal([event.id]);
+                                        } catch {
+                                            setError('Failed to export to Google Calendar');
+                                        } finally {
+                                            setExporting(false);
+                                        }
+                                    }}
+                                >
+                                    <Upload size={14} />
+                                    <Box ml={1}>{exporting ? 'Exporting...' : 'Export to Google'}</Box>
+                                </Button>
+                            )}
+                        </HStack>
 
                         <HStack gap={3}>
                             <Button variant="ghost" onClick={handleClose}>

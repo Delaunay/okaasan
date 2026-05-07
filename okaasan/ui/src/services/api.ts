@@ -616,9 +616,36 @@ class RecipeAPI {
     try {
       return await this.getKeysForTopic('MEALPLAN');
     } catch (error) {
-      // If topic doesn't exist yet, return empty array
       return [];
     }
+  }
+
+  // Weekly Prep methods (alternative meal plan)
+  async saveWeeklyPrep(name: string, prep: import('./type').WeeklyPrep): Promise<{ message: string }> {
+    if (isStaticMode()) {
+      throw new Error('Saving weekly preps is not supported in static mode');
+    }
+    return this.setKeyValue('WEEKLYPREP', name, prep);
+  }
+
+  async loadWeeklyPrep(name: string): Promise<import('./type').WeeklyPrep> {
+    const response = await this.getKeyValue('WEEKLYPREP', name);
+    return response.value;
+  }
+
+  async getWeeklyPrepNames(): Promise<string[]> {
+    try {
+      return await this.getKeysForTopic('WEEKLYPREP');
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async calculateWeeklyPrepNutrition(recipes: Array<{ recipeId: number; multiplier: number; servings: number }>): Promise<RecipeNutritionResult & { total_portions: number; recipes_with_nutrition: number; total_recipes: number }> {
+    return this.request('/recipes/nutrition/weekly-prep', {
+      method: 'POST',
+      body: JSON.stringify({ recipes }),
+    });
   }
 
   // Unit conversion queries

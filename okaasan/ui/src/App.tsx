@@ -21,6 +21,7 @@ import Calendar from './components/calendar/Calendar';
 import Routine from './components/tasks/Routine';
 import Tasks from './components/tasks/Tasks';
 import MealPlanning from './components/meal-planning/MealPlanning';
+import WeeklyPrep from './components/meal-planning/WeeklyPrep';
 import GroceryReceipts from './components/inventory/GroceryReceipts';
 import Pantry from './components/inventory/Pantry';
 import Budget from './components/budget/Budget';
@@ -94,8 +95,10 @@ function App() {
                 <Route path="/receipts" element={<GroceryReceipts />} />
                 <Route path="/pantry" element={<Pantry />} />
                 <Route path="/budget" element={<Budget />} />
-                <Route path="/planning" element={<MealPlanning />} />
-                <Route path="/planning/:planName" element={<MealPlanning />} />
+                <Route path="/planning" element={<WeeklyPrep />} />
+                <Route path="/planning/detailed" element={<MealPlanning />} />
+                <Route path="/planning/detailed/:planName" element={<MealPlanning />} />
+                <Route path="/planning/:planName" element={<WeeklyPrep />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/routine" element={<Routine />} />
                 <Route path="/tasks" element={<Tasks />} />

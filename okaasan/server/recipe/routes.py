@@ -280,6 +280,107 @@ def calculate_recipe_nutrition_endpoint(
         )
 
 
+@router.post("/recipes/nutrition/weekly-prep")
+async def weekly_prep_nutrition(request: Request, db: Session = Depends(get_db)):
+    """Calculate average nutrition per portion across a set of recipes.
+
+    Expects JSON body: { "recipes": [{ "recipeId": int, "multiplier": float, "servings": int }] }
+
+    For each recipe, calculates full nutrition then scales to one serving.
+    Sums across all recipes, then divides by the number of recipes to produce
+    the average nutritional profile per portion for the week.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    recipe_entries = body.get("recipes", [])
+    if not recipe_entries:
+        raise HTTPException(status_code=400, detail="No recipes provided")
+
+    from collections import OrderedDict
+    from .nutrition_calculator import _utc_now_iso
+
+    totals: OrderedDict[tuple, dict] = OrderedDict()
+    total_portions = 0
+    errors = []
+    missing = []
+    recipes_with_nutrition = 0
+
+    for entry in recipe_entries:
+        recipe_id = entry.get("recipeId")
+        multiplier = float(entry.get("multiplier", 1))
+        servings = int(entry.get("servings", 1))
+
+        if not recipe_id:
+            continue
+
+        result = calculate_recipe_nutrition(db, recipe_id)
+
+        if result.get("error"):
+            errors.extend(result.get("error_messages", []))
+            missing.extend(result.get("missing_nutrition_ingredients", []))
+
+        compositions = result.get("compositions", [])
+        if not compositions:
+            continue
+
+        recipes_with_nutrition += 1
+        portions = multiplier * servings
+        total_portions += portions
+
+        recipe_servings = result.get("servings") or servings
+        total_weight_g = result.get("total_weight_g")
+        if not total_weight_g or total_weight_g <= 0:
+            continue
+
+        # Nutrition is normalized per 100g by calculate_recipe_nutrition.
+        # Scale to total recipe weight, then to the requested number of portions.
+        per_recipe_factor = total_weight_g / 100.0
+        portion_factor = portions / recipe_servings
+
+        for comp in compositions:
+            key = (comp.get("kind"), comp.get("name"), comp.get("unit"))
+            qty = (comp.get("quantity") or 0) * per_recipe_factor * portion_factor
+            dv = (comp.get("daily_value") or 0) * per_recipe_factor * portion_factor
+
+            if key in totals:
+                totals[key]["quantity"] += qty
+                totals[key]["daily_value"] += dv
+            else:
+                totals[key] = {
+                    "kind": comp.get("kind"),
+                    "name": comp.get("name"),
+                    "quantity": qty,
+                    "unit": comp.get("unit"),
+                    "daily_value": dv,
+                }
+
+    # Divide by total portions to get average per portion
+    if total_portions > 0:
+        for v in totals.values():
+            v["quantity"] /= total_portions
+            v["daily_value"] /= total_portions
+
+    return {
+        "recipe_id": 0,
+        "calculation_time": _utc_now_iso(),
+        "error": len(errors) > 0,
+        "error_messages": errors,
+        "missing_nutrition_ingredients": missing,
+        "normalization": {
+            "type": "per_portion",
+            "value": 1,
+            "unit": "portion",
+        },
+        "total_portions": total_portions,
+        "recipes_with_nutrition": recipes_with_nutrition,
+        "total_recipes": len(recipe_entries),
+        "compositions": list(totals.values()),
+    }
+
+
 @router.get("/recipes/{recipe_id:int}")
 @expose(recipe_id=select(Recipe._id))
 def get_recipe(recipe_id: int, db: Session = Depends(get_db)):

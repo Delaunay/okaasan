@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Box,
     VStack,
@@ -115,7 +115,7 @@ const MealPlanning: React.FC = () => {
             setShowSaveModal(false);
             setActivePlanName(name);
             await loadAvailableMealPlans();
-            navigate(`/planning/${encodeURIComponent(name)}`, { replace: true });
+            navigate(`/planning/detailed/${encodeURIComponent(name)}`, { replace: true });
         } catch (error) {
             console.error('Error saving meal plan:', error);
             showToast('Failed to save meal plan', 'error');
@@ -126,10 +126,10 @@ const MealPlanning: React.FC = () => {
         if (!name) {
             setMealPlan({ ...EMPTY_PLAN });
             setActivePlanName('');
-            navigate('/planning', { replace: true });
+            navigate('/planning/detailed', { replace: true });
             return;
         }
-        navigate(`/planning/${encodeURIComponent(name)}`);
+        navigate(`/planning/detailed/${encodeURIComponent(name)}`);
     };
 
     // Load recipes + plan names on mount
@@ -551,6 +551,9 @@ const MealPlanning: React.FC = () => {
                             </select>
                         </HStack>
                         <HStack gap={2} flexShrink={0}>
+                            <Link to="/planning">
+                                <Button variant="outline" size="sm">Weekly Prep</Button>
+                            </Link>
                             {activePlanName && (
                                 <Button
                                     colorScheme="blue"

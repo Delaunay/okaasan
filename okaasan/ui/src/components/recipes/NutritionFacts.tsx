@@ -55,6 +55,9 @@ interface NutritionFactsProps {
     availableSources?: string[];
     selectedSource?: string;
     onSourceChange?: (source: string) => void;
+    title?: string | null;
+    noBorder?: boolean;
+    referenceLabel?: string;
 }
 
 const NutritionFacts: FC<NutritionFactsProps> = ({
@@ -71,6 +74,9 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     availableSources,
     selectedSource,
     onSourceChange,
+    title,
+    noBorder,
+    referenceLabel,
 }) => {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editingValues, setEditingValues] = useState<Partial<IngredientComposition>>({});
@@ -269,12 +275,13 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     };
 
     return (
-        <Box p={6} bg="bg" borderRadius="lg" border="2px solid" style={{ borderColor: 'var(--nf-border)' }}>
+        <Box p={6} bg="bg" borderRadius="lg" {...(noBorder ? {} : { border: '2px solid', style: { borderColor: 'var(--nf-border)' } })}>
+            {title !== null && (
             <Flex justify="space-between" align="center" mb={2} pb={2} borderBottom="4px solid" style={{ borderColor: 'var(--nf-border)' }}>
                 <VStack align="start" gap={0}>
                     <HStack>
                         <Text fontSize="2xl" fontWeight="bold" style={{ color: 'var(--nf-heading)' }}>
-                            Nutrition Facts
+                            {title ?? 'Nutrition Facts'}
                         </Text>
                         {sources && sources.length > 0 && (
                             <>
@@ -303,6 +310,13 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                         )}
                     </HStack>
                     {(() => {
+                        if (referenceLabel) {
+                            return (
+                                <Text fontSize="sm" style={{ color: 'var(--nf-text-muted)' }}>
+                                    {referenceLabel}
+                                </Text>
+                            );
+                        }
                         const portionW = totalWeightG && servings && servings > 0
                             ? Math.round(totalWeightG / servings * 100) / 100
                             : undefined;
@@ -404,6 +418,7 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                     )}
                 </HStack>
             </Flex>
+            )}
 
             {/* Success Message */}
             {successMessage && (

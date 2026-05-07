@@ -298,6 +298,18 @@ export interface MealPlan {
     plannedMeals: PlannedMeal[];
 }
 
+export interface WeeklyPrepRecipe {
+    recipeId: number;
+    recipeName: string;
+    multiplier: number;
+    servings: number;
+}
+
+export interface WeeklyPrep {
+    name: string;
+    recipes: WeeklyPrepRecipe[];
+}
+
 // ============================================================================
 // Key-Value Store Models
 // ============================================================================

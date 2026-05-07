@@ -116,6 +116,10 @@ def get_ingredient_compositions_by_source(ingredient_id: int, source: str, db: S
 @router.get("/ingredients/{ingredient_id:int}/compositions")
 def get_ingredient_compositions(ingredient_id: int, db: Session = Depends(get_db)):
     compositions = db.query(IngredientComposition).filter_by(ingredient_id=ingredient_id).all()
+    if any((c.kind or "").strip().lower() in ("nutrient", "") and (c.name or "").strip() for c in compositions):
+        from .nutrition_calculator import _fix_legacy_compositions
+        _fix_legacy_compositions(db, compositions)
+        db.commit()
     return [comp.to_json() for comp in compositions]
 
 

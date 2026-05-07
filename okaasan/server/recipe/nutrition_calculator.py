@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
@@ -11,6 +12,89 @@ from .models import Ingredient, IngredientComposition, Recipe, RecipeIngredient
 from .route_units import MASS_UNITS, VOLUME_UNITS
 
 log = logging.getLogger("okaasan.recipes.nutrition")
+
+
+def _fix_legacy_compositions(db: Session, compositions: list[IngredientComposition]) -> None:
+    """Re-normalize compositions that have kind='nutrient' (legacy import data)."""
+    from ..integrations.usda import normalize_nutrient_name
+
+    updated = 0
+    for comp in compositions:
+        if (comp.kind or "").strip().lower() not in ("nutrient", ""):
+            continue
+        raw_name = (comp.name or "").strip()
+        if not raw_name:
+            continue
+        raw_unit = (comp.unit or "").strip()
+        new_kind, new_name = normalize_nutrient_name(raw_name, raw_unit)
+        if new_kind == "_skip":
+            db.delete(comp)
+            updated += 1
+            continue
+        comp.kind = new_kind
+        comp.name = new_name
+        updated += 1
+
+    if updated:
+        db.commit()
+        log.warning("[USDA] Fixed %d legacy compositions in-place", updated)
+
+
+def _auto_import_usda_compositions(
+    db: Session, ingredient: Ingredient
+) -> list[IngredientComposition]:
+    """Fetch USDA nutrient data via the FDC API and persist as IngredientComposition rows.
+
+    Returns the newly created compositions, or an empty list on failure.
+    """
+    fdc_id = ingredient.fdc_id
+    if not fdc_id:
+        return []
+
+    from ..integrations.usda import fetch_food_nutrients
+
+    log.warning(
+        "[USDA] Auto-import start for ingredient %s (%s) fdc_id=%s",
+        ingredient._id, ingredient.name, fdc_id,
+    )
+
+    t0 = time.monotonic()
+    nutrients = fetch_food_nutrients(fdc_id)
+    elapsed = time.monotonic() - t0
+
+    if not nutrients:
+        log.warning(
+            "[USDA] Auto-import: no nutrients returned for %s fdc_id=%s (%.2fs)",
+            ingredient.name, fdc_id, elapsed,
+        )
+        return []
+
+    created = []
+    for nutrient in nutrients:
+        composition = IngredientComposition(
+            ingredient_id=ingredient._id,
+            kind=nutrient.get("kind", "Others"),
+            name=nutrient["name"],
+            quantity=nutrient["amount"],
+            unit=nutrient.get("unit", ""),
+            daily_value=0.0,
+            source="USDA",
+            extension={
+                "fdc_id": str(fdc_id),
+                "nutrient_id": nutrient.get("nutrient_id"),
+            },
+        )
+        db.add(composition)
+        created.append(composition)
+
+    if created:
+        db.flush()
+        log.warning(
+            "[USDA] Auto-import done: %d compositions for %s (%s) in %.2fs",
+            len(created), ingredient._id, ingredient.name, elapsed,
+        )
+
+    return created
 
 
 def _utc_now_iso() -> str:
@@ -109,11 +193,20 @@ def _quantity_in_grams(recipe_ingredient: RecipeIngredient) -> tuple[float | Non
 
 def _get_compositions(db: Session, recipe_ingredient: RecipeIngredient) -> list[IngredientComposition]:
     if recipe_ingredient.ingredient_id:
-        return (
+        compositions = (
             db.query(IngredientComposition)
             .filter_by(ingredient_id=recipe_ingredient.ingredient_id)
             .all()
         )
+        if not compositions:
+            ingredient = recipe_ingredient.ingredient or db.get(
+                Ingredient, recipe_ingredient.ingredient_id
+            )
+            if ingredient and ingredient.fdc_id:
+                compositions = _auto_import_usda_compositions(db, ingredient)
+        elif any((c.kind or "").strip().lower() in ("nutrient", "") for c in compositions):
+            _fix_legacy_compositions(db, compositions)
+        return compositions
     if recipe_ingredient.ingredient_recipe_id:
         return (
             db.query(IngredientComposition)
@@ -162,6 +255,8 @@ def calculate_recipe_nutrition(
             result["error"] = True
             result["error_messages"].append("Recipe has no ingredients")
             return result
+
+        from ..integrations.usda import normalize_nutrient_name
 
         totals: OrderedDict[tuple[str | None, str | None, str | None], dict[str, Any]] = OrderedDict()
         total_weight_g = 0.0
@@ -222,13 +317,38 @@ def calculate_recipe_nutrition(
                     log.warning(message)
                     continue
 
-                key = (composition.kind, composition.name, composition.unit)
+                raw_kind = (composition.kind or "").strip()
+                raw_name = (composition.name or "").strip()
+                raw_unit = (composition.unit or "").strip()
+
+                # Re-normalize using the name (handles legacy/misclassified data)
+                if raw_name:
+                    test_kind, test_name = normalize_nutrient_name(raw_name, raw_unit)
+                    if test_kind == "_skip":
+                        continue
+                    elif test_kind != "Others":
+                        norm_kind = test_kind
+                        norm_name = test_name or None
+                    elif raw_kind and raw_kind.lower() not in ("nutrient", "others"):
+                        norm_kind = raw_kind.capitalize()
+                        norm_name = raw_name.capitalize()
+                    else:
+                        norm_kind = test_kind
+                        norm_name = test_name or None
+                elif raw_kind:
+                    norm_kind = raw_kind.capitalize()
+                    norm_name = None
+                else:
+                    continue
+
+                norm_unit = raw_unit.upper() or None
+                key = (norm_kind, norm_name, norm_unit)
                 if key not in totals:
                     totals[key] = {
-                        "kind": composition.kind,
-                        "name": composition.name,
+                        "kind": norm_kind,
+                        "name": norm_name,
                         "quantity": 0.0,
-                        "unit": composition.unit,
+                        "unit": raw_unit or composition.unit,
                         "daily_value": 0.0,
                     }
 
@@ -262,6 +382,8 @@ def calculate_recipe_nutrition(
             )
             result["compositions"] = list(totals.values())
             return result
+
+        result["total_weight_g"] = round(total_weight_g, 2)
 
         normalization_weight_g = float(portion_weight_g) if portion_weight_g is not None else 100.0
         normalization_factor = normalization_weight_g / total_weight_g

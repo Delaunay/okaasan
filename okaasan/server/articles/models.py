@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     Integer,
@@ -24,6 +24,8 @@ class Article(Base):
     """Full blog post to display"""
 
     __tablename__ = "articles"
+    __audit_entity_type__ = "article"
+    __audit_title_field__ = "title"
 
     _id = Column(Integer, primary_key=True)
     root_id = Column(Integer, ForeignKey("articles._id"), nullable=True)
@@ -39,6 +41,11 @@ class Article(Base):
 
     public = Column(Boolean, default=False)
     article_kind = Column(String(25))
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
 
     # Add a view counter for optimizing UX display view
 
@@ -163,6 +170,10 @@ class Article(Base):
             "root_id": self.root_id,
             "public": self.public,
             "article_kind": self.article_kind,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_by": self.created_by,
+            "owner": self.owner,
             "blocks": [],
         }
 
@@ -203,6 +214,8 @@ class ArticleBlock(Base):
     """Renderable block of a blog post"""
 
     __tablename__ = "article_blocks"
+    __audit_entity_type__ = "article_block"
+    __audit_title_field__ = "kind"
 
     _id = Column(Integer, primary_key=True)
     # So Article block can bet infinitely nested
@@ -221,6 +234,11 @@ class ArticleBlock(Base):
     kind = Column(String(25))
     data = Column(JSON)
     extension = Column(JSON)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
 
     # Some nodes can be just data blocks ?
     def to_json(self):

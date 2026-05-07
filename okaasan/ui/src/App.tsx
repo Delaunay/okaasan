@@ -33,6 +33,7 @@ import GoogleCalendarSettings from './components/settings/GoogleCalendarSettings
 import ApiTester from './components/ApiTester';
 import ArticleTestPage from './components/content/ArticleTestPage';
 import ArticleView from './components/content/ArticleView';
+import FeedPage from './components/feed/FeedPage';
 import SectionView from './components/content/SectionView';
 import ContentView from './components/content/ContentView';
 import CodeVisualization from './components/scratch/CodeVisualization';
@@ -111,6 +112,7 @@ function App() {
                 <Route path="/settings/google-calendar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GoogleCalendarSettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
+                <Route path="/feed" element={<FeedPage />} />
                 {/* Expense Tracker */}
                 <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />
                 <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />

@@ -3805,6 +3805,7 @@ const Recipe: FC<RecipeProps> = ({
                 compositions={nutritionResult.compositions as IngredientComposition[]}
                 entityId={recipe.id}
                 editable={false}
+                totalWeightG={nutritionResult.total_weight_g}
               />
             )}
             {nutritionResult && nutritionResult.compositions.length === 0 && !nutritionLoading && (

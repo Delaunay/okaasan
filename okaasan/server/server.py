@@ -56,6 +56,12 @@ class _StripApiPrefix:
 
 
 def create_app() -> FastAPI:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    logging.getLogger("okaasan").setLevel(logging.DEBUG)
+
     app = FastAPI(title="Recipes")
 
     app.add_middleware(
@@ -83,6 +89,9 @@ def create_app() -> FastAPI:
             return await call_next(request)
 
     app.add_middleware(PublicOnlyMiddleware)
+
+    from .audit import activate as activate_audit
+    activate_audit()
 
     db_path = os.path.join(STATIC_FOLDER, "database.db")
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
@@ -114,6 +123,7 @@ def create_app() -> FastAPI:
     from .recipe import router as recipe_router
     from .recipe import ingredient_router, units_router
     from .articles import router as article_router
+    from .feed.routes import router as feed_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)
@@ -125,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(images_router)
     app.include_router(jsonstore_router)
     app.include_router(graph_router)
+    app.include_router(feed_router)
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations

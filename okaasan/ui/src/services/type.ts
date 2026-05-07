@@ -108,6 +108,7 @@ export interface RecipeNutritionResult {
         value: number;
         unit: string;
     };
+    total_weight_g?: number;
     compositions: IngredientComposition[];
     cached?: boolean;
 }
@@ -471,5 +472,38 @@ export interface Data {
     value_start?: string; // DateTime
     value_end?: string; // DateTime
     published_time?: string; // DateTime
+}
+
+// ============================================================================
+// Audit / Feed Models
+// ============================================================================
+
+export interface AuditEntry {
+    id: number;
+    timestamp: string;
+    action: 'created' | 'updated' | 'deleted';
+    entity_type: string;
+    entity_id: number;
+    title: string;
+    summary: string;
+    created_by?: string;
+    owner?: string;
+    changes?: Record<string, { old?: any; new?: any }>;
+    extra?: Record<string, any>;
+}
+
+export interface FeedReport {
+    period: 'week' | 'month' | 'year';
+    start: string;
+    end: string;
+    sections: Record<string, ReportSection>;
+    total_changes: number;
+}
+
+export interface ReportSection {
+    items: AuditEntry[];
+    created: number;
+    updated: number;
+    deleted: number;
 }
 

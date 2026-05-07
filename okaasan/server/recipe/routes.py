@@ -401,7 +401,19 @@ async def update_recipe_ingredient(recipe_ingredient_id: int, request: Request, 
 
     try:
         if 'fdc_id' in data:
-            recipe_ingredient.fdc_id = data['fdc_id']
+            fdc_id = data['fdc_id']
+            recipe_ingredient.fdc_id = fdc_id
+
+            # Propagate fdc_id to the Ingredient record if it doesn't have one
+            if fdc_id and recipe_ingredient.ingredient_id:
+                ingredient = db.get(Ingredient, recipe_ingredient.ingredient_id)
+                if ingredient and not ingredient.fdc_id:
+                    ingredient.fdc_id = fdc_id
+                    log.info(
+                        "Propagated fdc_id=%s to ingredient %s (%s)",
+                        fdc_id, ingredient._id, ingredient.name,
+                    )
+
         if 'quantity' in data:
             try:
                 recipe_ingredient.quantity = float(data['quantity'])

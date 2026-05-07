@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -44,6 +44,8 @@ from ..models.common import Base
 
 class Event(Base):
     __tablename__ = 'events'
+    __audit_entity_type__ = 'event'
+    __audit_title_field__ = 'title'
 
     # To display a calaender
     # Column Week Days
@@ -79,6 +81,10 @@ class Event(Base):
 
     extension = Column(JSON)
 
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
+
     # Relationships
     # task = relationship('Task', back_populates='events')
 
@@ -105,5 +111,6 @@ class Event(Base):
             'recuring': self.recuring,
             'active': self.active,
             'owner': self.owner,
-            'name': self.name
+            'name': self.name,
+            'created_by': self.created_by,
         }

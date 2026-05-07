@@ -64,6 +64,15 @@ const getStaticSidebarSections = () => [
     items: getWeekDayItems(),
   },
   {
+    title: 'Feed',
+    href: '/feed',
+    isSelected: (location: Location) => location.pathname.startsWith('/feed'),
+    items: [
+      { name: 'Changes', href: '/feed' },
+      { name: 'Report', href: '/feed?tab=report' },
+    ],
+  },
+  {
     title: 'Cooking',
     href: '/cooking',
     items: [

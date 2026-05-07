@@ -25,7 +25,7 @@ def register_integrations(app: "FastAPI", engine: "Engine") -> None:
 
         usda_router = create_usda_router(engine)
         app.include_router(usda_router)
-    except Exception as exc:
+    except Exception as exc: 
         log.warning("USDA routes not available: %s", exc)
 
     # --- Google Calendar ---

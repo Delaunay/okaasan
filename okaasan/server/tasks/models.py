@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index, or_
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -8,6 +8,8 @@ from ..models.common import Base
 
 class Task(Base):
     __tablename__ = 'tasks'
+    __audit_entity_type__ = 'task'
+    __audit_title_field__ = 'title'
 
     _id = Column(Integer, primary_key=True)
     root_id = Column(Integer, nullable=True, default=None) # ForeignKey('tasks._id')
@@ -46,6 +48,11 @@ class Task(Base):
 
     #
     extension = Column(JSON)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
 
     # # Relationships
     parent = relationship(
@@ -166,5 +173,7 @@ class Task(Base):
             'time_estimate': self.time_estimate,
             'extension': self.extension,
             "priority": self.priority if self.priority is not None else 0,
+            'created_by': self.created_by,
+            'owner': self.owner,
             "children": []
         }

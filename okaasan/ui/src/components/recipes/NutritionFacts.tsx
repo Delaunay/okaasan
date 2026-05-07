@@ -45,6 +45,7 @@ interface NutritionFactsProps {
     compositions: IngredientComposition[];
     entityId: number;
     editable?: boolean;
+    totalWeightG?: number;
     onAdd?: (data: Omit<IngredientComposition, 'id' | 'ingredient_id'>) => Promise<void>;
     onEdit?: (id: number, data: Partial<IngredientComposition>) => Promise<void>;
     onDelete?: (id: number) => Promise<void>;
@@ -59,6 +60,7 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     compositions,
     entityId,
     editable = true,
+    totalWeightG,
     onAdd,
     onEdit,
     onDelete,
@@ -76,6 +78,7 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
     const [displayReferenceQuantity, setDisplayReferenceQuantity] = useState<number>(100);
     const [isEditingDisplayRef, setIsEditingDisplayRef] = useState(false);
     const [hoveredCategoryKind, setHoveredCategoryKind] = useState<string | null>(null);
+    const [compactView, setCompactView] = useState(true);
 
     // We do not want to manually edit numbers from USDA, they are baselines
     // but we should be able to copy them to make our own
@@ -335,9 +338,33 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                 {displayReferenceQuantity}g
                             </Text>
                         )}
+                        {totalWeightG && (
+                            <Text
+                                fontSize="xs"
+                                style={{ color: displayReferenceQuantity === totalWeightG ? 'var(--nf-accent)' : 'var(--nf-text-muted)' }}
+                                cursor="pointer"
+                                userSelect="none"
+                                onClick={() => setDisplayReferenceQuantity(
+                                    displayReferenceQuantity === totalWeightG ? 100 : totalWeightG
+                                )}
+                                _hover={{ textDecoration: 'underline' }}
+                                fontWeight={displayReferenceQuantity === totalWeightG ? "bold" : "normal"}
+                            >
+                                ({displayReferenceQuantity === totalWeightG ? "per 100g" : `full recipe: ${totalWeightG}g`})
+                            </Text>
+                        )}
                     </HStack>
                 </VStack>
                 <HStack gap={2}>
+                    <Button
+                        size="sm"
+                        variant={compactView ? "solid" : "outline"}
+                        colorScheme="gray"
+                        onClick={() => setCompactView(!compactView)}
+                        title={compactView ? "Show all nutrients" : "Show compact view"}
+                    >
+                        <Text fontSize="xs">{compactView ? "All" : "Compact"}</Text>
+                    </Button>
                     {isReallyEditable && !isAdding && onAdd && (
                         <Button
                             size="sm"
@@ -511,20 +538,37 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                     </Box>
                 )}
 
-                {/* Existing compositions */}
-                {processedCompositions.length === 0 && !isAdding ? (
-                    <Box textAlign="center" py={6} bg="bg" borderRadius="md">
-                        <Text fontSize="sm" mb={2} style={{ color: 'var(--nf-text-faint)' }}>
-                            No nutritional composition data available
-                        </Text>
-                        {isReallyEditable && onAdd && (
-                            <Text fontSize="xs" style={{ color: 'var(--nf-text-faint)' }}>
-                                Click "Add" to insert nutritional information
-                            </Text>
-                        )}
-                    </Box>
-                ) : (
-                    processedCompositions.map((composition, index) => {
+                {/* Existing compositions (filter out zero-quantity entries and apply compact mode) */}
+                {(() => {
+                    const COMPACT_KINDS = ['calories', 'fat', 'carbohydrate', 'carbo', 'protein', 'cholesterol', 'mineral', 'vitamin'];
+
+                    const visibleCompositions = processedCompositions.filter(c => {
+                        if (c.quantity != null) {
+                            const displayed = Number((c.quantity * displayMultiplier).toFixed(2));
+                            if (displayed === 0) return false;
+                        }
+                        if (compactView && c.kind) {
+                            const lowerKind = c.kind.toLowerCase();
+                            return COMPACT_KINDS.some(k => lowerKind.includes(k) || k.includes(lowerKind));
+                        }
+                        if (compactView && !c.kind) return false;
+                        return true;
+                    });
+                    if (visibleCompositions.length === 0 && !isAdding) {
+                        return (
+                            <Box textAlign="center" py={6} bg="bg" borderRadius="md">
+                                <Text fontSize="sm" mb={2} style={{ color: 'var(--nf-text-faint)' }}>
+                                    No nutritional composition data available
+                                </Text>
+                                {isReallyEditable && onAdd && (
+                                    <Text fontSize="xs" style={{ color: 'var(--nf-text-faint)' }}>
+                                        Click "Add" to insert nutritional information
+                                    </Text>
+                                )}
+                            </Box>
+                        );
+                    }
+                    return visibleCompositions.map((composition, index) => {
                         const isEditing = editingId === composition.id;
                         const isVirtual = composition.id === -1; // Virtual total
 
@@ -883,15 +927,19 @@ const NutritionFacts: FC<NutritionFactsProps> = ({
                                 )}
                             </Box>
                         );
-                    })
-                )}
+                    });
+                })()}
             </VStack>
 
             {/* Footer note */}
             {processedCompositions.length > 0 && (
                 <Box mt={4} pt={3} borderTop="2px solid" style={{ borderColor: 'var(--nf-border)' }}>
                     <Text fontSize="xs" style={{ color: 'var(--nf-text-muted)' }}>
-                        * Percent Daily Values are based on a 2,000 calorie diet. Values shown per {displayReferenceQuantity}g.
+                        * Percent Daily Values are based on a 2,000 calorie diet.
+                        {totalWeightG && displayReferenceQuantity === totalWeightG
+                            ? ` Values shown for full recipe (${totalWeightG}g).`
+                            : ` Values shown per ${displayReferenceQuantity}g.`
+                        }
                     </Text>
                 </Box>
             )}

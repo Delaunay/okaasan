@@ -93,6 +93,8 @@ class USDAFood(Base):
 
 class Recipe(Base):
     __tablename__ = 'recipes'
+    __audit_entity_type__ = 'recipe'
+    __audit_title_field__ = 'title'
 
     _id = Column(Integer, primary_key=True)
     title = Column(String(100), nullable=False)
@@ -110,6 +112,8 @@ class Recipe(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     author_id = Column(Integer, ForeignKey('users._id'))
+    created_by = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
 
     component = Column(Boolean, default=False)
     extension = Column(JSON)
@@ -135,6 +139,8 @@ class Recipe(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'author_id': self.author_id,
+            'created_by': self.created_by,
+            'owner': self.owner,
             'extension': self.extension,
             "component": self.component,
 

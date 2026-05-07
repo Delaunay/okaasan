@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import csv
 import time
 import traceback
 
@@ -10,12 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..models import Ingredient, IngredientComposition
-from .usda.usda_reader import USDAReader
+from .usda import get_fdc_client
 
 log = logging.getLogger("okaasan.usda.routes")
-
-HERE = os.path.dirname(__file__)
-USDA_FOLDER = os.path.join(HERE, "..", "..", "data", "usda")
 
 
 def get_db_from_engine(engine):
@@ -36,45 +31,19 @@ def create_usda_router(engine):
     router = APIRouter()
     get_db = get_db_from_engine(engine)
 
-    log.info("Initializing USDA reader from %s", USDA_FOLDER)
-    usda_reader = USDAReader(USDA_FOLDER)
+    fdc_client = get_fdc_client()
 
-    # Try to load the FDC library for analyze/nutrient-group features
-    fdc_client = None
     fdc_extras = {}
     try:
-        from usda_fdc.client import FdcClient
         from usda_fdc.analysis import analyze_food, DriType, Gender
         from usda_fdc.analysis.nutrients import NUTRIENT_GROUPS
 
-        class RateLimitedClient(FdcClient):
-            def __init__(self, api_key, requests_per_minute=10, **kwargs):
-                super().__init__(api_key, **kwargs)
-                self.requests_per_minute = requests_per_minute
-                self.interval = 60 / requests_per_minute
-                self.last_request_time = 0
-
-            def _make_request(self, endpoint, method="GET", params=None, data=None):
-                current_time = time.time()
-                time_since_last = current_time - self.last_request_time
-                if time_since_last < self.interval:
-                    time.sleep(self.interval - time_since_last)
-                result = super()._make_request(endpoint, method, params, data)
-                self.last_request_time = time.time()
-                return result
-
-        api_key = os.getenv("FDC_API_KEY")
-        if api_key:
-            fdc_client = RateLimitedClient(api_key)
-            fdc_extras = {
-                "analyze_food": analyze_food,
-                "DriType": DriType,
-                "Gender": Gender,
-                "NUTRIENT_GROUPS": NUTRIENT_GROUPS,
-            }
-            log.info("FDC API client initialized (rate-limited)")
-        else:
-            log.info("FDC_API_KEY not set, FDC API features disabled")
+        fdc_extras = {
+            "analyze_food": analyze_food,
+            "DriType": DriType,
+            "Gender": Gender,
+            "NUTRIENT_GROUPS": NUTRIENT_GROUPS,
+        }
     except (ImportError, ModuleNotFoundError):
         traceback.print_exc()
     except Exception:
@@ -86,15 +55,36 @@ def create_usda_router(engine):
         if not q:
             raise HTTPException(status_code=400, detail="Query parameter 'q' is required")
         limit = min(max(1, limit), 100)
-        log.info("search q=%r limit=%d data_type=%s", q, limit, data_type)
+        log.warning("[USDA] search start q=%r limit=%d data_type=%s", q, limit, data_type)
         t0 = time.monotonic()
-        try:
-            results = usda_reader.search_foods(q, limit=limit, data_type=data_type)
-            log.info("search done: %d results in %.2fs", len(results), time.monotonic() - t0)
-            return results
-        except Exception as e:
-            log.error("search failed after %.2fs: %s", time.monotonic() - t0, e)
-            raise HTTPException(status_code=500, detail=str(e))
+
+        if fdc_client:
+            try:
+                data_type_map = {
+                    "foundation_food": ["Foundation"],
+                    "sr_legacy_food": ["SR Legacy"],
+                    "branded_food": ["Branded"],
+                    "survey_fndds_food": ["Survey (FNDDS)"],
+                }
+                api_data_type = data_type_map.get(data_type)
+                search_result = fdc_client.search(q, data_type=api_data_type, page_size=limit)
+                results = [
+                    {
+                        "fdc_id": food.fdc_id,
+                        "data_type": food.data_type or "",
+                        "description": food.description,
+                        "food_category_id": "",
+                        "publication_date": food.publication_date or "",
+                    }
+                    for food in search_result.foods
+                ]
+                log.warning("[USDA] search done: %d results in %.2fs", len(results), time.monotonic() - t0)
+                return results
+            except Exception as e:
+                log.error("[USDA] search FAILED after %.2fs: %s", time.monotonic() - t0, e)
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            raise HTTPException(status_code=501, detail="FDC API not available (usda_fdc not installed or FDC_API_KEY not set)")
 
     @router.get("/usda/search/{name:path}")
     def search_usda_by_name(name: str, limit: int = 20, data_type: str = "foundation_food"):
@@ -108,45 +98,63 @@ def create_usda_router(engine):
 
     @router.get("/usda/food/{fdc_id}")
     def get_food_details(fdc_id: str):
-        log.info("food details fdc_id=%s", fdc_id)
+        if not fdc_client:
+            raise HTTPException(status_code=501, detail="FDC API not available")
+        log.warning("[USDA] food details start fdc_id=%s", fdc_id)
         t0 = time.monotonic()
         try:
-            food_details = usda_reader.get_food_details(fdc_id)
-            if not food_details:
-                raise HTTPException(status_code=404, detail=f"Food with FDC ID {fdc_id} not found")
-            category_id = food_details.get('food_category_id')
-            if category_id:
-                category = usda_reader.get_food_category(category_id)
-                if category:
-                    food_details['category'] = category
-            log.info("food details done in %.2fs", time.monotonic() - t0)
+            food = fdc_client.get_food(int(fdc_id))
+            food_details = {
+                "fdc_id": food.fdc_id,
+                "data_type": food.data_type or "",
+                "description": food.description,
+                "food_category_id": "",
+                "publication_date": food.publication_date or "",
+                "nutrients": [
+                    {
+                        "nutrient_id": n.id,
+                        "name": n.name,
+                        "amount": n.amount,
+                        "unit": n.unit_name,
+                        "percent_daily_value": 0.0,
+                    }
+                    for n in food.nutrients
+                ],
+            }
+            log.warning("[USDA] food details done fdc_id=%s in %.2fs", fdc_id, time.monotonic() - t0)
             return food_details
         except HTTPException:
             raise
         except Exception as e:
-            log.error("food details failed after %.2fs: %s", time.monotonic() - t0, e)
+            log.error("[USDA] food details FAILED fdc_id=%s after %.2fs: %s", fdc_id, time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- Nutrients ---
 
     @router.get("/usda/food/{fdc_id}/nutrients")
     def get_food_nutrients(fdc_id: str):
-        log.info("food nutrients fdc_id=%s", fdc_id)
+        if not fdc_client:
+            raise HTTPException(status_code=501, detail="FDC API not available")
+        log.warning("[USDA] food nutrients start fdc_id=%s", fdc_id)
         t0 = time.monotonic()
         try:
-            nutrients = usda_reader.get_food_nutrients(fdc_id)
-            if not nutrients:
-                food_details = usda_reader.get_food_details(fdc_id)
-                if not food_details:
-                    raise HTTPException(status_code=404, detail=f"Food with FDC ID {fdc_id} not found")
-                log.info("food nutrients: 0 nutrients in %.2fs", time.monotonic() - t0)
-                return {"fdc_id": fdc_id, "count": 0, "nutrients": []}
-            log.info("food nutrients done: %d nutrients in %.2fs", len(nutrients), time.monotonic() - t0)
+            food = fdc_client.get_food(int(fdc_id))
+            nutrients = [
+                {
+                    "nutrient_id": n.id,
+                    "name": n.name,
+                    "amount": n.amount,
+                    "unit": n.unit_name,
+                    "percent_daily_value": 0.0,
+                }
+                for n in food.nutrients
+            ]
+            log.warning("[USDA] food nutrients done fdc_id=%s: %d nutrients in %.2fs", fdc_id, len(nutrients), time.monotonic() - t0)
             return {"fdc_id": fdc_id, "count": len(nutrients), "nutrients": nutrients}
         except HTTPException:
             raise
         except Exception as e:
-            log.error("food nutrients failed after %.2fs: %s", time.monotonic() - t0, e)
+            log.error("[USDA] food nutrients FAILED fdc_id=%s after %.2fs: %s", fdc_id, time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- Analyze (requires FDC library) ---
@@ -156,16 +164,21 @@ def create_usda_router(engine):
         if not fdc_client:
             raise HTTPException(status_code=501, detail="FDC API not available (usda_fdc not installed or FDC_API_KEY not set)")
         from dataclasses import asdict
+        log.warning("[USDA] analyze start fdc_id=%s", fdc_id)
+        t0 = time.monotonic()
         try:
             analyze_food = fdc_extras["analyze_food"]
             DriType = fdc_extras["DriType"]
             Gender = fdc_extras["Gender"]
             food = fdc_client.get_food(fdc_id)
+            log.warning("[USDA] analyze: got food in %.2fs, running analysis...", time.monotonic() - t0)
             analysis = analyze_food(
                 food, dri_type=DriType.RDA, gender=Gender.MALE, serving_size=100.0
             )
+            log.warning("[USDA] analyze done fdc_id=%s in %.2fs", fdc_id, time.monotonic() - t0)
             return asdict(analysis)
         except Exception as e:
+            log.error("[USDA] analyze FAILED fdc_id=%s after %.2fs: %s", fdc_id, time.monotonic() - t0, e)
             raise HTTPException(status_code=500, detail=str(e))
 
     # --- Nutrient group (requires FDC library) ---
@@ -204,6 +217,8 @@ def create_usda_router(engine):
 
     @router.post("/usda/apply")
     async def apply_usda_to_ingredient(request: Request, db: Session = Depends(get_db)):
+        if not fdc_client:
+            raise HTTPException(status_code=501, detail="FDC API not available")
         try:
             data = await request.json()
             if not data:
@@ -212,7 +227,7 @@ def create_usda_router(engine):
             ingredient_id = data.get('ingredient_id')
             fdc_id = data.get('fdc_id')
             overwrite = data.get('overwrite', False)
-            log.info("apply ingredient_id=%s fdc_id=%s overwrite=%s", ingredient_id, fdc_id, overwrite)
+            log.warning("[USDA] apply start ingredient_id=%s fdc_id=%s overwrite=%s", ingredient_id, fdc_id, overwrite)
 
             if not ingredient_id:
                 raise HTTPException(status_code=400, detail="ingredient_id is required")
@@ -224,51 +239,55 @@ def create_usda_router(engine):
                 raise HTTPException(status_code=404, detail=f"Ingredient with ID {ingredient_id} not found")
 
             t0 = time.monotonic()
-            food_details = usda_reader.get_food_details(fdc_id)
-            if not food_details:
-                raise HTTPException(status_code=404, detail=f"USDA food with FDC ID {fdc_id} not found")
-            log.info("apply: fetched food details in %.2fs", time.monotonic() - t0)
+            food = fdc_client.get_food(int(fdc_id))
+            log.warning("[USDA] apply: fetched food from API in %.2fs", time.monotonic() - t0)
 
             if overwrite:
                 db.query(IngredientComposition).filter_by(ingredient_id=ingredient_id, source='USDA').delete()
 
-            nutrients = food_details.get('nutrients', [])
+            from .usda import normalize_nutrient_name
+
             added_count = 0
-            for nutrient in nutrients:
-                if not nutrient['amount'] or nutrient['amount'] == 0:
+            for nutrient in food.nutrients:
+                if not nutrient.amount or nutrient.amount == 0:
                     continue
+
+                kind, name = normalize_nutrient_name(nutrient.name, nutrient.unit_name or "")
+                if kind == "_skip":
+                    continue
+
                 if not overwrite:
                     existing = db.query(IngredientComposition).filter_by(
-                        ingredient_id=ingredient_id, name=nutrient['name'], source='USDA'
+                        ingredient_id=ingredient_id, name=name, kind=kind, source='USDA'
                     ).first()
                     if existing:
                         continue
 
                 composition = IngredientComposition(
                     ingredient_id=ingredient_id,
-                    kind='nutrient',
-                    name=nutrient['name'],
-                    quantity=nutrient['amount'],
-                    unit=nutrient['unit'],
-                    daily_value=nutrient.get('percent_daily_value', 0.0),
+                    kind=kind,
+                    name=name,
+                    quantity=nutrient.amount,
+                    unit=nutrient.unit_name,
+                    daily_value=0.0,
                     source='USDA',
                     extension={
-                        'fdc_id': fdc_id,
-                        'usda_description': food_details['description'],
-                        'nutrient_id': nutrient['nutrient_id']
+                        'fdc_id': str(fdc_id),
+                        'usda_description': food.description,
+                        'nutrient_id': nutrient.id,
                     }
                 )
                 db.add(composition)
                 added_count += 1
 
             db.commit()
-            log.info("apply done: added %d compositions in %.2fs", added_count, time.monotonic() - t0)
+            log.warning("[USDA] apply done: added %d compositions in %.2fs", added_count, time.monotonic() - t0)
             updated_ingredient = db.query(Ingredient).filter_by(_id=ingredient_id).first()
             return {
                 "success": True,
                 "ingredient": updated_ingredient.to_json(),
                 "added_compositions": added_count,
-                "usda_food": food_details['description'],
+                "usda_food": food.description,
                 "fdc_id": fdc_id
             }
         except HTTPException:
@@ -276,25 +295,6 @@ def create_usda_router(engine):
         except Exception as e:
             db.rollback()
             log.exception("apply failed")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    # --- Nutrient list ---
-
-    @router.get("/usda/nutrient-list")
-    def get_nutrient_list():
-        try:
-            nutrients = []
-            with open(usda_reader.nutrient_csv, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    nutrients.append({
-                        'id': row['id'],
-                        'name': row['name'],
-                        'unit': row['unit_name'],
-                        'nutrient_nbr': row.get('nutrient_nbr', '')
-                    })
-            return {"count": len(nutrients), "nutrients": nutrients}
-        except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     return router

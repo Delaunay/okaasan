@@ -336,9 +336,15 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
   const [editModal, setEditModal] = useState<{ data: Partial<Task>; taskId: number } | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([...DEFAULT_TASK_TAGS]);
+  const [startedIds, setStartedIds] = useState<Set<number>>(new Set());
+  const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
 
   const fetchDigest = () => {
-    recipeAPI.getWeeklyDigest().then(setDigest).catch(() => {});
+    recipeAPI.getWeeklyDigest().then(d => {
+      setDigest(d);
+      setStartedIds(new Set());
+      setDoneIds(new Set());
+    }).catch(() => {});
   };
 
   useEffect(() => { fetchDigest(); }, [date]);
@@ -387,24 +393,31 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
   const completedToday = digest?.completed_by_date?.[dateKey] || [];
   const inProgress = digest?.in_progress || [];
 
-  // All pending tasks from slots
   const pendingTasks = slots.flatMap(s => s.tasks);
   const totalCount = pendingTasks.length + inProgress.length + completedToday.length;
 
   if (totalCount === 0) return null;
 
   const handleStart = async (task: Task) => {
+    setStartedIds(prev => new Set(prev).add(task.id!));
     await recipeAPI.updateTask(task.id!, { datetime_started: new Date().toISOString() });
     fetchDigest();
   };
 
   const handleDone = async (task: Task) => {
+    setDoneIds(prev => new Set(prev).add(task.id!));
     await recipeAPI.updateTask(task.id!, {
       done: true,
       datetime_completed: new Date().toISOString(),
     });
     fetchDigest();
   };
+
+  const visibleInProgress = [
+    ...inProgress,
+    ...pendingTasks.filter(t => startedIds.has(t.id!)),
+  ];
+  const visiblePending = pendingTasks.filter(t => !startedIds.has(t.id!));
 
   return (
     <Box bg={cardBg} p={5} borderRadius="lg" border="1px solid" borderColor={border}>
@@ -416,15 +429,15 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
 
       <VStack align="stretch" gap={2}>
         {/* In-progress tasks */}
-        {inProgress.map(task => (
+        {visibleInProgress.map(task => (
           <HStack
             key={`ip-${task.id}`}
             gap={3}
             p={2}
             borderRadius="md"
             border="1px solid"
-            borderColor="orange.300"
-            bg="orange.50"
+            borderColor="var(--panel-orange-border)"
+            bg="var(--panel-orange-bg)"
           >
             <Box flex={1} minW={0} cursor="pointer" onClick={() => openTaskEdit(task)}>
               <Text fontSize="sm" fontWeight="medium" _hover={{ color: 'blue.500' }}>
@@ -439,15 +452,17 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
             <Badge colorPalette="orange" variant="subtle" size="sm">In progress</Badge>
             <button
               onClick={() => handleDone(task)}
+              disabled={doneIds.has(task.id!)}
               style={{
                 padding: '4px 12px',
                 borderRadius: '6px',
                 border: 'none',
-                background: '#38A169',
+                background: 'var(--panel-green-border)',
                 color: 'white',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
+                opacity: doneIds.has(task.id!) ? 0.5 : 1,
               }}
             >
               Done
@@ -456,7 +471,7 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
         ))}
 
         {/* Pending tasks from digest slots */}
-        {pendingTasks.map((task, i) => (
+        {visiblePending.map((task, i) => (
           <HStack
             key={`p-${task.id || i}`}
             gap={3}
@@ -480,9 +495,9 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
               style={{
                 padding: '4px 12px',
                 borderRadius: '6px',
-                border: '1px solid #3182CE',
+                border: '1px solid var(--panel-blue-border)',
                 background: 'transparent',
-                color: '#3182CE',
+                color: 'var(--panel-blue-text)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -512,7 +527,7 @@ function DigestTasksSection({ date, cardBg, border, mutedText }: {
                 _hover={{ opacity: 0.7 }}
                 onClick={() => openTaskEdit(task)}
               >
-                <CheckSquare size={16} color="#38A169" style={{ flexShrink: 0 }} />
+                <CheckSquare size={16} style={{ flexShrink: 0, color: 'var(--panel-green-border)' }} />
                 <Box flex={1} minW={0}>
                   <Text
                     fontSize="sm"
@@ -567,6 +582,19 @@ const DayDetail = () => {
   useEffect(() => {
     document.title = `(O)KaaSan - ${dayName}`;
   }, [dayName]);
+
+  // Auto-navigate to the new day at midnight when viewing "today"
+  useEffect(() => {
+    if (!isToday) return;
+    const checkDayChange = () => {
+      const nowDate = toISODate(new Date());
+      if (nowDate !== dateParam) {
+        navigate(`/day/${nowDate}`, { replace: true });
+      }
+    };
+    const interval = setInterval(checkDayChange, 30_000);
+    return () => clearInterval(interval);
+  }, [isToday, dateParam, navigate]);
 
   useEffect(() => {
     (async () => {

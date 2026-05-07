@@ -8,6 +8,8 @@ from ..models.common import Base
 class Product(Base):
     """Grocery list + prices"""
     __tablename__ = 'products'
+    __audit_entity_type__ = 'product'
+    __audit_title_field__ = 'name'
 
     _id = Column(Integer, primary_key=True)
     name = Column(String(50), nullable=False)               # Name of the product
@@ -18,8 +20,11 @@ class Product(Base):
     count = Column(Integer)                                 # Number of item purchase
     organic = Column(Boolean)                               # Organic or not
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # Date of purchase
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     ingredient = Column(String(50))                         # Ingredient this is usually used for
     fdc_id = Column(Integer)
+    created_by = Column(String(100), nullable=True)
+    owner = Column(String(100), nullable=True)
 
     def to_json(self):
         return {

@@ -23,6 +23,8 @@ import type {
   ArticleBlock,
   WeeklyDigest,
   RecipeNutritionResult,
+  AuditEntry,
+  FeedReport,
 } from './type';
 
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
@@ -986,6 +988,44 @@ class RecipeAPI {
   async triggerUpdate(): Promise<Response> {
     const url = `${API_BASE_URL}/update`;
     return fetch(url, { method: 'POST' });
+  }
+
+  // ── Feed / Audit ────────────────────────────────────────────
+
+  async getFeed(params: {
+    limit?: number;
+    offset?: number;
+    entity_type?: string;
+    action?: string;
+    created_by?: string;
+    owner?: string;
+  } = {}): Promise<AuditEntry[]> {
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    if (params.entity_type) qs.set('entity_type', params.entity_type);
+    if (params.action) qs.set('action', params.action);
+    if (params.created_by) qs.set('created_by', params.created_by);
+    if (params.owner) qs.set('owner', params.owner);
+    const query = qs.toString();
+    return this.request(`/feed${query ? `?${query}` : ''}`);
+  }
+
+  async getFeedReport(params: {
+    period?: 'week' | 'month' | 'year';
+    date?: string;
+    entity_types?: string;
+  } = {}): Promise<FeedReport> {
+    const qs = new URLSearchParams();
+    if (params.period) qs.set('period', params.period);
+    if (params.date) qs.set('date_str', params.date);
+    if (params.entity_types) qs.set('entity_types', params.entity_types);
+    const query = qs.toString();
+    return this.request(`/feed/report${query ? `?${query}` : ''}`);
+  }
+
+  async getEntityHistory(entityType: string, entityId: number): Promise<AuditEntry[]> {
+    return this.request(`/feed/history/${entityType}/${entityId}`);
   }
 
 }

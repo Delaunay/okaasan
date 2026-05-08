@@ -47,7 +47,7 @@ class _StripApiPrefix:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+        if scope["type"] in ("http", "websocket") and scope["path"].startswith("/api/"):
             scope = dict(scope)
             scope["path"] = scope["path"][4:]
             if "raw_path" in scope:
@@ -71,22 +71,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    from starlette.middleware.base import BaseHTTPMiddleware
     from .query_context import _public_only
 
-    class PublicOnlyMiddleware(BaseHTTPMiddleware):
-        """Set the public_only ContextVar when the static builder sends
-        ``X-Public-Only: true``.  Because this runs inside the ASGI app's
-        async context, the value propagates to sync handlers via
-        ``run_in_threadpool``."""
-        async def dispatch(self, request, call_next):
-            if request.headers.get("x-public-only") == "true":
-                token = _public_only.set(True)
-                try:
-                    return await call_next(request)
-                finally:
-                    _public_only.reset(token)
-            return await call_next(request)
+    class PublicOnlyMiddleware:
+        """Pure ASGI middleware that sets the public_only ContextVar when the
+        static builder sends ``X-Public-Only: true``.  Unlike BaseHTTPMiddleware,
+        this passes WebSocket connections through without interference."""
+
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "http":
+                headers = dict(scope.get("headers", []))
+                if headers.get(b"x-public-only") == b"true":
+                    token = _public_only.set(True)
+                    try:
+                        await self.app(scope, receive, send)
+                    finally:
+                        _public_only.reset(token)
+                    return
+            await self.app(scope, receive, send)
 
     app.add_middleware(PublicOnlyMiddleware)
 
@@ -144,6 +149,25 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health_check():
         return {"status": "healthy"}
+
+    # WebSocket notification endpoint
+    from starlette.websockets import WebSocketDisconnect
+    from .notifications import hub as _notification_hub
+
+    @app.on_event("startup")
+    async def _set_hub_loop():
+        _notification_hub.set_loop(asyncio.get_running_loop())
+
+    @app.websocket("/ws")
+    async def websocket_notifications(ws):
+        await _notification_hub.connect(ws)
+        try:
+            while True:
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            _notification_hub.disconnect(ws)
 
     @app.get("/categories")
     def get_categories(db: Session = Depends(get_db)):

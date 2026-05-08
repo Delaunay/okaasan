@@ -59,7 +59,7 @@ async function buildConfig(
             labelOffset: 4,
             symbolSize: 100,
             rowPadding: 4,
-            columnPadding: 30,
+            columnPadding: 40,
         },
         header: { ...bt.header, labelFont: font, titleFont: font, labelPadding: 10 },
     };
@@ -91,7 +91,7 @@ const VegaPlot: React.FC<VegaPlotProps> = ({ spec, height = '300px', configOverr
             );
             try {
                 await embed(containerRef.current as HTMLElement, spec, {
-                    actions: { export: true, source: false, compiled: false, editor: false },
+                    actions: false,
                     renderer: 'svg',
                     config,
                 });
@@ -126,19 +126,6 @@ const VegaPlot: React.FC<VegaPlotProps> = ({ spec, height = '300px', configOverr
             width="100%"
             minHeight={height}
             overflow="hidden"
-            css={{
-                '& .vega-actions': {
-                    position: 'absolute',
-                    left: '0 !important',
-                    top: '0 !important',
-                    opacity: 0.2,
-                    transition: 'opacity 0.2s',
-                    '&:hover': { opacity: 1 },
-                    backgroundColor: 'rgba(255,255,255,0.8)',
-                    padding: '4px',
-                    borderRadius: '4px',
-                },
-            }}
         />
     );
 };

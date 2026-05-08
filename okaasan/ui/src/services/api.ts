@@ -1212,11 +1212,15 @@ class RecipeAPI {
     return this.request('/health-data/scheduler');
   }
 
-  async setSchedulerEnabled(enabled: boolean): Promise<{ enabled: boolean; running: boolean }> {
+  async setSchedulerEnabled(enabled: boolean): Promise<{ enabled: boolean; running: boolean; timezone: string }> {
     return this.request('/health-data/scheduler', {
       method: 'POST',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
     });
+  }
+
+  async getUsbGarminStatus(): Promise<{ rule_installed: boolean; last_import: any }> {
+    return this.request('/health-data/usb-garmin/status');
   }
 
 }

@@ -19,9 +19,9 @@ const HeartRateChart: React.FC<Props> = ({ start, end }) => {
         data: { url: healthDataUrl('heart-rate', { start, end }) },
         layer: [
             {
-                mark: { type: 'line', interpolate: 'monotone', strokeWidth: 0.5, opacity: 0.3 },
+                mark: { type: 'line', interpolate: 'monotone', strokeWidth: 1, opacity: 0.5 },
                 encoding: {
-                    x: { field: 't', type: 'temporal', title: 'Time', scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+                    x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
                     y: { field: 'v', type: 'quantitative', title: 'BPM', scale: { zero: false } },
                 },
             },

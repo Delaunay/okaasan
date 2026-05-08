@@ -25,14 +25,14 @@ const SleepOverlayChart: React.FC<Props> = ({ start, end }) => {
         height: 300,
         autosize: { type: 'fit', contains: 'padding' },
         data: { url: healthDataUrl('sleep-overlay', { start, end, nights }) },
-        mark: { type: 'bar', cornerRadius: 1, clip: true },
+        mark: { type: 'bar', cornerRadius: 1, clip: true, opacity: 0.3},
         encoding: {
             y: {
                 field: 'weekday',
                 type: 'nominal',
                 title: null,
                 sort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                axis: { labelPadding: 8 },
+                axis: { labelPadding: 8 }
             },
             x: {
                 field: 'start_h',
@@ -54,12 +54,12 @@ const SleepOverlayChart: React.FC<Props> = ({ start, end }) => {
                 title: 'Stage',
                 scale: STAGE_COLORS,
             },
-            opacity: {
-                field: 'week_offset',
-                type: 'quantitative',
-                scale: { domain: [0, Math.max(1, nights - 1)], range: [0.9, 0.12] },
-                legend: null,
-            },
+            // opacity: {
+            //     field: 'week_offset',
+            //     type: 'quantitative',
+            //     scale: { domain: [0, Math.max(1, nights - 1)], range: [0.9, 0.12] },
+            //     legend: null,
+            // },
             tooltip: [
                 { field: 'night', title: 'Date' },
                 { field: 'weekday', title: 'Day' },

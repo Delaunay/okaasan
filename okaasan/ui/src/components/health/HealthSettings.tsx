@@ -6,6 +6,7 @@ import {
 import { Toaster, toaster } from '../ui/toaster';
 import { recipeAPI } from '../../services/api';
 import type { HealthConnector } from '../../services/type';
+import { useNotifications } from '../../hooks/useNotifications';
 
 interface LogEntry {
     text: string;
@@ -80,6 +81,38 @@ const HealthSettings: React.FC = () => {
     const [exportLogs, setExportLogs] = useState<LogEntry[]>([]);
     const [exportPath, setExportPath] = useState('');
 
+    // USB auto-import
+    const [usbStatus, setUsbStatus] = useState<{ rule_installed: boolean; last_import: any } | null>(null);
+    const [usbImporting, setUsbImporting] = useState<string | null>(null);
+
+    useNotifications((event) => {
+        if (event.type === 'usb_import') {
+            if (event.status === 'started') {
+                setUsbImporting('Garmin connected — importing FIT files...');
+            } else if (event.status === 'copying') {
+                setUsbImporting(`Found ${event.files_found} new file(s), importing...`);
+            } else if (event.status === 'importing') {
+                setUsbImporting(`Importing ${event.progress}/${event.total}...`);
+            } else if (event.status === 'done') {
+                setUsbImporting(null);
+                setUsbStatus((prev) => prev ? { ...prev, last_import: event } : prev);
+                toaster.create({
+                    title: 'USB Import Complete',
+                    description: `${event.files_imported} file(s) imported`,
+                    type: 'success',
+                });
+            } else if (event.status === 'error') {
+                setUsbImporting(null);
+                toaster.create({ title: 'USB Import Failed', description: event.error, type: 'error' });
+            }
+        }
+        if (event.type === 'garmin_sync') {
+            if (event.status === 'done') {
+                toaster.create({ title: 'Garmin Sync Complete', description: event.message || 'Daily sync finished', type: 'success' });
+            }
+        }
+    });
+
     // FIT import
     const [fitDir, setFitDir] = useState('');
     const [fitLoading, setFitLoading] = useState(false);
@@ -101,6 +134,9 @@ const HealthSettings: React.FC = () => {
     useEffect(() => {
         recipeAPI.getSchedulerStatus()
             .then((r) => setAutoSync(r.enabled))
+            .catch(() => {});
+        recipeAPI.getUsbGarminStatus()
+            .then((r) => setUsbStatus(r))
             .catch(() => {});
     }, []);
 
@@ -436,12 +472,12 @@ const HealthSettings: React.FC = () => {
                                     disabled={autoSyncLoading}
                                     onChange={(e) => handleAutoSyncToggle(e.target.checked)}
                                 />
-                                Daily auto-sync at 1 AM UTC
+                                Daily auto-sync at 1 AM local time
                             </label>
                             {autoSyncLoading && <Spinner size="xs" />}
                         </HStack>
-                        <Text fontSize="xs" color="gray.500" mt={1}>
-                            Automatically fetches yesterday's and today's data once per day.
+                        <Text fontSize="xs" color="var(--muted-text)" mt={1}>
+                            Automatically fetches yesterday's and today's data once per day ({Intl.DateTimeFormat().resolvedOptions().timeZone}).
                         </Text>
                     </Box>
                 </Box>
@@ -544,6 +580,61 @@ const HealthSettings: React.FC = () => {
                     </VStack>
 
                     <LogPanel logs={fitLogs} visible={fitLogs.length > 0} />
+                </Box>
+
+                {/* USB Auto-Import */}
+                <Box p={5} border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                    <Heading size="md" mb={3} color="var(--heading-color)">USB Auto-Import</Heading>
+                    <Text fontSize="xs" color="var(--muted-text)" mb={3}>
+                        Automatically import FIT files when a Garmin device is plugged into the server via USB.
+                    </Text>
+
+                    <HStack gap={2} mb={3}>
+                        <Box
+                            w="10px" h="10px" borderRadius="full"
+                            bg={usbStatus?.rule_installed ? 'var(--panel-green-border)' : 'var(--empty-text)'}
+                        />
+                        <Text fontSize="sm">
+                            udev rule: {usbStatus?.rule_installed ? 'Installed' : 'Not installed'}
+                        </Text>
+                    </HStack>
+
+                    {usbImporting && (
+                        <HStack gap={2} mb={3} p={3} bg="var(--selected-bg)" borderRadius="md">
+                            <Spinner size="xs" />
+                            <Text fontSize="sm">{usbImporting}</Text>
+                        </HStack>
+                    )}
+
+                    {usbStatus?.last_import ? (
+                        <Box mb={3} p={3} bg="var(--surface-muted)" borderRadius="md">
+                            <Text fontSize="sm" fontWeight="medium">Last USB import</Text>
+                            <Text fontSize="xs" color="var(--muted-text)">
+                                {new Date(usbStatus.last_import.timestamp).toLocaleString()}
+                                {' — '}
+                                {usbStatus.last_import.files_copied} copied,{' '}
+                                {usbStatus.last_import.files_imported} imported
+                                {usbStatus.last_import.errors > 0 && `, ${usbStatus.last_import.errors} errors`}
+                            </Text>
+                        </Box>
+                    ) : (
+                        <Text fontSize="xs" color="var(--muted-text)" mb={3}>No USB imports yet.</Text>
+                    )}
+
+                    {!usbStatus?.rule_installed && (
+                        <Box p={3} bg="var(--surface-muted)" borderRadius="md" border="1px solid" borderColor="var(--border-color)">
+                            <Text fontSize="sm" fontWeight="medium" mb={1}>Setup</Text>
+                            <Text fontSize="xs" color="var(--muted-text)">
+                                Run on the server:
+                            </Text>
+                            <Box as="code" display="block" fontSize="xs" bg="var(--key-bg)" color="var(--heading-color)" p={2} borderRadius="sm" mt={1} fontFamily="mono">
+                                make install-garmin-udev
+                            </Box>
+                            <Text fontSize="xs" color="var(--muted-text)" mt={2}>
+                                Then plug in your Garmin watch — FIT files will be imported automatically.
+                            </Text>
+                        </Box>
+                    )}
                 </Box>
             </Grid>
         </Box>

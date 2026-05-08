@@ -417,6 +417,7 @@ def create_health_router(engine) -> APIRouter:
         q: queue.Queue = queue.Queue()
 
         def _worker():
+            from ..notifications import hub as _hub
             client = None
             if not replay:
                 try:
@@ -424,6 +425,8 @@ def create_health_router(engine) -> APIRouter:
                 except Exception as exc:
                     q.put({"error": str(exc), "fatal": True})
                     return
+
+            _hub.publish({"type": "garmin_sync", "status": "started", "total_days": total_days})
 
             day = e
             idx = 0
@@ -452,12 +455,15 @@ def create_health_router(engine) -> APIRouter:
                 q.put(evt)
 
                 if consecutive_dups >= dup_threshold:
-                    q.put({"stopped": True, "reason": f"No new data for {dup_threshold} consecutive days", "days_synced": idx})
+                    msg = f"No new data for {dup_threshold} consecutive days"
+                    q.put({"stopped": True, "reason": msg, "days_synced": idx})
+                    _hub.publish({"type": "garmin_sync", "status": "done", "days_synced": idx, "message": f"Sync stopped: {msg}"})
                     return
 
                 day -= timedelta(days=1)
 
             q.put({"done": True, "days_synced": idx})
+            _hub.publish({"type": "garmin_sync", "status": "done", "days_synced": idx, "message": f"Synced {idx} days"})
 
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
@@ -695,6 +701,93 @@ def create_health_router(engine) -> APIRouter:
         return {"status": "ok", "display_name": result.get("display_name", "")}
 
     # ------------------------------------------------------------------
+    # USB auto-import (Garmin plugged in via USB)
+    # ------------------------------------------------------------------
+
+    @router.post("/import/usb-garmin")
+    async def import_usb_garmin(request: Request):
+        import json as _json
+        import threading
+        from starlette.responses import JSONResponse
+        from sqlalchemy.orm import sessionmaker
+
+        body = await request.json()
+        mount_path = body.get("mount_path")
+        if not mount_path:
+            raise HTTPException(status_code=400, detail="mount_path is required")
+
+        garmin_dir = Path(mount_path) / "GARMIN"
+        if not garmin_dir.is_dir():
+            raise HTTPException(status_code=400, detail=f"GARMIN directory not found at {garmin_dir}")
+
+        upload_dir = Path(_upload_folder(request))
+        SL = sessionmaker(bind=engine)
+
+        def _worker():
+            from .fit_reader import copy_fit_files, import_fit_file
+            from ..notifications import hub as _hub
+            db_w = SL()
+            try:
+                _hub.publish({"type": "usb_import", "status": "started"})
+
+                new_files = copy_fit_files(str(garmin_dir), upload_dir)
+                log.info("USB import: copied %d new FIT files from %s", len(new_files), garmin_dir)
+                _hub.publish({"type": "usb_import", "status": "copying", "files_found": len(new_files)})
+
+                imported, errors = 0, 0
+                for i, f in enumerate(new_files):
+                    try:
+                        import_fit_file(db_w, f)
+                        imported += 1
+                    except Exception as exc:
+                        log.warning("USB FIT import error %s: %s", f.name, exc)
+                        errors += 1
+                    if (i + 1) % 20 == 0:
+                        _hub.publish({"type": "usb_import", "status": "importing", "progress": i + 1, "total": len(new_files)})
+
+                log.info("USB import complete: %d imported, %d errors", imported, errors)
+
+                result = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "files_copied": len(new_files),
+                    "files_imported": imported,
+                    "errors": errors,
+                }
+
+                conn = db_w.query(HealthConnector).filter(HealthConnector.name == "fit_file").first()
+                if conn:
+                    config = dict(conn.config or {})
+                    config["last_usb_import"] = result
+                    conn.config = config
+                    db_w.commit()
+
+                _hub.publish({"type": "usb_import", "status": "done", **result})
+            except Exception as exc:
+                log.error("USB import failed: %s", exc)
+                _hub.publish({"type": "usb_import", "status": "error", "error": str(exc)})
+            finally:
+                db_w.close()
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+        return JSONResponse(status_code=202, content={"status": "started", "mount_path": mount_path})
+
+    @router.get("/usb-garmin/status")
+    def usb_garmin_status(db: Session = Depends(get_db)):
+        rule_installed = Path("/etc/udev/rules.d/99-garmin.rules").exists()
+
+        conn = db.query(HealthConnector).filter(HealthConnector.name == "fit_file").first()
+        last_import = None
+        if conn and conn.config:
+            last_import = conn.config.get("last_usb_import")
+
+        return {
+            "rule_installed": rule_installed,
+            "last_import": last_import,
+        }
+
+    # ------------------------------------------------------------------
     # Daily auto-sync scheduler
     # ------------------------------------------------------------------
 
@@ -702,8 +795,12 @@ def create_health_router(engine) -> APIRouter:
     def get_scheduler_status(request: Request, db: Session = Depends(get_db)):
         from .scheduler import is_running
         conn = db.query(HealthConnector).filter(HealthConnector.name == "garmin").first()
-        enabled = bool((conn.config or {}).get("auto_sync")) if conn else False
-        return {"enabled": enabled, "running": is_running()}
+        cfg = conn.config or {} if conn else {}
+        return {
+            "enabled": bool(cfg.get("auto_sync")),
+            "running": is_running(),
+            "timezone": cfg.get("sync_timezone", "UTC"),
+        }
 
     @router.post("/scheduler")
     async def toggle_scheduler(request: Request, db: Session = Depends(get_db)):
@@ -711,6 +808,7 @@ def create_health_router(engine) -> APIRouter:
 
         body = await request.json()
         enabled = body.get("enabled", False)
+        tz_name = body.get("timezone")
 
         conn = db.query(HealthConnector).filter(HealthConnector.name == "garmin").first()
         if not conn:
@@ -718,16 +816,20 @@ def create_health_router(engine) -> APIRouter:
 
         config = dict(conn.config or {})
         config["auto_sync"] = enabled
+        if tz_name:
+            config["sync_timezone"] = tz_name
         conn.config = config
         db.commit()
 
+        tz = config.get("sync_timezone", "UTC")
         config_dir = Path(_upload_folder(request)) / "data" / "_config"
         if enabled:
-            start_scheduler(engine, config_dir)
+            stop_scheduler()
+            start_scheduler(engine, config_dir, tz_name=tz)
         else:
             stop_scheduler()
 
-        return {"enabled": enabled, "running": is_running()}
+        return {"enabled": enabled, "running": is_running(), "timezone": tz}
 
     # Auto-start scheduler on router creation if previously enabled
     try:
@@ -736,8 +838,8 @@ def create_health_router(engine) -> APIRouter:
         _conn = _sess.query(HealthConnector).filter(HealthConnector.name == "garmin").first()
         if _conn and (_conn.config or {}).get("auto_sync"):
             from .scheduler import start_scheduler
-            _upload_base = None
-            start_scheduler(engine, Path("uploads") / "data" / "_config")
+            _tz = (_conn.config or {}).get("sync_timezone", "UTC")
+            start_scheduler(engine, Path("uploads") / "data" / "_config", tz_name=_tz)
         _sess.close()
     except Exception as exc:
         log.warning("Could not auto-start health scheduler: %s", exc)

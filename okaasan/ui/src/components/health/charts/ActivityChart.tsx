@@ -11,12 +11,12 @@ const ActivityChart: React.FC<Props> = ({ start, end }) => {
     const spec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
         width: 'container',
-        height: 250,
+        height: 356,
         autosize: { type: 'fit', contains: 'padding' },
         data: { url: healthDataUrl('activities', { start, end }) },
         mark: { type: 'bar' },
         encoding: {
-            x: { field: 'date', type: 'temporal', title: 'Date', scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+            x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
             y: { field: 'duration_min', type: 'quantitative', title: 'Duration (min)' },
             color: { field: 'type', type: 'nominal', title: 'Type' },
             tooltip: [

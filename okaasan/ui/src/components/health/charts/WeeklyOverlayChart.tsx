@@ -22,14 +22,14 @@ const WeeklyOverlayChart: React.FC<Props> = ({ metric = 'heart_rate', weeks = 4,
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
         width: 'container',
         height: 350,
-        autosize: { type: 'fit', contains: 'padding' },
+        autosize: { type: 'fit' },
         data: { url: healthDataUrl('weekly-overlay', { metric, weeks, end, tz_offset_min: tzOffsetMin }) },
         mark: { type: 'line', interpolate: 'monotone', strokeWidth: 2, clip: true },
         encoding: {
             x: {
                 field: 'day_offset',
                 type: 'quantitative',
-                title: 'Day of Week',
+                title: null,
                 scale: { domain: [0, 6] },
                 axis: {
                     values: [0, 1, 2, 3, 4, 5, 6],

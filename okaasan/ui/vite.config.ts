@@ -15,6 +15,11 @@ export default defineConfig({
       "recipes.nas",
     ],
     proxy: {
+      '/api/ws': {
+        target: 'ws://localhost:5001',
+        ws: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      },
       '/api': {
         target: 'http://localhost:5001',
         changeOrigin: true,

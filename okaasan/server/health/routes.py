@@ -479,6 +479,121 @@ def create_health_router(engine) -> APIRouter:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    @router.post("/import/garmin-export")
+    async def import_garmin_export_endpoint(
+        request: Request,
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+    ):
+        import json as _json
+        import queue
+        import threading
+        from starlette.responses import StreamingResponse
+        from sqlalchemy.orm import sessionmaker
+
+        contents = await file.read()
+        upload_dir = Path(_upload_folder(request))
+        export_dir = upload_dir / "data" / "private" / "garmin_dump"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        zip_path = export_dir / (file.filename or "garmin_export.zip")
+        zip_path.write_bytes(contents)
+
+        SL = sessionmaker(bind=engine)
+        q: queue.Queue = queue.Queue()
+
+        def _worker():
+            from .garmin_export import import_garmin_export
+            db_w = SL()
+            try:
+                result = import_garmin_export(
+                    db_w,
+                    zip_path,
+                    upload_dir,
+                    on_progress=lambda msg: q.put({"progress": msg}),
+                )
+                q.put({"done": True, "result": result})
+            except Exception as exc:
+                q.put({"error": str(exc), "fatal": True})
+            finally:
+                db_w.close()
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+        def _stream():
+            while True:
+                try:
+                    evt = q.get(timeout=300)
+                except queue.Empty:
+                    yield f"data: {_json.dumps({'error': 'Import timed out'})}\n\n"
+                    return
+                yield f"data: {_json.dumps(evt)}\n\n"
+                if evt.get("done") or evt.get("fatal"):
+                    return
+
+        return StreamingResponse(
+            _stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @router.post("/import/garmin-export-path")
+    async def import_garmin_export_from_path(
+        request: Request,
+        db: Session = Depends(get_db),
+    ):
+        """Import from a Garmin export ZIP already on disk."""
+        import json as _json
+        import queue
+        import threading
+        from starlette.responses import StreamingResponse
+        from sqlalchemy.orm import sessionmaker
+
+        body = await request.json()
+        zip_path = body.get("path")
+        if not zip_path or not Path(zip_path).is_file():
+            raise HTTPException(status_code=400, detail="path must point to an existing ZIP file")
+
+        upload_dir = Path(_upload_folder(request))
+        SL = sessionmaker(bind=engine)
+        q: queue.Queue = queue.Queue()
+
+        def _worker():
+            from .garmin_export import import_garmin_export
+            db_w = SL()
+            try:
+                result = import_garmin_export(
+                    db_w,
+                    zip_path,
+                    upload_dir,
+                    on_progress=lambda msg: q.put({"progress": msg}),
+                )
+                q.put({"done": True, "result": result})
+            except Exception as exc:
+                q.put({"error": str(exc), "fatal": True})
+            finally:
+                db_w.close()
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+        def _stream():
+            while True:
+                try:
+                    evt = q.get(timeout=300)
+                except queue.Empty:
+                    yield f"data: {_json.dumps({'error': 'Import timed out'})}\n\n"
+                    return
+                yield f"data: {_json.dumps(evt)}\n\n"
+                if evt.get("done") or evt.get("fatal"):
+                    return
+
+        return StreamingResponse(
+            _stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     @router.post("/import/fit")
     async def import_fit_upload(
         request: Request,

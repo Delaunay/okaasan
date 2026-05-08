@@ -144,9 +144,10 @@ class RecipeAPI {
 
   async requestSSE(endpoint: string, options: RequestInit, onEvent: (data: any) => void): Promise<void> {
     const url = `${API_BASE_URL}${endpoint}`;
+    const isFormData = options.body instanceof FormData;
     const config: RequestInit = {
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...options.headers,
       },
       ...options,

@@ -80,7 +80,10 @@ def parse_fit_file(path: str | Path) -> dict[str, Any]:
         raise RuntimeError("fitparse is not installed. Run: pip install fitparse")
 
     fit = FitFile(str(path))
-    fit.parse()
+    try:
+        fit.parse()
+    except Exception:
+        log.debug("FIT parse() failed for %s, trying message-level parse", Path(path).name)
 
     filename = Path(path).name
     metrics: list[dict] = []
@@ -89,10 +92,16 @@ def parse_fit_file(path: str | Path) -> dict[str, Any]:
     session_data: dict[str, Any] = {}
 
     for message in fit.get_messages():
-        msg_type = message.name
+        try:
+            msg_type = message.name
+        except Exception:
+            continue
 
         if msg_type == "record":
-            fields = {f.name: f.value for f in message.fields}
+            try:
+                fields = {f.name: f.value for f in message.fields if isinstance(f.name, str)}
+            except Exception:
+                continue
             ts = fields.get("timestamp")
             if not isinstance(ts, datetime):
                 continue
@@ -120,7 +129,10 @@ def parse_fit_file(path: str | Path) -> dict[str, Any]:
                     })
 
         elif msg_type == "hrv":
-            fields = {f.name: f.value for f in message.fields}
+            try:
+                fields = {f.name: f.value for f in message.fields if isinstance(f.name, str)}
+            except Exception:
+                continue
             ts = fields.get("timestamp")
             hrv_val = fields.get("value")
             if isinstance(hrv_val, (list, tuple)):
@@ -146,8 +158,12 @@ def parse_fit_file(path: str | Path) -> dict[str, Any]:
                 })
 
         elif msg_type == "session":
-            fields = {f.name: f.value for f in message.fields}
-            sport = (fields.get("sport") or "unknown").lower()
+            try:
+                fields = {f.name: f.value for f in message.fields if isinstance(f.name, str)}
+            except Exception:
+                continue
+            raw_sport = fields.get("sport")
+            sport = str(raw_sport).lower() if raw_sport is not None else "unknown"
             start = fields.get("start_time") or fields.get("timestamp")
             if isinstance(start, datetime):
                 start_iso = start.replace(tzinfo=timezone.utc).isoformat() if start.tzinfo is None else start.isoformat()

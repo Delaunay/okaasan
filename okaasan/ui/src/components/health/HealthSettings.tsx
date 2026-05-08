@@ -74,6 +74,12 @@ const HealthSettings: React.FC = () => {
     const [autoSync, setAutoSync] = useState(false);
     const [autoSyncLoading, setAutoSyncLoading] = useState(false);
 
+    // Garmin export import
+    const exportRef = useRef<HTMLInputElement>(null);
+    const [exportLoading, setExportLoading] = useState(false);
+    const [exportLogs, setExportLogs] = useState<LogEntry[]>([]);
+    const [exportPath, setExportPath] = useState('');
+
     // FIT import
     const [fitDir, setFitDir] = useState('');
     const [fitLoading, setFitLoading] = useState(false);
@@ -182,6 +188,71 @@ const HealthSettings: React.FC = () => {
             toaster.create({ title: 'Sync failed', description: err.message, type: 'error' });
         } finally {
             setSyncLoading(false);
+        }
+    };
+
+    const handleExportImport = async () => {
+        const file = exportRef.current?.files?.[0];
+        if (!file) return;
+        setExportLoading(true);
+        setExportLogs([{ text: 'Uploading and importing Garmin export...', type: 'info' }]);
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            await recipeAPI.requestSSE('/health-data/import/garmin-export', {
+                method: 'POST',
+                body: form,
+            }, (evt) => {
+                if (evt.progress) {
+                    setExportLogs((prev) => [...prev, { text: evt.progress, type: 'info' }]);
+                }
+                if (evt.done) {
+                    const r = evt.result || {};
+                    const lines: LogEntry[] = [];
+                    if (r.daily_summaries) lines.push({ text: `Daily summaries: ${r.daily_summaries.inserted} new, ${r.daily_summaries.skipped} updated`, type: 'success' });
+                    if (r.health_metrics) lines.push({ text: `Health metrics: ${r.health_metrics.inserted} new, ${r.health_metrics.skipped} skipped`, type: 'success' });
+                    if (r.fit_files) lines.push({ text: `FIT files: ${r.fit_files.extracted} extracted, ${r.fit_files.imported} imported`, type: 'success' });
+                    setExportLogs((prev) => [...prev, ...lines, { text: 'Import complete!', type: 'success' }]);
+                }
+                if (evt.error) {
+                    setExportLogs((prev) => [...prev, { text: `Error: ${evt.error}`, type: 'error' }]);
+                }
+            });
+        } catch (err: any) {
+            setExportLogs((prev) => [...prev, { text: `Failed: ${err.message}`, type: 'error' }]);
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
+    const handleExportFromPath = async () => {
+        if (!exportPath.trim()) return;
+        setExportLoading(true);
+        setExportLogs([{ text: `Importing from ${exportPath}...`, type: 'info' }]);
+        try {
+            await recipeAPI.requestSSE('/health-data/import/garmin-export-path', {
+                method: 'POST',
+                body: JSON.stringify({ path: exportPath.trim() }),
+            }, (evt) => {
+                if (evt.progress) {
+                    setExportLogs((prev) => [...prev, { text: evt.progress, type: 'info' }]);
+                }
+                if (evt.done) {
+                    const r = evt.result || {};
+                    const lines: LogEntry[] = [];
+                    if (r.daily_summaries) lines.push({ text: `Daily summaries: ${r.daily_summaries.inserted} new, ${r.daily_summaries.skipped} updated`, type: 'success' });
+                    if (r.health_metrics) lines.push({ text: `Health metrics: ${r.health_metrics.inserted} new, ${r.health_metrics.skipped} skipped`, type: 'success' });
+                    if (r.fit_files) lines.push({ text: `FIT files: ${r.fit_files.extracted} extracted, ${r.fit_files.imported} imported`, type: 'success' });
+                    setExportLogs((prev) => [...prev, ...lines, { text: 'Import complete!', type: 'success' }]);
+                }
+                if (evt.error) {
+                    setExportLogs((prev) => [...prev, { text: `Error: ${evt.error}`, type: 'error' }]);
+                }
+            });
+        } catch (err: any) {
+            setExportLogs((prev) => [...prev, { text: `Failed: ${err.message}`, type: 'error' }]);
+        } finally {
+            setExportLoading(false);
         }
     };
 
@@ -373,6 +444,49 @@ const HealthSettings: React.FC = () => {
                             Automatically fetches yesterday's and today's data once per day.
                         </Text>
                     </Box>
+                </Box>
+
+                {/* Garmin Data Export Import */}
+                <Box p={5} border="1px solid" borderColor="gray.200" borderRadius="lg">
+                    <Heading size="md" mb={3}>Garmin Data Export</Heading>
+                    <Text fontSize="xs" color="gray.500" mb={3}>
+                        Import from a Garmin account data export ZIP. Extracts daily summaries, health metrics (HRV, HR, SpO2, respiration), and FIT files.
+                    </Text>
+
+                    <VStack gap={3} align="stretch">
+                        <Box>
+                            <Text fontSize="sm" fontWeight="medium" mb={1}>Upload ZIP file</Text>
+                            <HStack gap={2}>
+                                <input
+                                    ref={exportRef}
+                                    type="file"
+                                    accept=".zip"
+                                    style={{ fontSize: '0.85rem' }}
+                                />
+                                <Button size="sm" onClick={handleExportImport} disabled={exportLoading}>
+                                    {exportLoading ? <><Spinner size="xs" mr={2} /> Importing…</> : 'Upload & Import'}
+                                </Button>
+                            </HStack>
+                        </Box>
+
+                        <Box>
+                            <Text fontSize="sm" fontWeight="medium" mb={1}>Or import from server path</Text>
+                            <HStack gap={2}>
+                                <input
+                                    type="text"
+                                    value={exportPath}
+                                    onChange={(e) => setExportPath(e.target.value)}
+                                    placeholder="uploads/data/private/garmin_dump/export.zip"
+                                    style={{ fontSize: '0.85rem', flex: 1, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                                />
+                                <Button size="sm" onClick={handleExportFromPath} disabled={exportLoading || !exportPath.trim()}>
+                                    {exportLoading ? <><Spinner size="xs" mr={2} /> Importing…</> : 'Import'}
+                                </Button>
+                            </HStack>
+                        </Box>
+                    </VStack>
+
+                    <LogPanel logs={exportLogs} visible={exportLogs.length > 0} />
                 </Box>
 
                 {/* FIT File Import */}

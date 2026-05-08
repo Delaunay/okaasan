@@ -52,16 +52,17 @@ def import_metrics(
 
         existing = set()
         if timestamps and types:
-            rows = (
-                db.query(HealthMetric.metric_type, HealthMetric.timestamp)
-                .filter(
-                    HealthMetric.source == source,
-                    HealthMetric.metric_type.in_(set(types)),
-                    HealthMetric.timestamp.in_([t for t in timestamps if t]),
+            valid_ts = [t for t in timestamps if t]
+            if valid_ts:
+                rows = (
+                    db.query(HealthMetric.metric_type, HealthMetric.timestamp)
+                    .filter(
+                        HealthMetric.metric_type.in_(set(types)),
+                        HealthMetric.timestamp.in_(valid_ts),
+                    )
+                    .all()
                 )
-                .all()
-            )
-            existing = {(r.metric_type, r.timestamp) for r in rows}
+                existing = {(r.metric_type, r.timestamp) for r in rows}
 
         for m in batch:
             ts = _parse_ts(m.get("timestamp"))

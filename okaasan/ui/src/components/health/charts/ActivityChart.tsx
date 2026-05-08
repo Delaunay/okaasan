@@ -18,7 +18,7 @@ const ActivityChart: React.FC<Props> = ({ start, end }) => {
         encoding: {
             x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
             y: { field: 'duration_min', type: 'quantitative', title: 'Duration (min)' },
-            color: { field: 'type', type: 'nominal', title: 'Type' },
+            color: { field: 'type', type: 'nominal', legend: { title: null } },
             tooltip: [
                 { field: 'date', type: 'temporal', title: 'Date' },
                 { field: 'type', title: 'Activity' },

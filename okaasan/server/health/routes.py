@@ -232,16 +232,20 @@ def create_health_router(engine) -> APIRouter:
 
     @router.get("/data/daily-summary")
     def data_daily_summary(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
-        from datetime import date as date_cls
         s, e = _default_range(start, end)
         rows = (
             db.query(HealthDailySummary)
             .filter(HealthDailySummary.day >= s.date() if hasattr(s, 'date') else s,
                     HealthDailySummary.day <= e.date() if hasattr(e, 'date') else e)
-            .order_by(HealthDailySummary.day)
+            .order_by(HealthDailySummary.day, HealthDailySummary.source)
             .all()
         )
-        return [r.to_json() for r in rows]
+        seen: dict[str, dict] = {}
+        for r in rows:
+            key = str(r.day)
+            if key not in seen:
+                seen[key] = r.to_json()
+        return list(seen.values())
 
     @router.get("/data/sleep")
     def data_sleep(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):

@@ -15,7 +15,7 @@ const DailySummaryChart: React.FC<Props> = ({ start, end, field, title, color = 
     const spec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
         width: 'container',
-        height: 200,
+        height: 250,
         autosize: { type: 'fit', contains: 'padding' },
         data: {
             url: healthDataUrl('daily-summary', { start, end }),

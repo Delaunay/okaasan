@@ -11,6 +11,7 @@ import HeartRateChart from './charts/HeartRateChart';
 import HRVChart from './charts/HRVChart';
 import SleepChart from './charts/SleepChart';
 import ActivityChart from './charts/ActivityChart';
+import CaloriesChart from './charts/CaloriesChart';
 import DailySummaryChart from './charts/DailySummaryChart';
 import WeeklyOverlayChart from './charts/WeeklyOverlayChart';
 import SleepOverlayChart from './charts/SleepOverlayChart';
@@ -176,7 +177,7 @@ const HealthDashboard: React.FC = () => {
                     </Box>
                     <Box>
                         <Heading size="sm" mb={2}>Calories</Heading>
-                        <DailySummaryChart start={startDate} end={endDate} field="calories_total" title="kcal" color="#e45755" />
+                        <CaloriesChart start={startDate} end={endDate} />
                     </Box>
                     <Box>
                         <Heading size="sm" mb={2}>Intensity Minutes</Heading>

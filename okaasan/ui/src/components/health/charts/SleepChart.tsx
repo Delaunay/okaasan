@@ -37,9 +37,9 @@ const SleepChart: React.FC<Props> = ({ start, end }) => {
                     color: {
                         field: 'stage',
                         type: 'nominal',
-                        title: 'Stage',
                         scale: STAGE_COLORS,
                         sort: STAGE_ORDER,
+                        legend: { title: null },
                     },
                     tooltip: [
                         { field: 'date', type: 'temporal', title: 'Night' },
@@ -51,7 +51,7 @@ const SleepChart: React.FC<Props> = ({ start, end }) => {
             {
                 width: 40,
                 height: 250,
-                title: { text: 'Avg', anchor: 'middle' },
+                title: { text: '', anchor: 'middle' },
                 transform: [
                     { aggregate: [{ op: 'sum', field: 'hours', as: 'night_total' }], groupby: ['date', 'stage'] },
                     { aggregate: [{ op: 'mean', field: 'night_total', as: 'avg_hours' }], groupby: ['stage'] },
@@ -84,7 +84,7 @@ const SleepChart: React.FC<Props> = ({ start, end }) => {
                 },
             },
         ],
-        resolve: { scale: { color: 'shared' } },
+        resolve: { scale: { color: 'shared', y: 'shared' } },
     }), [start, end]);
 
     return <VegaPlot spec={spec} height="250px" />;

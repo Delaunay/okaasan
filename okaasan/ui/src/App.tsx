@@ -35,6 +35,7 @@ import ApiTester from './components/ApiTester';
 import HealthDashboard from './components/health/HealthDashboard';
 import HealthSettings from './components/health/HealthSettings';
 import HealthDetailView from './components/health/HealthDetailView';
+import HealthActivities from './components/health/HealthActivities';
 import ArticleTestPage from './components/content/ArticleTestPage';
 import ArticleView from './components/content/ArticleView';
 import FeedPage from './components/feed/FeedPage';
@@ -126,6 +127,7 @@ function App() {
                 {/* Health */}
                 <Route path="/health-dashboard" element={<HealthDashboard />} />
                 <Route path="/health-details" element={<HealthDetailView />} />
+                <Route path="/health-activities" element={<HealthActivities />} />
                 <Route path="/health-settings" element={<HealthSettings />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />

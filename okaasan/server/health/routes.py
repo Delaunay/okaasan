@@ -363,6 +363,38 @@ def create_health_router(engine) -> APIRouter:
             for a in activities
         ]
 
+    @router.get("/data/activities-detail")
+    def data_activities_detail(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        s, e = _default_range(start, end)
+        activities = (
+            db.query(HealthActivity)
+            .filter(
+                HealthActivity.activity_type != "sleep",
+                HealthActivity.start_time >= s,
+                HealthActivity.start_time <= e,
+            )
+            .order_by(HealthActivity.start_time.desc())
+            .all()
+        )
+        rows = []
+        for a in activities:
+            dur_h = (a.duration_seconds or 0) / 3600
+            dist_km = round((a.distance_m or 0) / 1000, 2)
+            speed = round(dist_km / dur_h, 1) if dur_h > 0 and dist_km > 0 else None
+            rows.append({
+                "id": a._id,
+                "date": a.start_time.isoformat() + "Z",
+                "type": a.activity_type,
+                "duration_min": round((a.duration_seconds or 0) / 60, 1),
+                "distance_km": dist_km,
+                "speed_kmh": speed,
+                "calories": a.calories,
+                "avg_hr": a.avg_hr,
+                "max_hr": a.max_hr,
+                "min_hr": a.min_hr,
+            })
+        return rows
+
     @router.get("/data/weekly-overlay")
     def data_weekly_overlay(
         metric: str = "heart_rate",

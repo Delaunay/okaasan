@@ -18,6 +18,13 @@ from sqlalchemy.orm import Session
 
 from .importer import import_metrics, import_activities, ImportResult
 
+_SPORT_NORMALIZE: dict[str, str] = {
+    "64": "badminton",
+    "swimming": "lap_swimming",
+    "training": "yoga",
+    "generic": "other",
+}
+
 log = logging.getLogger("okaasan.health.fit")
 
 SOURCE = "fit_file"
@@ -164,6 +171,7 @@ def parse_fit_file(path: str | Path) -> dict[str, Any]:
                 continue
             raw_sport = fields.get("sport")
             sport = str(raw_sport).lower() if raw_sport is not None else "unknown"
+            sport = _SPORT_NORMALIZE.get(sport, sport)
             start = fields.get("start_time") or fields.get("timestamp")
             if isinstance(start, datetime):
                 start_iso = start.replace(tzinfo=timezone.utc).isoformat() if start.tzinfo is None else start.isoformat()

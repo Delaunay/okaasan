@@ -95,7 +95,7 @@ const HealthDetailView: React.FC = () => {
                     </Box>
                     <Box>
                         <Heading size="sm" mb={2}>Sleep Score</Heading>
-                        <DailySummaryChart start={startDate} end={endDate} field="sleep_score" title="Score" color="#1f4e79" mark="line" />
+                        <DailySummaryChart start={startDate} end={endDate} field="sleep_score" title="Score" color="#1f4e79" mark="line" yDomain={[0, 100]} />
                     </Box>
                 </Grid>
             </Box>

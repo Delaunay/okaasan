@@ -122,8 +122,11 @@ const getStaticSidebarSections = () => [
   {
     title: 'Health',
     href: '/health',
+    isSelected: (location: Location) => location.pathname.startsWith('/health'),
     items: [
       { name: 'Dashboard', href: '/health-dashboard' },
+      { name: 'Details', href: '/health-details' },
+      { name: 'Activities', href: '/health-activities' },
     ]
   },
   {

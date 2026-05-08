@@ -9,9 +9,10 @@ interface Props {
     title: string;
     color?: string;
     mark?: 'bar' | 'line' | 'area';
+    yDomain?: [number, number];
 }
 
-const DailySummaryChart: React.FC<Props> = ({ start, end, field, title, color = '#4c78a8', mark = 'bar' }) => {
+const DailySummaryChart: React.FC<Props> = ({ start, end, field, title, color = '#4c78a8', mark = 'bar', yDomain }) => {
     const spec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
         width: 'container',
@@ -35,14 +36,14 @@ const DailySummaryChart: React.FC<Props> = ({ start, end, field, title, color = 
                 title: null,
                 scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined },
             },
-            y: { field, type: 'quantitative', title },
+            y: { field, type: 'quantitative', title, ...(yDomain ? { scale: { domain: yDomain } } : {}) },
             color: { value: color },
             tooltip: [
                 { field: 'day', type: 'temporal', title: 'Date' },
                 { field, type: 'quantitative', title },
             ],
         },
-    }), [start, end, field, title, color, mark]);
+    }), [start, end, field, title, color, mark, yDomain]);
 
     return <VegaPlot spec={spec} height="200px" />;
 };

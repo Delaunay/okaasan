@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .importer import import_metrics, import_activities, import_daily_summaries, ImportResult
-from .garmin_cache import fetch_or_cache
+from .garmin_cache import fetch_or_cache, load_cached
 
 log = logging.getLogger("okaasan.health.garmin")
 
@@ -224,8 +224,18 @@ def fetch_body_battery(client, day: date_type, config_dir: Path, *, replay: bool
     if not data:
         return []
 
+    values_array: list = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                values_array.extend(item.get("bodyBatteryValuesArray", []))
+            else:
+                values_array.append(item)
+    elif isinstance(data, dict):
+        values_array = data.get("bodyBatteryValuesArray", [])
+
     metrics: list[dict] = []
-    for entry in data if isinstance(data, list) else (data or {}).get("bodyBatteryValuesArray", []):
+    for entry in values_array:
         if isinstance(entry, list) and len(entry) >= 2:
             ts_ms, value = entry[0], entry[1]
         elif isinstance(entry, dict):
@@ -408,10 +418,16 @@ def fetch_daily_summary(client, day: date_type, config_dir: Path, *, replay: boo
     summary["spo2_min"] = _safe_float(d.get("lowestSpo2"))
     summary["sleep_seconds"] = _safe_int(d.get("sleepingSeconds"))
 
-    # Get respiration data from the same stats blob if available
     summary["rr_avg"] = _safe_float(d.get("averageRespirationValue"))
     summary["rr_min"] = _safe_float(d.get("lowestRespirationValue"))
     summary["rr_max"] = _safe_float(d.get("highestRespirationValue"))
+
+    # Sleep score comes from the sleep API, not stats
+    sleep_data = load_cached(config_dir, "get_sleep_data", day)
+    if sleep_data:
+        sleep_daily = sleep_data.get("dailySleepDTO", sleep_data)
+        scores = sleep_daily.get("sleepScores", {}) if isinstance(sleep_daily.get("sleepScores"), dict) else {}
+        summary["sleep_score"] = _safe_int(scores.get("overall", {}).get("value"))
 
     return [summary]
 

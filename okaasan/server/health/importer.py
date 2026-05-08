@@ -154,6 +154,20 @@ def import_activities(
             result.errors.append(f"Missing start_time: {a}")
             continue
 
+        atype = a.get("activity_type", "unknown")
+        if atype != "sleep":
+            existing = (
+                db.query(HealthActivity._id)
+                .filter(
+                    HealthActivity.activity_type == atype,
+                    HealthActivity.start_time == start,
+                )
+                .first()
+            )
+            if existing:
+                result.skipped += 1
+                continue
+
         try:
             db.add(HealthActivity(
                 source=source,

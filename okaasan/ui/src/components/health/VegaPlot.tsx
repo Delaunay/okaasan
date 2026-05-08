@@ -46,8 +46,8 @@ async function buildConfig(
             titleFont: font,
             labelPadding: 6,
             titlePadding: 12,
-            labelOverlap: 'parity',
-            labelSeparation: 4,
+            labelOverlap: true,
+            labelSeparation: 8,
         },
         legend: {
             ...bt.legend,
@@ -84,13 +84,11 @@ const VegaPlot: React.FC<VegaPlotProps> = ({ spec, height = '300px', configOverr
         if (!isLoaded || !embed || !containerRef.current) return;
 
         const render = async () => {
-            const config = await buildConfig(
-                containerRef.current as HTMLElement,
-                colorMode,
-                configOverrides,
-            );
+            const el = containerRef.current as HTMLElement;
+            const config = await buildConfig(el, colorMode, configOverrides);
+
             try {
-                await embed(containerRef.current as HTMLElement, spec, {
+                await embed(el, spec, {
                     actions: false,
                     renderer: 'svg',
                     config,

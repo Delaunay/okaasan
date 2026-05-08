@@ -24,6 +24,8 @@ from .user import User
 
 from ..articles.models import Article, ArticleBlock
 
+from ..health.models import HealthMetric, HealthActivity, HealthDailySummary, HealthConnector
+
 from .common import Base
 
 

@@ -32,6 +32,8 @@ import UpdateSettings from './components/settings/UpdateSettings';
 import SidebarSettings from './components/settings/SidebarSettings';
 import GoogleCalendarSettings from './components/settings/GoogleCalendarSettings';
 import ApiTester from './components/ApiTester';
+import HealthDashboard from './components/health/HealthDashboard';
+import HealthSettings from './components/health/HealthSettings';
 import ArticleTestPage from './components/content/ArticleTestPage';
 import ArticleView from './components/content/ArticleView';
 import FeedPage from './components/feed/FeedPage';
@@ -119,6 +121,10 @@ function App() {
                 {/* Expense Tracker */}
                 <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />
                 <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />
+
+                {/* Health */}
+                <Route path="/health-dashboard" element={<HealthDashboard />} />
+                <Route path="/health-settings" element={<HealthSettings />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />
                 <Route path="/scratch/filament-math" element={<FilamentMath />} />

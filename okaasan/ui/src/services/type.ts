@@ -533,3 +533,64 @@ export interface ReportSection {
     deleted: number;
 }
 
+// ============================================================================
+// Health Data Models
+// ============================================================================
+
+export interface HealthMetric {
+    id: number;
+    source: string;
+    metric_type: string;
+    timestamp: string;
+    value: number;
+    unit: string;
+    device?: string;
+    extension?: Record<string, any>;
+}
+
+export interface HealthActivity {
+    id: number;
+    source: string;
+    source_id?: string;
+    activity_type: string;
+    start_time: string;
+    end_time?: string;
+    duration_seconds?: number;
+    distance_m?: number;
+    calories?: number;
+    avg_hr?: number;
+    max_hr?: number;
+    min_hr?: number;
+    summary?: Record<string, any>;
+    extension?: Record<string, any>;
+}
+
+export interface HealthConnector {
+    id: number;
+    name: string;
+    enabled: boolean;
+    config?: Record<string, any>;
+    last_sync?: string;
+    last_error?: string;
+}
+
+export interface HealthSummary {
+    date: string;
+    heart_rate?: { value: number; unit: string; timestamp: string };
+    hrv?: { value: number; unit: string; timestamp: string };
+    spo2?: { value: number; unit: string; timestamp: string };
+    vo2max?: { value: number; unit: string; timestamp: string };
+    stress?: { value: number; unit: string; timestamp: string };
+    respiration?: { value: number; unit: string; timestamp: string };
+    body_battery?: { value: number; unit: string; timestamp: string };
+    activities: HealthActivity[];
+}
+
+export interface HealthWeeklySummary {
+    heart_rate?: { avg: number; count: number };
+    hrv?: { avg: number; count: number };
+    spo2?: { avg: number; count: number };
+    vo2max?: { avg: number; count: number };
+    total_activities: number;
+}
+

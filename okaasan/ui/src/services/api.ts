@@ -57,6 +57,15 @@ export function imagePath(image: string): string {
 
 export { isStaticMode };
 
+export function healthDataUrl(endpoint: string, params: Record<string, string | number | undefined> = {}): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) qs.set(k, String(v));
+  }
+  const query = qs.toString();
+  return `${API_BASE_URL}/health-data/data/${endpoint}${query ? `?${query}` : ''}`;
+}
+
 class RecipeAPI {
   private async requestStatic<T>(endpoint: string): Promise<T> {
     // Convert endpoint to static JSON file path
@@ -131,6 +140,55 @@ class RecipeAPI {
       console.error('API request failed:', error);
       throw error;
     }
+  }
+
+  async requestSSE(endpoint: string, options: RequestInit, onEvent: (data: any) => void): Promise<void> {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const config: RequestInit = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    };
+
+    const response = await fetch(url, config);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response stream');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          onEvent(JSON.parse(line.slice(6)));
+        } catch { /* skip malformed lines */ }
+      }
+    }
+  }
+
+  private async requestRaw<T>(endpoint: string, options: RequestInit): Promise<T> {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
   }
 
   // Recipe methods
@@ -1074,6 +1132,90 @@ class RecipeAPI {
 
   async getEntityHistory(entityType: string, entityId: number): Promise<AuditEntry[]> {
     return this.request(`/feed/history/${entityType}/${entityId}`);
+  }
+
+  // ==========================================================================
+  // Health Data
+  // ==========================================================================
+
+  async getHealthMetrics(params: { type: string; start?: string; end?: string; resolution?: number }): Promise<import('./type').HealthMetric[]> {
+    const qs = new URLSearchParams();
+    qs.set('type', params.type);
+    if (params.start) qs.set('start', params.start);
+    if (params.end) qs.set('end', params.end);
+    if (params.resolution) qs.set('resolution', String(params.resolution));
+    return this.request(`/health-data/metrics?${qs}`);
+  }
+
+  async getHealthActivities(params: { type?: string; start?: string; end?: string } = {}): Promise<import('./type').HealthActivity[]> {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set('type', params.type);
+    if (params.start) qs.set('start', params.start);
+    if (params.end) qs.set('end', params.end);
+    const query = qs.toString();
+    return this.request(`/health-data/activities${query ? `?${query}` : ''}`);
+  }
+
+  async getHealthSummary(date?: string): Promise<import('./type').HealthSummary> {
+    const qs = date ? `?date=${date}` : '';
+    return this.request(`/health-data/summary${qs}`);
+  }
+
+  async getHealthWeeklySummary(): Promise<import('./type').HealthWeeklySummary> {
+    return this.request('/health-data/weekly-summary');
+  }
+
+  async syncGarmin(params: { start?: string; end?: string; replay?: boolean; dup_threshold?: number }, onEvent: (data: any) => void): Promise<void> {
+    return this.requestSSE('/health-data/sync/garmin', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }, onEvent);
+  }
+
+  async importFitFile(file: File): Promise<any> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.requestRaw('/health-data/import/fit', { method: 'POST', body: form });
+  }
+
+  async importFitFromDir(sourceDir: string): Promise<any> {
+    return this.request('/health-data/import/fit-copy', {
+      method: 'POST',
+      body: JSON.stringify({ source_dir: sourceDir }),
+    });
+  }
+
+  async reprocessFitFiles(): Promise<any> {
+    return this.request('/health-data/import/fit-reprocess', { method: 'POST' });
+  }
+
+  async getHealthConnectors(): Promise<import('./type').HealthConnector[]> {
+    return this.request('/health-data/connectors');
+  }
+
+  async updateHealthConnector(name: string, data: { enabled?: boolean; config?: Record<string, any> }): Promise<import('./type').HealthConnector> {
+    return this.request(`/health-data/connectors/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async garminLogin(email: string, password: string): Promise<{ status: string; display_name: string }> {
+    return this.request('/health-data/connectors/garmin/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  async getSchedulerStatus(): Promise<{ enabled: boolean; running: boolean }> {
+    return this.request('/health-data/scheduler');
+  }
+
+  async setSchedulerEnabled(enabled: boolean): Promise<{ enabled: boolean; running: boolean }> {
+    return this.request('/health-data/scheduler', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
   }
 
 }

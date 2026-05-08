@@ -122,7 +122,9 @@ const getStaticSidebarSections = () => [
   {
     title: 'Health',
     href: '/health',
-    items: []
+    items: [
+      { name: 'Dashboard', href: '/health-dashboard' },
+    ]
   },
   {
     title: 'Notes',
@@ -176,6 +178,7 @@ const getStaticSidebarSections = () => [
       { name: 'Git Backup', href: '/settings/git' },
       { name: 'Google Calendar', href: '/settings/google-calendar' },
       { name: 'Software Update', href: '/settings/updates' },
+      { name: 'Health', href: '/health-settings' },
       { name: 'API Tester', href: '/api-tester' },
     ]
   },

@@ -44,6 +44,15 @@ def register_integrations(app: "FastAPI", engine: "Engine") -> None:
     except Exception as exc:
         log.warning("Telegram messaging routes not available: %s", exc)
 
+    # --- Health data (Garmin Connect + FIT files) ---
+    try:
+        from ..health.routes import create_health_router
+
+        health_router = create_health_router(engine)
+        app.include_router(health_router)
+    except Exception as exc:
+        log.warning("Health data routes not available: %s", exc)
+
     # --- Garmin (stub) ---
     try:
         from .route_garmin import router as garmin_router

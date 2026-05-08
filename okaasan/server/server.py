@@ -206,7 +206,7 @@ def create_app() -> FastAPI:
         {"title": "Planning",              "href": "/planning-section",    "items": ["Calendar", "Routine", "Tasks", "Projects"]},
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
         {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
-        {"title": "Health",                "href": "/health"},
+        {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
@@ -415,7 +415,8 @@ def create_app() -> FastAPI:
                          "uploads/", "routine/", "planning/", "kiwi/", "categories",
                          "ingredient/", "sidebar", "version", "update",
                          "git/", "usda/", "subtasks",
-                         "gcalendar/", "garmin/", "weather/")
+                         "gcalendar/", "garmin/", "weather/",
+                         "health-data/")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -16,7 +16,7 @@ const ActivityChart: React.FC<Props> = ({ start, end }) => {
         data: { url: healthDataUrl('activities', { start, end }) },
         mark: { type: 'bar' },
         encoding: {
-            x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+            x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
             y: { field: 'duration_min', type: 'quantitative', title: 'Duration (min)' },
             color: { field: 'type', type: 'nominal', title: 'Type' },
             tooltip: [

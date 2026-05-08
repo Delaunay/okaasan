@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -16,7 +16,7 @@ const BodyBatteryChart: React.FC<Props> = ({ start, end }) => {
         data: { url: healthDataUrl('body-battery', { start, end }) },
         mark: { type: 'area', interpolate: 'monotone', opacity: 0.4, line: { strokeWidth: 1 } },
         encoding: {
-            x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+            x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
             y: { field: 'v', type: 'quantitative', title: 'Body Battery', scale: { domain: [0, 100] } },
             color: { value: '#54a24b' },
             tooltip: [

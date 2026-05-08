@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -33,7 +33,7 @@ const DailySummaryChart: React.FC<Props> = ({ start, end, field, title, color = 
                 field: 'day',
                 type: 'temporal',
                 title: null,
-                scale: { type: 'time', domain: start && end ? [start, end] : undefined },
+                scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined },
             },
             y: { field, type: 'quantitative', title },
             color: { value: color },

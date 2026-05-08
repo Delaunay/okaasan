@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -16,7 +16,7 @@ const RespirationChart: React.FC<Props> = ({ start, end }) => {
         data: { url: healthDataUrl('respiration', { start, end }) },
         mark: { type: 'line', interpolate: 'monotone', strokeWidth: 1, opacity: 0.7 },
         encoding: {
-            x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+            x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
             y: { field: 'v', type: 'quantitative', title: 'Breaths/min', scale: { zero: false } },
             color: { value: '#72b7b2' },
             tooltip: [

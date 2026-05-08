@@ -154,27 +154,27 @@ def import_activities(
             result.errors.append(f"Missing start_time: {a}")
             continue
 
-            try:
-                db.add(HealthActivity(
-                    source=source,
-                    source_id=sid,
-                    activity_type=a.get("activity_type", "unknown"),
-                    start_time=start,
-                    end_time=_parse_ts(a.get("end_time")),
-                    duration_seconds=a.get("duration_seconds"),
-                    distance_m=a.get("distance_m"),
-                    calories=a.get("calories"),
-                    avg_hr=a.get("avg_hr"),
-                    max_hr=a.get("max_hr"),
-                    min_hr=a.get("min_hr"),
-                    summary=a.get("summary"),
-                    extension=a.get("extension"),
-                ))
-                if sid:
-                    existing_map[sid] = True  # type: ignore[assignment]
-                result.inserted += 1
-            except Exception as exc:
-                result.errors.append(f"Error inserting activity {sid}: {exc}")
+        try:
+            db.add(HealthActivity(
+                source=source,
+                source_id=sid,
+                activity_type=a.get("activity_type", "unknown"),
+                start_time=start,
+                end_time=_parse_ts(a.get("end_time")),
+                duration_seconds=a.get("duration_seconds"),
+                distance_m=a.get("distance_m"),
+                calories=a.get("calories"),
+                avg_hr=a.get("avg_hr"),
+                max_hr=a.get("max_hr"),
+                min_hr=a.get("min_hr"),
+                summary=a.get("summary"),
+                extension=a.get("extension"),
+            ))
+            if sid:
+                existing_map[sid] = True  # type: ignore[assignment]
+            result.inserted += 1
+        except Exception as exc:
+            result.errors.append(f"Error inserting activity {sid}: {exc}")
 
     try:
         db.commit()

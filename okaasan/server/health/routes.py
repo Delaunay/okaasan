@@ -171,6 +171,10 @@ def create_health_router(engine) -> APIRouter:
     def _default_range(start: Optional[str], end: Optional[str]):
         e = _parse_date(end) or datetime.utcnow()
         s = _parse_date(start) or (e - timedelta(days=7))
+        # When end is a bare date (no time component), extend to end-of-day
+        # so that records throughout the day are included.
+        if e.hour == 0 and e.minute == 0 and e.second == 0 and e.microsecond == 0:
+            e = e.replace(hour=23, minute=59, second=59)
         return s, e
 
     def _metric_rows(db: Session, metric_type: str, start: datetime, end: datetime) -> list[dict]:

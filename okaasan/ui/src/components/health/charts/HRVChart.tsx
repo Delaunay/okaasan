@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -21,7 +21,7 @@ const HRVChart: React.FC<Props> = ({ start, end }) => {
             {
                 mark: { type: 'point', size: 30, opacity: 0.5 },
                 encoding: {
-                    x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+                    x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
                     y: { field: 'v', type: 'quantitative', title: 'HRV (ms)', scale: { zero: false } },
                 },
             },
@@ -31,7 +31,7 @@ const HRVChart: React.FC<Props> = ({ start, end }) => {
                     { window: [{ op: 'mean', field: 'v', as: 'rolling' }], frame: [-ObsPerDay, 0] },
                 ],
                 encoding: {
-                    x: { field: 't', type: 'temporal', scale: { type: 'time', domain: start && end ? [start, end] : undefined } },
+                    x: { field: 't', type: 'temporal', scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
                     y: { field: 'rolling', type: 'quantitative' },
                 },
             },

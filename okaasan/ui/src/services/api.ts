@@ -57,6 +57,13 @@ export function imagePath(image: string): string {
 
 export { isStaticMode };
 
+/** Extend a bare YYYY-MM-DD date to end-of-day for chart domain bounds. */
+export function endOfDay(d: string | undefined): string | undefined {
+  if (!d) return d;
+  if (d.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d + 'T23:59:59';
+  return d;
+}
+
 export function healthDataUrl(endpoint: string, params: Record<string, string | number | undefined> = {}): string {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

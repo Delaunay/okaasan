@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import VegaPlot from '../VegaPlot';
-import { healthDataUrl } from '../../../services/api';
+import { healthDataUrl, endOfDay } from '../../../services/api';
 
 interface Props {
     start?: string;
@@ -31,7 +31,7 @@ const SleepChart: React.FC<Props> = ({ start, end }) => {
                         field: 'date',
                         type: 'temporal',
                         title: null,
-                        scale: { type: 'time', domain: start && end ? [start, end] : undefined },
+                        scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined },
                     },
                     y: { field: 'hours', type: 'quantitative', title: 'Hours', stack: true },
                     color: {

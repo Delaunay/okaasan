@@ -206,6 +206,39 @@ def create_health_router(engine) -> APIRouter:
         s, e = _default_range(start, end)
         return _metric_rows(db, "vo2max", s, e)
 
+    @router.get("/data/stress")
+    def data_stress(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        s, e = _default_range(start, end)
+        return _metric_rows(db, "stress", s, e)
+
+    @router.get("/data/body-battery")
+    def data_body_battery(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        s, e = _default_range(start, end)
+        return _metric_rows(db, "body_battery", s, e)
+
+    @router.get("/data/steps")
+    def data_steps(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        s, e = _default_range(start, end)
+        return _metric_rows(db, "steps", s, e)
+
+    @router.get("/data/respiration")
+    def data_respiration(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        s, e = _default_range(start, end)
+        return _metric_rows(db, "respiration", s, e)
+
+    @router.get("/data/daily-summary")
+    def data_daily_summary(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+        from datetime import date as date_cls
+        s, e = _default_range(start, end)
+        rows = (
+            db.query(HealthDailySummary)
+            .filter(HealthDailySummary.day >= s.date() if hasattr(s, 'date') else s,
+                    HealthDailySummary.day <= e.date() if hasattr(e, 'date') else e)
+            .order_by(HealthDailySummary.day)
+            .all()
+        )
+        return [r.to_json() for r in rows]
+
     @router.get("/data/sleep")
     def data_sleep(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
         s, e = _default_range(start, end)

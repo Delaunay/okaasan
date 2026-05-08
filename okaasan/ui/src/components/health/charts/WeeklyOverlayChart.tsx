@@ -5,7 +5,10 @@ import { healthDataUrl } from '../../../services/api';
 const METRIC_LABELS: Record<string, { title: string; unit: string; color: string }> = {
     heart_rate: { title: 'Heart Rate', unit: 'BPM', color: '#e45755' },
     hrv: { title: 'HRV', unit: 'ms', color: '#4c78a8' },
-    spo2: { title: 'SpO2', unit: '%', color: '#72b7b2' },
+    stress: { title: 'Stress', unit: 'Level', color: '#e07b39' },
+    body_battery: { title: 'Body Battery', unit: 'Level', color: '#54a24b' },
+    steps: { title: 'Steps', unit: 'Steps', color: '#4c78a8' },
+    respiration: { title: 'Respiration', unit: 'brpm', color: '#72b7b2' },
 };
 
 interface Props {

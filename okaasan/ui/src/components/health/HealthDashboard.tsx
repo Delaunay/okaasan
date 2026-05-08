@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Box, Button, Flex, Grid, Heading, HStack, Input, Text, VStack, Spinner,
 } from '@chakra-ui/react';
+import { useNavigate } from 'react-router-dom';
 import { VegaProvider } from '../../contexts/VegaContext';
 import { recipeAPI } from '../../services/api';
 import type { HealthSummary } from '../../services/type';
@@ -10,12 +11,17 @@ import HeartRateChart from './charts/HeartRateChart';
 import HRVChart from './charts/HRVChart';
 import SleepChart from './charts/SleepChart';
 import ActivityChart from './charts/ActivityChart';
+import DailySummaryChart from './charts/DailySummaryChart';
 import WeeklyOverlayChart from './charts/WeeklyOverlayChart';
 import SleepOverlayChart from './charts/SleepOverlayChart';
 
 const METRIC_OPTIONS = [
     { value: 'heart_rate', label: 'Heart Rate' },
     { value: 'hrv', label: 'HRV' },
+    { value: 'stress', label: 'Stress' },
+    { value: 'body_battery', label: 'Body Battery' },
+    { value: 'steps', label: 'Steps' },
+    { value: 'respiration', label: 'Respiration' },
 ];
 
 const RANGE_PRESETS = [
@@ -58,6 +64,7 @@ const HealthDashboard: React.FC = () => {
     const [summary, setSummary] = useState<HealthSummary | null>(null);
     const [summaryLoading, setSummaryLoading] = useState(true);
     const [overlayMetric, setOverlayMetric] = useState('heart_rate');
+    const navigate = useNavigate();
 
     const applyPreset = useCallback((days: number, label: string) => {
         const end = new Date();
@@ -87,7 +94,12 @@ const HealthDashboard: React.FC = () => {
     return (
         <VegaProvider>
             <Box width="100%" maxW="1200px" mx="auto" p={4}>
-                <Heading size="lg" mb={4}>Health Dashboard</Heading>
+                <Flex justify="space-between" align="center" mb={4}>
+                    <Heading size="lg">Health Dashboard</Heading>
+                    <Button size="sm" variant="outline" onClick={() => navigate('/health-details')}>
+                        More metrics
+                    </Button>
+                </Flex>
 
                 {/* Summary cards */}
                 {summaryLoading ? (
@@ -161,6 +173,14 @@ const HealthDashboard: React.FC = () => {
                     <Box>
                         <Heading size="sm" mb={2}>Activities</Heading>
                         <ActivityChart start={startDate} end={endDate} />
+                    </Box>
+                    <Box>
+                        <Heading size="sm" mb={2}>Calories</Heading>
+                        <DailySummaryChart start={startDate} end={endDate} field="calories_total" title="kcal" color="#e45755" />
+                    </Box>
+                    <Box>
+                        <Heading size="sm" mb={2}>Intensity Minutes</Heading>
+                        <DailySummaryChart start={startDate} end={endDate} field="intensity_moderate" title="Minutes" color="#ff7f0e" />
                     </Box>
                 </Grid>
 

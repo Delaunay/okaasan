@@ -17,7 +17,7 @@ const SpO2Chart: React.FC<Props> = ({ start, end }) => {
         mark: { type: 'line', point: true, interpolate: 'monotone' },
         encoding: {
             x: { field: 't', type: 'temporal', title: 'Time' },
-            y: { field: 'v', type: 'quantitative', title: 'SpO2 %', scale: { domain: [85, 100] } },
+            y: { field: 'v', type: 'quantitative', title: 'SpO2 %', scale: { zero: false } },
             tooltip: [
                 { field: 't', type: 'temporal', title: 'Time' },
                 { field: 'v', type: 'quantitative', title: 'SpO2 %' },

@@ -9,6 +9,7 @@ import BodyBatteryChart from './charts/BodyBatteryChart';
 import StepsChart from './charts/StepsChart';
 import RespirationChart from './charts/RespirationChart';
 import DailySummaryChart from './charts/DailySummaryChart';
+import SpO2Chart from './charts/SpO2Chart';
 
 const RANGE_PRESETS = [
     { label: '1W', days: 7 },
@@ -84,6 +85,10 @@ const HealthDetailView: React.FC = () => {
                     <Box>
                         <Heading size="sm" mb={2}>Steps</Heading>
                         <StepsChart start={startDate} end={endDate} />
+                    </Box>
+                    <Box>
+                        <Heading size="sm" mb={2}>SpO2</Heading>
+                        <SpO2Chart start={startDate} end={endDate} />
                     </Box>
                 </Grid>
 

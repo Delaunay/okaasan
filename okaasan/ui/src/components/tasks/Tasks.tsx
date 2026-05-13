@@ -489,7 +489,12 @@ const Tasks: React.FC = () => {
 
     const handleTaskToggle = async (task: Task) => {
         try {
-            await recipeAPI.updateTask(task.id!, { ...task, done: !task.done });
+            const nowDone = !task.done;
+            await recipeAPI.updateTask(task.id!, {
+                ...task,
+                done: nowDone,
+                datetime_completed: nowDone ? new Date().toISOString() : undefined,
+            });
             fetchTasks();
         } catch (error) {
             console.error('Error toggling task:', error);

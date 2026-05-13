@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Box, Button, Flex, Grid, Heading, HStack, Input, Text, VStack, Spinner,
 } from '@chakra-ui/react';
+import { RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { VegaProvider } from '../../contexts/VegaContext';
 import { recipeAPI } from '../../services/api';
@@ -65,6 +66,9 @@ const HealthDashboard: React.FC = () => {
     const [summary, setSummary] = useState<HealthSummary | null>(null);
     const [summaryLoading, setSummaryLoading] = useState(true);
     const [overlayMetric, setOverlayMetric] = useState('heart_rate');
+    const [syncing, setSyncing] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<string | null>(null);
+    const [refreshKey, setRefreshKey] = useState(0);
     const navigate = useNavigate();
 
     const applyPreset = useCallback((days: number, label: string) => {
@@ -92,14 +96,52 @@ const HealthDashboard: React.FC = () => {
             .finally(() => setSummaryLoading(false));
     }, []);
 
+    const handleSync = useCallback(async () => {
+        setSyncing(true);
+        setSyncStatus(null);
+        const end = new Date();
+        const start = new Date(end.getTime() - 1 * 86400_000);
+        try {
+            await recipeAPI.syncGarmin(
+                { start: fmt(start), end: fmt(end), dup_threshold: 999999 },
+                (evt) => {
+                    if (evt.day) setSyncStatus(`Syncing ${evt.day}…`);
+                    if (evt.done || evt.stopped) setSyncStatus('Sync complete');
+                },
+            );
+            setRefreshKey(k => k + 1);
+            setSummaryLoading(true);
+            recipeAPI.getHealthSummary()
+                .then(setSummary)
+                .catch(() => setSummary(null))
+                .finally(() => setSummaryLoading(false));
+        } catch {
+            setSyncStatus('Sync failed');
+        } finally {
+            setSyncing(false);
+        }
+    }, []);
+
     return (
         <VegaProvider>
             <Box width="100%" maxW="1200px" mx="auto" p={4}>
                 <Flex justify="space-between" align="center" mb={4}>
                     <Heading size="lg">Health Dashboard</Heading>
-                    <Button size="sm" variant="outline" onClick={() => navigate('/health-details')}>
-                        More metrics
-                    </Button>
+                    <HStack gap={2}>
+                        {syncStatus && <Text fontSize="xs" color="gray.500">{syncStatus}</Text>}
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleSync}
+                            disabled={syncing}
+                        >
+                            <RefreshCw size={14} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} />
+                            {syncing ? 'Syncing…' : 'Sync'}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => navigate('/health-details')}>
+                            More metrics
+                        </Button>
+                    </HStack>
                 </Flex>
 
                 {/* Summary cards */}
@@ -157,6 +199,7 @@ const HealthDashboard: React.FC = () => {
                     </HStack>
                 </HStack>
 
+                <Box key={refreshKey}>
                 {/* Chart grid */}
                 <Grid templateColumns={{ base: '1fr', lg: 'repeat(2, 1fr)' }} gap={6} mb={8}>
                     <Box>
@@ -214,6 +257,7 @@ const HealthDashboard: React.FC = () => {
                     </HStack>
                     <WeeklyOverlayChart metric={overlayMetric} end={endDate} weeks={Math.min(8, Math.max(2, Math.ceil(rangeDays / 7)))} />
                 </VStack>
+                </Box>
             </Box>
         </VegaProvider>
     );

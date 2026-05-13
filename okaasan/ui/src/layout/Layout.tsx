@@ -1,4 +1,4 @@
-import { FC, ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
+import { FC, ReactNode, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, type Location } from 'react-router-dom';
 import { ColorModeButton } from "@/components/ui/color-mode"
 import { IconButton, Box, Flex } from '@chakra-ui/react';
@@ -197,6 +197,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set());
 
   const allSections = getStaticSidebarSections();
@@ -332,8 +333,15 @@ const Layout: FC<LayoutProps> = ({ children }) => {
                 key={section.title}
                 section={section}
                 isExpanded={isSectionExpanded(section)}
-                onMouseEnter={() => setHoveredSection(section.title)}
-                onMouseLeave={() => setHoveredSection(null)}
+                onMouseEnter={() => {
+                  if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                  hoverTimerRef.current = setTimeout(() => setHoveredSection(section.title), 250);
+                }}
+                onMouseLeave={() => {
+                  if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                  hoverTimerRef.current = null;
+                  setHoveredSection(null);
+                }}
                 onItemClick={closeMobileMenu}
               />
             ))}

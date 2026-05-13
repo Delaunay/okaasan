@@ -250,6 +250,8 @@ async def update_task(task_id: int, request: Request, db: Session = Depends(get_
             task.datetime_started = datetime.fromisoformat(data['datetime_started'].replace('Z', '+00:00')) if data['datetime_started'] else None
         if 'datetime_completed' in data:
             task.datetime_completed = datetime.fromisoformat(data['datetime_completed'].replace('Z', '+00:00')) if data['datetime_completed'] else None
+        elif task.done and not task.datetime_completed:
+            task.datetime_completed = datetime.now()
         task.priority = data.get('priority', task.priority)
         task.price_budget = data.get('price_budget', task.price_budget)
         task.price_real = data.get('price_real', task.price_real)

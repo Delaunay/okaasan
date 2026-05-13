@@ -102,7 +102,13 @@ def create_app() -> FastAPI:
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)
 
+    private_dir = os.path.join(STATIC_FOLDER, "private")
+    os.makedirs(private_dir, exist_ok=True)
+    private_db_path = os.path.join(private_dir, "database.db")
+    private_engine = create_engine(f"sqlite:///{private_db_path}", connect_args={"check_same_thread": False})
+
     Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=private_engine)
 
     os.makedirs(STATIC_UPLOAD_FOLDER, exist_ok=True)
 
@@ -144,7 +150,7 @@ def create_app() -> FastAPI:
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
-    register_integrations(app, engine)
+    register_integrations(app, engine, private_engine=private_engine)
 
     @app.get("/health")
     def health_check():

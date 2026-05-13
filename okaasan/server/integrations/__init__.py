@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def register_integrations(app: "FastAPI", engine: "Engine") -> None:
+def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "Engine | None" = None) -> None:
     """Discover and mount all available integration routers."""
 
     # --- USDA (FoodData Central API + local CSV) ---
@@ -48,7 +48,7 @@ def register_integrations(app: "FastAPI", engine: "Engine") -> None:
     try:
         from ..health.routes import create_health_router
 
-        health_router = create_health_router(engine)
+        health_router = create_health_router(private_engine or engine)
         app.include_router(health_router)
     except Exception as exc:
         log.warning("Health data routes not available: %s", exc)

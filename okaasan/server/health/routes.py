@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func, desc
@@ -247,6 +247,41 @@ def create_health_router(engine) -> APIRouter:
                 seen[key] = r.to_json()
         return list(seen.values())
 
+    def _sleep_local_bed_date(a: HealthActivity) -> Optional[str]:
+        if not a.start_time:
+            return None
+        ext = a.extension or {}
+        tz_off = ext.get("tz_offset_sec", 0) or 0
+        local_bed = a.start_time + timedelta(seconds=tz_off)
+        return local_bed.strftime("%Y-%m-%d")
+
+    def _sleep_dedupe_score(a: HealthActivity) -> Tuple[int, int, int, int]:
+        """Prefer granular sleep_levels, then longest duration, then richest summary."""
+        smry = a.summary or {}
+        ext = a.extension or {}
+        has_levels = 1 if ext.get("sleep_levels") else 0
+        dur = int(a.duration_seconds or 0)
+        stage_total = sum(int(smry.get(k) or 0) for k in (
+            "deep_seconds", "light_seconds", "rem_seconds", "awake_seconds"))
+        return (has_levels, dur, stage_total, a._id)
+
+    def _dedupe_sleep_sessions(activities: List[HealthActivity]) -> List[HealthActivity]:
+        """Keep one sleep session per (source, local sleep night).
+
+        Duplicate rows (e.g. re-imports with null source_id, or overlapping syncs)
+        were stacked in charts, inflating totals (e.g. ~18h for one night).
+        """
+        by_key: Dict[Tuple[str, str], HealthActivity] = {}
+        for a in activities:
+            bed = _sleep_local_bed_date(a)
+            if not bed:
+                continue
+            key = (a.source, bed)
+            prev = by_key.get(key)
+            if prev is None or _sleep_dedupe_score(a) > _sleep_dedupe_score(prev):
+                by_key[key] = a
+        return sorted(by_key.values(), key=lambda x: x.start_time or datetime.min)
+
     @router.get("/data/sleep")
     def data_sleep(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
         s, e = _default_range(start, end)
@@ -260,9 +295,13 @@ def create_health_router(engine) -> APIRouter:
             .order_by(HealthActivity.start_time)
             .all()
         )
+        activities = _dedupe_sleep_sessions(activities)
         rows: list[dict] = []
         for a in activities:
-            day_iso = a.start_time.strftime("%Y-%m-%d")
+            ext = a.extension or {}
+            tz_off = ext.get("tz_offset_sec", 0) or 0
+            local_bed = a.start_time + timedelta(seconds=tz_off)
+            day_iso = local_bed.strftime("%Y-%m-%d")
             smry = a.summary or {}
             for stage, key in [("Deep", "deep_seconds"), ("Light", "light_seconds"), ("REM", "rem_seconds"), ("Awake", "awake_seconds")]:
                 val = smry.get(key)
@@ -302,11 +341,13 @@ def create_health_router(engine) -> APIRouter:
         if e:
             query = query.filter(HealthActivity.start_time <= e + timedelta(days=1))
 
-        activities = query.order_by(desc(HealthActivity.start_time)).limit(nights * 3).all()
+        raw = query.order_by(desc(HealthActivity.start_time)).limit(max(nights * 10, 50)).all()
+        deduped = _dedupe_sleep_sessions(raw)
+        deduped.sort(key=lambda a: a.start_time or datetime.min, reverse=True)
+        activities = deduped[:nights]
 
         rows: list[dict] = []
-        night_idx = 0
-        for a in activities:
+        for night_idx, a in enumerate(activities):
             ext = a.extension or {}
             sleep_levels = ext.get("sleep_levels", [])
             if not sleep_levels or not a.start_time:
@@ -333,10 +374,6 @@ def create_health_router(engine) -> APIRouter:
                     "end_h": _to_night_hour(e_dt, tz_off),
                     "hours": round((e_dt - s_dt).total_seconds() / 3600, 2),
                 })
-
-            night_idx += 1
-            if night_idx >= nights:
-                break
 
         return rows
 

@@ -190,8 +190,8 @@ const getStaticSidebarSections = () => [
 // Export static version for use in App.tsx
 export const sidebarSections = getStaticSidebarSections();
 
-// Sections that should never be hidden
-const ALWAYS_VISIBLE = new Set(['Home', 'Settings']);
+// Sections that should never be hidden (Settings stays visible only in dynamic mode)
+const ALWAYS_VISIBLE = new Set(['Home']);
 
 const Layout: FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
@@ -224,7 +224,11 @@ const Layout: FC<LayoutProps> = ({ children }) => {
   const STATIC_HIDDEN_ITEMS = new Set(['/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester']);
 
   const visibleSections = useMemo(() => {
-    const filtered = allSections.filter(s => ALWAYS_VISIBLE.has(s.title) || !hiddenSections.has(s.title));
+    const filtered = allSections.filter(s => {
+      if (isStaticMode() && s.title === 'Settings') return false;
+      const alwaysShow = ALWAYS_VISIBLE.has(s.title) || (!isStaticMode() && s.title === 'Settings');
+      return alwaysShow || !hiddenSections.has(s.title);
+    });
     if (!isStaticMode()) return filtered;
     return filtered.map(s => {
       let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_ITEMS.has(item.href));

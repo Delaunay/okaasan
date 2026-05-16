@@ -30,19 +30,13 @@ import type {
 } from './type';
 
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 // Sub-path prefix for hosting on a GitHub Pages project page (e.g. "/recipes").
 // Only needed for absolute asset URLs (images) that are not handled by Vite's base.
 const SITE_BASE = (import.meta.env.VITE_BASE_PATH || '').replace(/\/$/, '');
 
-console.log(USE_STATIC_MODE, API_BASE_URL)
-
 // Check if we're in static mode (no backend server)
-const isStaticMode = () => {
-  // Check if we're in production and using static JSON files
-  // This works for both local static builds (/api) and GitHub Pages (/recipes/api)
-  return USE_STATIC_MODE && API_BASE_URL.endsWith('/api');
-};
+const isStaticMode = () => USE_STATIC_MODE;
 
 
 export function imagePath(image: string): string {

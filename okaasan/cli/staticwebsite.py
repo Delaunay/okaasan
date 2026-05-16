@@ -85,6 +85,7 @@ class StaticWebsite(Command):
 
         if not skip_api:
             self.crawl_exposed_routes()
+            self.generate_recipe_slug_files()
             self.generate_sidebar_json()
 
         if not skip_frontend:
@@ -228,6 +229,35 @@ class StaticWebsite(Command):
             json.dump(data, f, indent=2, default=str)
 
         logger.debug(f"Saved {file_path}")
+
+    def generate_recipe_slug_files(self):
+        """Write /recipes/{slug}.json for URL-friendly names (by-name route has no static ids)."""
+        logger.info("Generating recipe slug JSON files...")
+        try:
+            response = self.client.get("/recipes", headers=self._public_headers)
+            if response.status_code != 200:
+                logger.warning("Failed to fetch /recipes for slugs: %s", response.status_code)
+                return
+            recipes = response.json()
+            if not isinstance(recipes, list):
+                return
+            saved = 0
+            for recipe in recipes:
+                rid = recipe.get("id")
+                title = recipe.get("title") or ""
+                if not rid:
+                    continue
+                detail = self.client.get(f"/recipes/{rid}", headers=self._public_headers)
+                if detail.status_code != 200:
+                    continue
+                data = detail.json()
+                slug = title.lower().replace(" ", "-")
+                if slug:
+                    self.save_json_file(f"/recipes/{slug}", data)
+                    saved += 1
+            logger.info("Saved %d recipe slug JSON files", saved)
+        except Exception as e:
+            logger.error("Error generating recipe slug files: %s", e)
 
     def generate_sidebar_json(self):
         """Fetch /sidebar and write it as a static JSON file."""

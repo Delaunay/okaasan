@@ -1,7 +1,7 @@
 const USE_STATIC_MODE = import.meta.env.VITE_USE_STATIC_MODE === 'true';
-const API_BASE_URL = import.meta.env.VITE_API_URL || (USE_STATIC_MODE ? '/api' : '/api');
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 
-export const isStaticMode = USE_STATIC_MODE && API_BASE_URL.endsWith('/api');
+export const isStaticMode = USE_STATIC_MODE;
 
 class JsonStore {
   async list(collection: string): Promise<string[]> {

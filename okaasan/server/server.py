@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 import okaasan as _recipes_pkg
+from .decorators import expose
 from .models.common import Base
 from . import gitsync, updater
 
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
             _notification_hub.disconnect(ws)
 
     @app.get("/categories")
+    @expose()
     def get_categories(db: Session = Depends(get_db)):
         from .models import Category
         categories = db.query(Category).all()

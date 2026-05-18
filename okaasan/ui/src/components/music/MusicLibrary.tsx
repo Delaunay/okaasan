@@ -1,33 +1,27 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Input, Button } from '@chakra-ui/react';
-import { Music, Disc3, Users, ListMusic, Play, Plus, Shuffle } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge, Input, Button } from '@chakra-ui/react';
+import { Music, Disc3, Users, Play, Plus, Shuffle, ListPlus } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
+import AddToPlaylistPopup from './AddToPlaylistPopup';
 
 type GroupBy = 'artist' | 'album';
 
-interface Album {
-  id: number;
+interface MusicGroup {
   name: string;
-  artist: string;
-  year: number | null;
+  subtitle: string;
   cover_path: string | null;
   track_count: number;
-}
-
-interface Artist {
-  id: number;
-  name: string;
-  album_count: number;
-  track_count: number;
-  cover_path: string | null;
-}
-
-interface MusicLibraryData {
-  albums: Album[];
-  artists: Artist[];
   tracks: MusicTrack[];
+}
+
+interface LibraryPage {
+  groups: MusicGroup[];
+  total_groups: number;
+  total_tracks: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
@@ -47,80 +41,76 @@ function formatDuration(seconds: number): string {
 }
 
 const MusicLibrary: React.FC = () => {
-  const [data, setData] = useState<MusicLibraryData | null>(null);
+  const [groups, setGroups] = useState<MusicGroup[]>([]);
+  const [totalGroups, setTotalGroups] = useState(0);
+  const [totalTracks, setTotalTracks] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [groupBy, setGroupBy] = useState<GroupBy>('artist');
+  const [playlistTrackId, setPlaylistTrackId] = useState<number | null>(null);
   const { play, addToQueue, playAlbum, shuffleAll } = useMusicPlayer();
+  const loaderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 300);
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => {
-    recipeAPI.request<MusicLibraryData>('/music/library')
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const grouped = useMemo(() => {
-    if (!data) return [];
-    const q = debounced.toLowerCase();
-    const tracks = data.tracks.filter(t =>
-      !q || t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || (t.album || '').toLowerCase().includes(q)
-    );
-
-    if (groupBy === 'artist') {
-      const map = new Map<string, MusicTrack[]>();
-      for (const t of tracks) {
-        const key = t.artist || 'Unknown Artist';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(t);
+  const fetchPage = useCallback(async (pageNum: number, reset: boolean) => {
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        per_page: '30',
+        group_by: groupBy,
+      });
+      if (debounced) params.set('q', debounced);
+      const data = await recipeAPI.request<LibraryPage>(`/music/library?${params}`);
+      if (reset) {
+        setGroups(data.groups);
+      } else {
+        setGroups(prev => [...prev, ...data.groups]);
       }
-      return Array.from(map.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([name, items]) => ({
-          name,
-          tracks: items.sort((a, b) => (a.album || '').localeCompare(b.album || '') || (a.track_number || 0) - (b.track_number || 0)),
-          cover: items.find(t => t.cover_path)?.cover_path || null,
-          subtitle: `${new Set(items.map(t => t.album).filter(Boolean)).size} albums · ${items.length} tracks`,
-        }));
-    } else {
-      const map = new Map<string, MusicTrack[]>();
-      for (const t of tracks) {
-        const key = t.album || 'Unknown Album';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(t);
-      }
-      return Array.from(map.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([name, items]) => ({
-          name,
-          tracks: items.sort((a, b) => (a.track_number || 0) - (b.track_number || 0)),
-          cover: items.find(t => t.cover_path)?.cover_path || null,
-          subtitle: `${items[0]?.artist || 'Various'} · ${items.length} tracks`,
-        }));
+      setTotalGroups(data.total_groups);
+      setTotalTracks(data.total_tracks);
+      setHasMore(data.has_more);
+      setPage(pageNum);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-  }, [data, debounced, groupBy]);
+  }, [groupBy, debounced]);
+
+  useEffect(() => {
+    fetchPage(1, true);
+  }, [fetchPage]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (!loaderRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          fetchPage(page + 1, false);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, page, fetchPage]);
 
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
         <Spinner size="lg" />
-      </Flex>
-    );
-  }
-
-  if (!data) {
-    return (
-      <Flex justify="center" align="center" minH="200px" direction="column" gap={3}>
-        <Music size={48} color="var(--muted-text)" />
-        <Text color="var(--muted-text)">
-          No music found. Configure your library folders in Settings.
-        </Text>
       </Flex>
     );
   }
@@ -131,7 +121,7 @@ const MusicLibrary: React.FC = () => {
         <HStack>
           <Music size={24} color="var(--icon-color)" />
           <Heading size="lg" color="var(--heading-color)">Music Library</Heading>
-          <Badge colorPalette="blue" ml={2}>{data.tracks.length} tracks</Badge>
+          <Badge colorPalette="blue" ml={2}>{totalTracks} tracks</Badge>
         </HStack>
         <Button size="sm" variant="outline" onClick={shuffleAll}>
           <Shuffle size={14} />
@@ -169,47 +159,58 @@ const MusicLibrary: React.FC = () => {
             <Text ml={1}>Album</Text>
           </Button>
         </HStack>
-        <Badge colorPalette="gray" fontSize="xs">{grouped.length} {groupBy === 'artist' ? 'artists' : 'albums'}</Badge>
+        <Badge colorPalette="gray" fontSize="xs">{totalGroups} {groupBy === 'artist' ? 'artists' : 'albums'}</Badge>
       </HStack>
 
-      {grouped.length === 0 ? (
+      {groups.length === 0 && !loading ? (
         <Flex justify="center" py={12}>
-          <Text color="var(--muted-text)">No results match your search.</Text>
+          <Text color="var(--muted-text)">
+            {debounced ? 'No results match your search.' : 'No music found. Configure your library folders in Settings.'}
+          </Text>
         </Flex>
       ) : (
         <VStack align="stretch" gap={4}>
-          {grouped.map(group => (
+          {groups.map((group, idx) => (
             <GroupCard
-              key={group.name}
+              key={`${group.name}-${idx}`}
               group={group}
               groupBy={groupBy}
               onPlay={play}
               onQueue={addToQueue}
               onPlayAll={() => playAlbum(group.tracks)}
+              onAddToPlaylist={(trackId) => setPlaylistTrackId(trackId)}
             />
           ))}
         </VStack>
+      )}
+
+      {/* Infinite scroll trigger */}
+      <div ref={loaderRef} style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {loadingMore && <Spinner size="sm" />}
+        {!hasMore && groups.length > 0 && (
+          <Text fontSize="xs" color="var(--muted-text)">All {totalGroups} {groupBy === 'artist' ? 'artists' : 'albums'} loaded</Text>
+        )}
+      </div>
+
+      {playlistTrackId !== null && (
+        <AddToPlaylistPopup trackId={playlistTrackId} onClose={() => setPlaylistTrackId(null)} />
       )}
     </VStack>
   );
 };
 
 interface GroupCardProps {
-  group: {
-    name: string;
-    tracks: MusicTrack[];
-    cover: string | null;
-    subtitle: string;
-  };
+  group: MusicGroup;
   groupBy: GroupBy;
   onPlay: (track: MusicTrack) => void;
   onQueue: (track: MusicTrack) => void;
   onPlayAll: () => void;
+  onAddToPlaylist: (trackId: number) => void;
 }
 
-const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, onPlayAll }) => {
+const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, onPlayAll, onAddToPlaylist }) => {
   const [expanded, setExpanded] = useState(false);
-  const cover = resolveCover(group.cover);
+  const cover = resolveCover(group.cover_path);
   const displayTracks = expanded ? group.tracks : group.tracks.slice(0, 5);
 
   return (
@@ -277,6 +278,9 @@ const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, 
               <Text fontSize="2xs" color="var(--muted-text)">{formatDuration(track.duration)}</Text>
               <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onQueue(track)} title="Add to queue">
                 <Plus size={12} />
+              </Button>
+              <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onAddToPlaylist(track.id)} title="Add to playlist">
+                <ListPlus size={12} />
               </Button>
             </HStack>
           ))}

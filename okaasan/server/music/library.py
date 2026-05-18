@@ -307,6 +307,19 @@ def _enrich_with_musicbrainz(
     return extra
 
 
+def _to_relative_cover(path: str | None, static_folder: str) -> str | None:
+    """Convert an absolute cover path to a relative path suitable for URL serving."""
+    if not path:
+        return None
+    sf = str(static_folder).rstrip("/") + "/"
+    if path.startswith(sf):
+        return path[len(sf):]
+    # Already relative
+    if path.startswith("uploads/"):
+        return path
+    return path
+
+
 def scan_folders(static_folder: str, private_engine, main_engine):
     """Scan configured folders and upsert music files into private DB."""
     config = load_config(static_folder)
@@ -400,6 +413,8 @@ def scan_folders(static_folder: str, private_engine, main_engine):
                             artist = mb_extra["artist"]
                         if mb_extra.get("album") and not album:
                             album = mb_extra["album"]
+
+                    cover_path = _to_relative_cover(cover_path, static_folder)
 
                     track_id, matched = _match_to_db(main_db, title, artist)
                     if not matched and title:

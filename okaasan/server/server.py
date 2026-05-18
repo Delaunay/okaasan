@@ -122,6 +122,26 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
 
+    # Lightweight schema migration: add missing columns to existing tables
+    from sqlalchemy import inspect as sa_inspect, text
+    for _engine in (engine, private_engine):
+        insp = sa_inspect(_engine)
+        for table_name in Base.metadata.tables:
+            if not insp.has_table(table_name):
+                continue
+            existing_cols = {c["name"] for c in insp.get_columns(table_name)}
+            model_table = Base.metadata.tables[table_name]
+            for col in model_table.columns:
+                if col.name not in existing_cols:
+                    col_type = col.type.compile(dialect=_engine.dialect)
+                    default = ""
+                    if col.server_default is not None:
+                        default = f" DEFAULT {col.server_default.arg}"
+                    with _engine.begin() as conn:
+                        conn.execute(text(
+                            f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default}"
+                        ))
+
     os.makedirs(STATIC_UPLOAD_FOLDER, exist_ok=True)
 
     def get_db():
@@ -331,7 +351,7 @@ def create_app() -> FastAPI:
         {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
         {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections", "Library"]},
-        {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Schedule"]},
+        {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Playlists", "Stats", "Schedule"]},
         {"title": "Audiobooks",            "href": "/audiobooks",          "items": ["Library"]},
         {"title": "Podcasts",              "href": "/podcasts",            "items": ["Library"]},
         {"title": "Books",                 "href": "/books",               "items": ["Library"]},

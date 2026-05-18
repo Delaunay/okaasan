@@ -148,3 +148,69 @@ class MusicBrainzClient:
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             log.debug("Cover art not available for %s: %s", mbid, e)
             return None
+
+    def search_artist(self, name: str) -> dict | None:
+        """Search MusicBrainz for an artist by name."""
+        query = f'artist:"{name}"'
+        cache_key = f"artist-search-{query}"
+        cached = self._read_cache("search", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+        data = self._api_request("/artist", {"query": query, "limit": "5"})
+        if data:
+            self._write_cache("search", cache_key, data)
+        return data
+
+    def get_artist(self, mbid: str, includes: list[str] | None = None) -> dict | None:
+        """Lookup an artist by MBID with optional includes (artist-rels, tags, genres)."""
+        inc = "+".join(includes) if includes else "artist-rels+tags+genres"
+        cache_key = f"artist-{mbid}-{inc}"
+        cached = self._read_cache("artist", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+        data = self._api_request(f"/artist/{mbid}", {"inc": inc})
+        if data:
+            self._write_cache("artist", cache_key, data)
+        return data
+
+    def browse_release_groups(self, artist_mbid: str, limit: int = 25) -> dict | None:
+        """Browse release-groups by artist. Returns albums/EPs/singles by this artist."""
+        cache_key = f"rg-browse-{artist_mbid}-{limit}"
+        cached = self._read_cache("browse", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+        data = self._api_request("/release-group", {
+            "artist": artist_mbid,
+            "limit": str(limit),
+            "type": "album|ep",
+        })
+        if data:
+            self._write_cache("browse", cache_key, data)
+        return data
+
+    def browse_releases_by_label(self, label_mbid: str, limit: int = 25) -> dict | None:
+        """Browse releases by label."""
+        cache_key = f"release-label-{label_mbid}-{limit}"
+        cached = self._read_cache("browse", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+        data = self._api_request("/release", {
+            "label": label_mbid,
+            "limit": str(limit),
+            "inc": "artist-credits",
+        })
+        if data:
+            self._write_cache("browse", cache_key, data)
+        return data
+
+    def get_artist_with_release_rels(self, mbid: str) -> dict | None:
+        """Lookup artist with URL and label relationships."""
+        inc = "artist-rels+label-rels+url-rels+tags+genres"
+        cache_key = f"artist-full-{mbid}"
+        cached = self._read_cache("artist", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+        data = self._api_request(f"/artist/{mbid}", {"inc": inc})
+        if data:
+            self._write_cache("artist", cache_key, data)
+        return data

@@ -159,6 +159,8 @@ const getStaticSidebarSections = () => [
     items: [
       { name: 'Discover', href: '/music-discover' },
       { name: 'Library', href: '/music-library' },
+      { name: 'Playlists', href: '/music-playlists' },
+      { name: 'Stats', href: '/music-stats' },
       { name: 'Schedule', href: '/music-schedule' },
     ]
   },

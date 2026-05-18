@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Box, Flex, Text, HStack, VStack, Button } from '@chakra-ui/react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ListMusic, X, Music, Shuffle } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ListMusic, X, Music, Shuffle, ListPlus } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayerContext';
+import AddToPlaylistPopup from './AddToPlaylistPopup';
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -27,6 +28,7 @@ const MusicPlayer: React.FC = () => {
     toggleShuffle,
   } = useMusicPlayer();
   const [showQueue, setShowQueue] = useState(false);
+  const [showPlaylistAdd, setShowPlaylistAdd] = useState(false);
 
   if (!currentTrack) return null;
 
@@ -163,6 +165,12 @@ const MusicPlayer: React.FC = () => {
             </Box>
           )}
         </Button>
+        <Button
+          size="xs" variant="ghost" onClick={() => setShowPlaylistAdd(true)} p={1} minW="auto"
+          title="Add to playlist"
+        >
+          <ListPlus size={12} />
+        </Button>
       </HStack>
 
       {/* Time + Volume */}
@@ -187,6 +195,10 @@ const MusicPlayer: React.FC = () => {
           </Box>
         </HStack>
       </HStack>
+
+      {showPlaylistAdd && (
+        <AddToPlaylistPopup trackId={currentTrack.id} onClose={() => setShowPlaylistAdd(false)} />
+      )}
     </Box>
   );
 };

@@ -103,6 +103,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setCurrentTrack(track);
     setIsPlaying(true);
     setProgress(0);
+    recipeAPI.request(`/music/tracks/${track.id}/play`, { method: 'POST' }).catch(() => {});
   }, [volume]);
 
   const play = useCallback((track: MusicTrack) => {
@@ -176,8 +177,8 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const shuffleAll = useCallback(async () => {
     try {
-      const data = await recipeAPI.request<{ tracks: MusicTrack[] }>('/music/library');
-      const allTracks = (data.tracks || []);
+      const data = await recipeAPI.request<{ groups: { tracks: MusicTrack[] }[] }>('/music/library?per_page=200');
+      const allTracks = (data.groups || []).flatMap(g => g.tracks);
       if (allTracks.length === 0) return;
       const shuffled = shuffleArray(allTracks);
       setShuffle(true);

@@ -1,80 +1,96 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Button } from '@chakra-ui/react';
-import { Compass, Music, Users, Disc3, Play, Plus, Shuffle } from 'lucide-react';
+import { Compass, Users, Disc3, RefreshCw, ExternalLink, Sparkles } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
-import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 
-interface Genre {
+interface Recommendation {
   name: string;
-  count: number;
+  mbid: string;
+  reason: string;
+  source_artist: string;
+  genres: string[];
+  tags: string[];
 }
 
-interface TopArtist {
-  name: string;
-  track_count: number;
-  album_count: number;
-  cover_path: string | null;
-}
-
-interface RecentAlbum {
-  name: string;
+interface MissingAlbum {
+  title: string;
   artist: string;
-  year: number | null;
-  track_count: number;
-  cover_path: string | null;
+  type: string;
+  mbid: string;
+  year: string;
+}
+
+interface TasteProfile {
+  top_genres: string[];
+  seed_artists: string[];
 }
 
 interface DiscoverData {
-  genres: Genre[];
-  top_artists: TopArtist[];
-  random_tracks: MusicTrack[];
-  recent_albums: RecentAlbum[];
-}
-
-function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  recommendations: Recommendation[];
+  missing_albums: MissingAlbum[];
+  taste_profile: TasteProfile;
 }
 
 const MusicDiscover: React.FC = () => {
   const [data, setData] = useState<DiscoverData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { play, addToQueue, shuffleAll } = useMusicPlayer();
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    recipeAPI.request<DiscoverData>('/music/discover')
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const refresh = () => {
+  const fetchData = () => {
     setLoading(true);
+    setError(null);
     recipeAPI.request<DiscoverData>('/music/discover')
       .then(setData)
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        setError('Failed to load recommendations. Make sure MusicBrainz metadata is enabled in Settings.');
+      })
       .finally(() => setLoading(false));
   };
 
+  useEffect(() => { fetchData(); }, []);
+
   if (loading) {
     return (
-      <Flex justify="center" align="center" minH="200px">
+      <Flex justify="center" align="center" minH="300px" direction="column" gap={3}>
         <Spinner size="lg" />
+        <Text fontSize="sm" color="var(--muted-text)">Finding new music for you...</Text>
       </Flex>
     );
   }
 
-  if (!data) {
+  if (error) {
     return (
       <Flex justify="center" align="center" minH="200px" direction="column" gap={3}>
         <Compass size={48} color="var(--muted-text)" />
-        <Text color="var(--muted-text)">No music data available yet.</Text>
+        <Text color="var(--muted-text)">{error}</Text>
+        <Button size="sm" variant="outline" onClick={fetchData}>
+          <RefreshCw size={14} />
+          <Text ml={1}>Retry</Text>
+        </Button>
       </Flex>
+    );
+  }
+
+  if (!data || (data.recommendations.length === 0 && data.missing_albums.length === 0)) {
+    return (
+      <VStack gap={6} align="stretch" p={4}>
+        <HStack>
+          <Compass size={24} color="var(--icon-color)" />
+          <Heading size="lg" color="var(--heading-color)">Discover</Heading>
+        </HStack>
+        <Flex justify="center" align="center" minH="200px" direction="column" gap={3}>
+          <Sparkles size={48} color="var(--muted-text)" />
+          <Text color="var(--muted-text)" textAlign="center">
+            Not enough data to generate recommendations yet.
+            Play some music so we can learn your taste!
+          </Text>
+          <Button size="sm" variant="outline" onClick={fetchData}>
+            <RefreshCw size={14} />
+            <Text ml={1}>Try Again</Text>
+          </Button>
+        </Flex>
+      </VStack>
     );
   }
 
@@ -85,141 +101,142 @@ const MusicDiscover: React.FC = () => {
           <Compass size={24} color="var(--icon-color)" />
           <Heading size="lg" color="var(--heading-color)">Discover</Heading>
         </HStack>
-        <HStack>
-          <Button size="sm" variant="outline" onClick={shuffleAll}>
-            <Shuffle size={14} />
-            <Text ml={1}>Shuffle All</Text>
-          </Button>
-        </HStack>
+        <Button size="sm" variant="outline" onClick={fetchData}>
+          <RefreshCw size={14} />
+          <Text ml={1}>Refresh</Text>
+        </Button>
       </HStack>
 
-      {/* Random Picks */}
-      {data.random_tracks.length > 0 && (
+      {/* Taste Profile Summary */}
+      {data.taste_profile.top_genres.length > 0 && (
         <Box>
-          <HStack mb={3} justify="space-between">
-            <Heading size="md" color="var(--heading-color)">Random Picks</Heading>
-            <Button size="xs" variant="ghost" onClick={refresh}>Refresh</Button>
-          </HStack>
-          <Grid templateColumns="repeat(auto-fill, minmax(200px, 1fr))" gap={3}>
-            {data.random_tracks.map(track => (
-              <HStack
-                key={track.id}
-                p={2}
-                bg="var(--card-bg)"
-                border="1px solid"
-                borderColor="var(--border-color)"
-                borderRadius="md"
-                _hover={{ borderColor: 'var(--icon-color)', bg: 'var(--hover-bg)' }}
-                cursor="pointer"
-                onClick={() => play(track)}
-                gap={2}
-              >
-                {track.cover_path ? (
-                  <Box as="img" src={resolveCover(track.cover_path)} w="36px" h="36px" borderRadius="sm" objectFit="cover" flexShrink={0} />
-                ) : (
-                  <Box w="36px" h="36px" bg="var(--surface-muted)" borderRadius="sm" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <Music size={14} color="var(--muted-text)" />
-                  </Box>
-                )}
-                <Box flex={1} minW={0}>
-                  <Text fontSize="xs" fontWeight="semibold" lineClamp={1}>{track.title}</Text>
-                  <Text fontSize="2xs" color="var(--muted-text)" lineClamp={1}>{track.artist}</Text>
-                </Box>
-                <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={(e) => { e.stopPropagation(); addToQueue(track); }}>
-                  <Plus size={12} />
-                </Button>
-              </HStack>
-            ))}
-          </Grid>
-        </Box>
-      )}
-
-      {/* Genres */}
-      {data.genres.length > 0 && (
-        <Box>
-          <Heading size="md" color="var(--heading-color)" mb={3}>Genres</Heading>
+          <Text fontSize="sm" color="var(--muted-text)" mb={2}>
+            Based on your taste in:
+          </Text>
           <Flex flexWrap="wrap" gap={2}>
-            {data.genres.map(g => (
-              <Badge
-                key={g.name}
-                px={3} py={1}
-                borderRadius="full"
-                colorPalette="blue"
-                variant="subtle"
-                fontSize="xs"
-                cursor="default"
-              >
-                {g.name} ({g.count})
+            {data.taste_profile.top_genres.map(g => (
+              <Badge key={g} px={2} py={0.5} borderRadius="full" colorPalette="purple" variant="subtle" fontSize="xs">
+                {g}
               </Badge>
             ))}
           </Flex>
         </Box>
       )}
 
-      {/* Top Artists */}
-      {data.top_artists.length > 0 && (
+      {/* Artist Recommendations */}
+      {data.recommendations.length > 0 && (
         <Box>
-          <Heading size="md" color="var(--heading-color)" mb={3}>Top Artists</Heading>
-          <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={3}>
-            {data.top_artists.map(artist => (
+          <HStack mb={3}>
+            <Users size={18} color="var(--icon-color)" />
+            <Heading size="md" color="var(--heading-color)">Artists You Might Like</Heading>
+          </HStack>
+          <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={3}>
+            {data.recommendations.map(rec => (
               <Box
-                key={artist.name}
-                p={3}
+                key={rec.mbid || rec.name}
+                p={4}
                 bg="var(--card-bg)"
                 border="1px solid"
                 borderColor="var(--border-color)"
                 borderRadius="lg"
-                textAlign="center"
+                _hover={{ borderColor: 'var(--icon-color)', transform: 'translateY(-1px)' }}
+                transition="all 0.2s"
               >
-                <Box
-                  w="56px" h="56px" mx="auto" mb={2}
-                  borderRadius="full" bg="var(--surface-muted)"
-                  display="flex" alignItems="center" justifyContent="center"
-                  overflow="hidden"
-                >
-                  {artist.cover_path ? (
-                    <Box as="img" src={resolveCover(artist.cover_path)} w="100%" h="100%" objectFit="cover" />
-                  ) : (
-                    <Users size={24} color="var(--muted-text)" />
+                <HStack justify="space-between" mb={2}>
+                  <Text fontSize="md" fontWeight="bold" lineClamp={1}>{rec.name}</Text>
+                  {rec.mbid && (
+                    <Box
+                      as="a"
+                      href={`https://musicbrainz.org/artist/${rec.mbid}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      flexShrink={0}
+                      color="var(--muted-text)"
+                      _hover={{ color: 'var(--icon-color)' }}
+                      title="View on MusicBrainz"
+                    >
+                      <ExternalLink size={14} />
+                    </Box>
                   )}
-                </Box>
-                <Text fontSize="sm" fontWeight="semibold" lineClamp={1}>{artist.name}</Text>
-                <Text fontSize="2xs" color="var(--muted-text)">
-                  {artist.track_count} tracks · {artist.album_count} albums
+                </HStack>
+                <Text fontSize="xs" color="var(--muted-text)" mb={2}>
+                  {rec.reason}
                 </Text>
+                {rec.genres.length > 0 && (
+                  <Flex flexWrap="wrap" gap={1}>
+                    {rec.genres.map(g => (
+                      <Badge key={g} fontSize="2xs" variant="outline" borderRadius="full" px={1.5} colorPalette="blue">
+                        {g}
+                      </Badge>
+                    ))}
+                  </Flex>
+                )}
+                {rec.genres.length === 0 && rec.tags.length > 0 && (
+                  <Flex flexWrap="wrap" gap={1}>
+                    {rec.tags.slice(0, 4).map(t => (
+                      <Badge key={t} fontSize="2xs" variant="outline" borderRadius="full" px={1.5}>
+                        {t}
+                      </Badge>
+                    ))}
+                  </Flex>
+                )}
               </Box>
             ))}
           </Grid>
         </Box>
       )}
 
-      {/* Recent Albums */}
-      {data.recent_albums.length > 0 && (
+      {/* Albums You're Missing */}
+      {data.missing_albums.length > 0 && (
         <Box>
-          <Heading size="md" color="var(--heading-color)" mb={3}>Recently Added Albums</Heading>
-          <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
-            {data.recent_albums.map(album => (
-              <Box
-                key={`${album.name}-${album.artist}`}
+          <HStack mb={3}>
+            <Disc3 size={18} color="var(--icon-color)" />
+            <Heading size="md" color="var(--heading-color)">Albums to Explore</Heading>
+          </HStack>
+          <Text fontSize="xs" color="var(--muted-text)" mb={3}>
+            Releases from artists you listen to that aren't in your library yet.
+          </Text>
+          <Grid templateColumns="repeat(auto-fill, minmax(280px, 1fr))" gap={3}>
+            {data.missing_albums.map(album => (
+              <HStack
+                key={album.mbid || `${album.artist}-${album.title}`}
+                p={3}
                 bg="var(--card-bg)"
                 border="1px solid"
                 borderColor="var(--border-color)"
                 borderRadius="lg"
-                overflow="hidden"
+                _hover={{ borderColor: 'var(--icon-color)' }}
+                transition="border-color 0.2s"
+                gap={3}
               >
-                <Box w="100%" aspectRatio="1" bg="var(--surface-muted)" display="flex" alignItems="center" justifyContent="center">
-                  {album.cover_path ? (
-                    <Box as="img" src={resolveCover(album.cover_path)} w="100%" h="100%" objectFit="cover" />
-                  ) : (
-                    <Disc3 size={32} color="var(--muted-text)" />
-                  )}
+                <Box w="44px" h="44px" bg="var(--surface-muted)" borderRadius="md" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <Disc3 size={20} color="var(--muted-text)" />
                 </Box>
-                <Box p={2}>
-                  <Text fontSize="xs" fontWeight="semibold" lineClamp={1}>{album.name}</Text>
-                  <Text fontSize="2xs" color="var(--muted-text)" lineClamp={1}>{album.artist}</Text>
-                  <Text fontSize="2xs" color="var(--muted-text)">{album.track_count} tracks{album.year ? ` · ${album.year}` : ''}</Text>
+                <Box flex={1} minW={0}>
+                  <Text fontSize="sm" fontWeight="semibold" lineClamp={1}>{album.title}</Text>
+                  <Text fontSize="xs" color="var(--muted-text)" lineClamp={1}>{album.artist}</Text>
+                  <HStack gap={1} mt={0.5}>
+                    <Badge fontSize="2xs" colorPalette="gray" variant="subtle">{album.type}</Badge>
+                    {album.year && (
+                      <Text fontSize="2xs" color="var(--muted-text)">{album.year}</Text>
+                    )}
+                  </HStack>
                 </Box>
-              </Box>
+                {album.mbid && (
+                  <Box
+                    as="a"
+                    href={`https://musicbrainz.org/release-group/${album.mbid}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    flexShrink={0}
+                    color="var(--muted-text)"
+                    _hover={{ color: 'var(--icon-color)' }}
+                    title="View on MusicBrainz"
+                  >
+                    <ExternalLink size={14} />
+                  </Box>
+                )}
+              </HStack>
             ))}
           </Grid>
         </Box>

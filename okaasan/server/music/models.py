@@ -32,6 +32,8 @@ class MusicTrack(Base):
     year = Column(Integer, nullable=True)
     musicbrainz_id = Column(String(36), nullable=True)
     cover_path = Column(String(500), nullable=True)
+    play_count = Column(Integer, default=0, nullable=False, server_default="0")
+    last_played_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
@@ -55,6 +57,8 @@ class MusicTrack(Base):
             "year": self.year,
             "musicbrainz_id": self.musicbrainz_id,
             "cover_path": self.cover_path,
+            "play_count": self.play_count or 0,
+            "last_played_at": self.last_played_at.isoformat() + "Z" if self.last_played_at else None,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 

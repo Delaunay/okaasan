@@ -76,6 +76,8 @@ import AudiobooksSettings from './components/settings/AudiobooksSettings';
 import MusicOverview from './components/music/MusicOverview';
 import MusicDiscover from './components/music/MusicDiscover';
 import MusicLibrary from './components/music/MusicLibrary';
+import MusicPlaylists from './components/music/MusicPlaylists';
+import MusicStats from './components/music/MusicStats';
 import MusicSchedule from './components/music/MusicSchedule';
 import MusicDetail from './components/music/MusicDetail';
 import { MusicPlayerProvider } from './components/music/MusicPlayerContext';
@@ -274,6 +276,8 @@ function App() {
                 {/* Music */}
                 <Route path="/music-discover" element={<MusicDiscover />} />
                 <Route path="/music-library" element={<MusicLibrary />} />
+                <Route path="/music-playlists" element={<MusicPlaylists />} />
+                <Route path="/music-stats" element={<MusicStats />} />
                 <Route path="/music-schedule" element={<MusicSchedule />} />
                 <Route path="/music-detail/:albumId" element={<MusicDetail />} />
                 <Route path="/settings/music" element={isStaticMode() ? <Navigate to="/settings" replace /> : <MusicSettings />} />

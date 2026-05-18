@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Box, HStack, VStack, Text, Button, Flex } from '@chakra-ui/react';
 import { X, Play, Pause, SkipForward, ToggleLeft, ToggleRight } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
 
 export interface EpisodeFile {
   id: number;
@@ -47,7 +46,7 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
     const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${apiBase}/shows/library/stream/stop`, false);
-    try { xhr.send(); } catch (_) { /* ignore network errors */ }
+    try { xhr.send(); } catch (e) { /* ignore network errors */ }
   }, []);
 
   const currentFile = files[currentIndex] || null;

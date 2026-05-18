@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Button, Input } from '@chakra-ui/react';
-import { Film, Tv, Search, Trash2 } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Button, Input, Badge } from '@chakra-ui/react';
+import { Film, Tv, Search, Trash2, Heart, Layers } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../../services/api';
 import MediaCard from './MediaCard';
 import TMDBAttribution from './TMDBAttribution';
@@ -32,6 +32,8 @@ const ShowsHistory: React.FC = () => {
   const [page, setPage] = useState(() => parseInt(initialParams.current.get('page') || '1', 10));
   const [filter, setFilter] = useState<string | null>(initialParams.current.get('type') || null);
   const [searchQuery, setSearchQuery] = useState(initialParams.current.get('q') || '');
+  const [groupByShow, setGroupByShow] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -73,6 +75,13 @@ const ShowsHistory: React.FC = () => {
     }
   }, []);
 
+  // Load favorites
+  useEffect(() => {
+    recipeAPI.request<{ ids: number[] }>('/shows/favorites/ids')
+      .then(res => setFavoriteIds(new Set(res.ids)))
+      .catch(() => {});
+  }, []);
+
   // Initial load and reset on filter/search change
   useEffect(() => {
     setPage(1);
@@ -105,6 +114,38 @@ const ShowsHistory: React.FC = () => {
     }
   };
 
+  const toggleFavorite = useCallback(async (mediaId: number) => {
+    try {
+      const res = await recipeAPI.request<{ favorited: boolean }>('/shows/favorites/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_id: mediaId }),
+      });
+      setFavoriteIds(prev => {
+        const next = new Set(prev);
+        if (res.favorited) next.add(mediaId);
+        else next.delete(mediaId);
+        return next;
+      });
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const displayItems = useMemo(() => {
+    if (!groupByShow) return items;
+    const grouped = new Map<string, any>();
+    for (const item of items) {
+      const key = item.media_id ? String(item.media_id) : `${item.watch_history_id}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...item, episode_count: 1, episodes_list: [item] });
+      } else {
+        const g = grouped.get(key)!;
+        g.episode_count += 1;
+        g.episodes_list.push(item);
+      }
+    }
+    return Array.from(grouped.values());
+  }, [items, groupByShow]);
+
   // Infinite scroll
   useEffect(() => {
     if (observerRef.current) observerRef.current.disconnect();
@@ -128,13 +169,23 @@ const ShowsHistory: React.FC = () => {
 
   return (
     <VStack gap={6} align="stretch" p={4}>
-      <HStack justify="space-between">
+      <HStack justify="space-between" flexWrap="wrap" gap={2}>
         <Heading size="lg" color="var(--heading-color)">Watch History</Heading>
-        <HStack gap={2}>
+        <HStack gap={2} flexWrap="wrap">
           <TMDBAttribution />
           <FilterButton label="All" active={!filter} onClick={() => setFilter(null)} />
           <FilterButton label="Shows" icon={<Tv size={14} />} active={filter === 'show'} onClick={() => setFilter('show')} />
           <FilterButton label="Movies" icon={<Film size={14} />} active={filter === 'movie'} onClick={() => setFilter('movie')} />
+          <Button
+            size="sm"
+            variant={groupByShow ? 'solid' : 'outline'}
+            colorPalette={groupByShow ? 'purple' : undefined}
+            onClick={() => setGroupByShow(!groupByShow)}
+            title="Group episodes by show"
+          >
+            <Layers size={14} />
+            <Text ml={1}>Group</Text>
+          </Button>
         </HStack>
       </HStack>
 
@@ -158,17 +209,20 @@ const ShowsHistory: React.FC = () => {
         <Flex justify="center" py={10}>
           <Spinner size="lg" />
         </Flex>
-      ) : items.length > 0 ? (
+      ) : displayItems.length > 0 ? (
         <>
           <Text fontSize="sm" color="var(--muted-text)">
-            {total.toLocaleString()} items total
+            {total.toLocaleString()} items total{groupByShow ? ` (${displayItems.length} grouped)` : ''}
           </Text>
           <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
-            {items.map((item, idx) => (
+            {displayItems.map((item, idx) => (
               <HistoryItem
                 key={`${item.watch_history_id || item.id || idx}-${idx}`}
                 item={item}
-                onDelete={item.watch_history_id ? () => handleDelete(item.watch_history_id) : undefined}
+                grouped={groupByShow}
+                isFavorite={item.media_id ? favoriteIds.has(item.media_id) : false}
+                onToggleFavorite={item.media_id ? () => toggleFavorite(item.media_id) : undefined}
+                onDelete={item.watch_history_id && !groupByShow ? () => handleDelete(item.watch_history_id) : undefined}
               />
             ))}
           </Grid>
@@ -191,36 +245,87 @@ const ShowsHistory: React.FC = () => {
   );
 };
 
-const HistoryItem: React.FC<{ item: any; onDelete?: () => void }> = ({ item, onDelete }) => {
+const HistoryItem: React.FC<{
+  item: any;
+  grouped?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
+  onDelete?: () => void;
+}> = ({ item, grouped, isFavorite, onToggleFavorite, onDelete }) => {
   return (
     <Box>
       <Box position="relative" overflow="hidden" borderRadius="lg">
+        {/* Favorite heart — top left, always visible */}
+        {onToggleFavorite && !isStaticMode() && (
+          <Button
+            position="absolute"
+            top={1}
+            left={1}
+            zIndex={3}
+            size="xs"
+            variant="ghost"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg={isFavorite ? 'rgba(239,68,68,0.8)' : 'rgba(0,0,0,0.5)'}
+            color="white"
+            _hover={{ bg: isFavorite ? 'red.600' : 'red.500' }}
+            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
+          >
+            <Heart size={14} fill={isFavorite ? 'white' : 'none'} />
+          </Button>
+        )}
+        {/* Delete — bottom right (only in non-grouped mode) */}
         {onDelete && !isStaticMode() && (
-          <Box position="absolute" bottom={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={(e) => { e.preventDefault(); onDelete(); }}
-              title="Remove from history"
-              p={1}
-              minW="auto"
-              h="auto"
-              borderRadius="full"
-              bg="rgba(0,0,0,0.5)"
-              color="white"
-              _hover={{ bg: 'rgba(200,0,0,0.7)' }}
-            >
-              <Trash2 size={14} />
-            </Button>
-          </Box>
+          <Button
+            position="absolute"
+            bottom={1}
+            right={1}
+            zIndex={2}
+            size="xs"
+            variant="ghost"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+            title="Remove from history"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(200,0,0,0.7)' }}
+          >
+            <Trash2 size={14} />
+          </Button>
+        )}
+        {/* Episode count badge when grouped */}
+        {grouped && item.episode_count > 1 && (
+          <Badge
+            position="absolute"
+            top={1}
+            right={1}
+            zIndex={2}
+            colorPalette="blue"
+            fontSize="2xs"
+            bg="rgba(0,0,0,0.7)"
+            color="white"
+          >
+            {item.episode_count} eps watched
+          </Badge>
         )}
         <MediaCard item={item} />
       </Box>
-      {item.season != null && item.episode != null && (
+      {/* Episode info below card */}
+      {grouped && item.episode_count > 1 ? (
+        <Text fontSize="xs" color="var(--muted-text)" mt={1} px={1} lineClamp={1}>
+          Last: S{item.season}E{item.episode}
+        </Text>
+      ) : item.season != null && item.episode != null ? (
         <Text fontSize="xs" color="var(--muted-text)" mt={1} px={1}>
           S{item.season}E{item.episode}
         </Text>
-      )}
+      ) : null}
     </Box>
   );
 };

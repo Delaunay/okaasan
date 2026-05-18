@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { Film, Tv, Clock } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import MediaCard from './MediaCard';
 import TMDBAttribution from './TMDBAttribution';
 
 interface OverviewData {
-  recently_watched: any[];
+  recently_added: any[];
   watchlist_next: any[];
   stats_summary: {
     total_shows?: number;
@@ -61,25 +61,31 @@ const ShowsOverview: React.FC = () => {
         <StatCard icon={<Clock size={18} />} label="Watch Events" value={totalHistory} />
       </Grid>
 
-      {/* Recently Watched */}
-      <Box>
-        <HStack mb={4} justify="space-between">
-          <Heading size="md" color="var(--heading-color)">Recently Watched</Heading>
-          <Text
-            fontSize="sm"
-            color="var(--icon-color)"
-            cursor="pointer"
-            onClick={() => navigate('/shows-history')}
-          >
-            View All
-          </Text>
-        </HStack>
-        <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
-          {data.recently_watched.map((item, idx) => (
-            <MediaCard key={idx} item={item} />
-          ))}
-        </Grid>
-      </Box>
+      {/* Recently Added (Unwatched) */}
+      {data.recently_added.length > 0 && (
+        <Box>
+          <HStack mb={4} justify="space-between">
+            <Heading size="md" color="var(--heading-color)">Recently Added</Heading>
+            <Text
+              fontSize="sm"
+              color="var(--icon-color)"
+              cursor="pointer"
+              onClick={() => navigate('/shows-library')}
+            >
+              View All
+            </Text>
+          </HStack>
+          <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
+            {data.recently_added.map((item) => (
+              <MediaCard key={item.id || item.media_id} item={{
+                ...item,
+                title: item.db_title || item.title,
+                poster_path: resolveMediaUrl(item.poster_path) || undefined,
+              }} />
+            ))}
+          </Grid>
+        </Box>
+      )}
 
       {/* Watchlist */}
       <Box>

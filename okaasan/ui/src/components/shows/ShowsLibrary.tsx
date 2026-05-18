@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Input, Button } from '@chakra-ui/react';
-import { HardDrive, Film, Tv, Play } from 'lucide-react';
+import { HardDrive, Film, Tv, Play, Heart, CheckCircle } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import VideoPlayerModal from './VideoPlayerModal';
 
@@ -37,6 +37,7 @@ interface GroupedMedia {
 interface AllFilesResponse {
   files: LibraryFile[];
   watched: Record<number, [number, number][]>;
+  watched_movies: number[];
 }
 
 type MatchFilter = 'all' | 'matched' | 'unmatched';
@@ -65,6 +66,8 @@ const ShowsLibrary: React.FC = () => {
     title: string;
     files: LibraryFile[];
   } | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  const [watchedMovieIds, setWatchedMovieIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 300);
@@ -74,13 +77,18 @@ const ShowsLibrary: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await recipeAPI.request<AllFilesResponse>('/shows/library/all-files');
+      const [data, favData] = await Promise.all([
+        recipeAPI.request<AllFilesResponse>('/shows/library/all-files'),
+        recipeAPI.request<{ ids: number[] }>('/shows/favorites/ids'),
+      ]);
       setAllFiles(data.files);
       const wm: Record<number, Set<string>> = {};
       for (const [mid, eps] of Object.entries(data.watched)) {
         wm[Number(mid)] = new Set(eps.map(([s, e]) => `${s}-${e}`));
       }
       setWatchedMap(wm);
+      setWatchedMovieIds(new Set(data.watched_movies || []));
+      setFavoriteIds(new Set(favData.ids));
     } catch (e) {
       console.error(e);
     } finally {
@@ -157,6 +165,64 @@ const ShowsLibrary: React.FC = () => {
     setPlayer({ title, files: groupFiles });
   }, []);
 
+  const toggleFavorite = useCallback(async (mediaId: number) => {
+    try {
+      const res = await recipeAPI.request<{ favorited: boolean }>('/shows/favorites/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_id: mediaId }),
+      });
+      setFavoriteIds(prev => {
+        const next = new Set(prev);
+        if (res.favorited) next.add(mediaId);
+        else next.delete(mediaId);
+        return next;
+      });
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const markWatched = useCallback(async (group: GroupedMedia) => {
+    const mediaId = group.media_id;
+    if (!mediaId) return;
+
+    const isShow = group.media_type !== 'movie';
+    if (isShow) {
+      // Find next unwatched episode
+      const watched = watchedMap[mediaId] || new Set<string>();
+      const next = group.files.find(f =>
+        f.season != null && f.episode != null && !watched.has(`${f.season}-${f.episode}`)
+      );
+      if (!next || next.season == null || next.episode == null) return;
+
+      // Optimistic update
+      setWatchedMap(prev => {
+        const updated = { ...prev };
+        const set = new Set(updated[mediaId] || []);
+        set.add(`${next.season}-${next.episode}`);
+        updated[mediaId] = set;
+        return updated;
+      });
+
+      try {
+        await recipeAPI.request('/shows/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ media_id: mediaId, season: next.season, episode: next.episode }),
+        });
+      } catch (e) { console.error(e); }
+    } else {
+      // Movie: mark as watched
+      setWatchedMovieIds(prev => new Set([...prev, mediaId]));
+      try {
+        await recipeAPI.request('/shows/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ media_id: mediaId }),
+        });
+      } catch (e) { console.error(e); }
+    }
+  }, [watchedMap]);
+
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
@@ -216,7 +282,10 @@ const ShowsLibrary: React.FC = () => {
                 key={g.key}
                 group={g}
                 watchedSet={g.media_id ? watchedMap[g.media_id] : undefined}
+                isFavorite={g.media_id ? favoriteIds.has(g.media_id) : false}
                 onPlay={() => openPlayer(g.files, g.title)}
+                onToggleFavorite={() => g.media_id && toggleFavorite(g.media_id)}
+                onMarkWatched={() => markWatched(g)}
                 getNextUnwatched={() => getNextUnwatched(g)}
               />
             ))}
@@ -239,7 +308,11 @@ const ShowsLibrary: React.FC = () => {
               <LibraryCard
                 key={g.key}
                 group={g}
+                isMovieWatched={g.media_id ? watchedMovieIds.has(g.media_id) : false}
+                isFavorite={g.media_id ? favoriteIds.has(g.media_id) : false}
                 onPlay={() => openPlayer(g.files, g.title)}
+                onToggleFavorite={() => g.media_id && toggleFavorite(g.media_id)}
+                onMarkWatched={() => markWatched(g)}
                 getNextUnwatched={() => g.files[0]}
               />
             ))}
@@ -287,9 +360,14 @@ const FilterChip: React.FC<{ label: string; count: number; active: boolean; onCl
 const LibraryCard: React.FC<{
   group: GroupedMedia;
   watchedSet?: Set<string>;
+  isMovieWatched?: boolean;
+  isFavorite: boolean;
   onPlay: () => void;
+  onToggleFavorite: () => void;
+  onMarkWatched: () => void;
   getNextUnwatched: () => LibraryFile;
-}> = ({ group, watchedSet, onPlay, getNextUnwatched }) => {
+}> = ({ group, watchedSet, isMovieWatched, isFavorite, onPlay, onToggleFavorite, onMarkWatched, getNextUnwatched }) => {
+  const [hovered, setHovered] = useState(false);
   const episodeCount = group.files.length;
   const totalSize = group.files.reduce((sum, f) => sum + (f.file_size || 0), 0);
   const poster = resolvePoster(group.poster_path);
@@ -298,23 +376,20 @@ const LibraryCard: React.FC<{
   const watchedCount = isShow && watchedSet
     ? group.files.filter(f => f.season != null && f.episode != null && watchedSet.has(`${f.season}-${f.episode}`)).length
     : 0;
+  const fullyWatched = isShow
+    ? watchedCount > 0 && watchedCount >= episodeCount
+    : !!isMovieWatched;
 
   const detailHref = group.tmdb_id
     ? `/shows-detail/${group.media_type === 'movie' ? 'movie' : 'tv'}/${group.tmdb_id}`
     : undefined;
 
-  const handlePlay = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onPlay();
-  };
-
-  const nextFile = isShow ? getNextUnwatched() : null;
+  const nextFile = isShow && !fullyWatched ? getNextUnwatched() : null;
   const nextLabel = nextFile && nextFile.season != null && nextFile.episode != null
     ? `S${String(nextFile.season).padStart(2, '0')}E${String(nextFile.episode).padStart(2, '0')}`
     : null;
 
-  const card = (
+  return (
     <Box
       borderRadius="lg"
       overflow="hidden"
@@ -324,28 +399,90 @@ const LibraryCard: React.FC<{
       transition="transform 0.2s, box-shadow 0.2s"
       _hover={{ transform: 'translateY(-2px)', boxShadow: 'md' }}
       position="relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {/* Play button — top right */}
-      <Button
-        position="absolute"
-        top={1}
-        right={1}
-        zIndex={10}
-        size="xs"
-        variant="ghost"
-        p={1}
-        minW="auto"
-        h="auto"
-        borderRadius="full"
-        bg="rgba(0,0,0,0.6)"
-        color="white"
-        _hover={{ bg: 'blue.500' }}
-        title={nextLabel ? `Play ${nextLabel}` : 'Play'}
-        onClick={handlePlay}
-        style={{ pointerEvents: 'auto' }}
-      >
-        <Play size={14} />
-      </Button>
+      {/* Heart/Favorite — top left */}
+      {group.matched && (
+        <Button
+          position="absolute"
+          top={1}
+          left={1}
+          zIndex={10}
+          size="xs"
+          variant="ghost"
+          p={1}
+          minW="auto"
+          h="auto"
+          borderRadius="full"
+          bg={isFavorite ? 'rgba(239,68,68,0.8)' : 'rgba(0,0,0,0.6)'}
+          color="white"
+          _hover={{ bg: isFavorite ? 'red.600' : 'red.500' }}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
+          opacity={isFavorite || hovered ? 1 : 0}
+          transition="opacity 0.2s"
+          style={{ pointerEvents: 'auto' }}
+        >
+          <Heart size={14} fill={isFavorite ? 'white' : 'none'} />
+        </Button>
+      )}
+
+      {/* Watched — top right */}
+      {group.matched && (
+        <Button
+          position="absolute"
+          top={1}
+          right={1}
+          zIndex={10}
+          size="xs"
+          variant="ghost"
+          p={1}
+          minW="auto"
+          h="auto"
+          borderRadius="full"
+          bg={fullyWatched ? 'rgba(34,197,94,0.85)' : 'rgba(0,0,0,0.6)'}
+          color="white"
+          _hover={{ bg: fullyWatched ? 'green.600' : 'green.500' }}
+          title={fullyWatched ? 'Fully watched' : 'Mark as watched'}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMarkWatched(); }}
+          opacity={fullyWatched || hovered ? 1 : 0}
+          transition="opacity 0.2s"
+          style={{ pointerEvents: 'auto' }}
+        >
+          <CheckCircle size={14} />
+        </Button>
+      )}
+
+      {/* Play button — center, visible on hover */}
+      {hovered && (
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          h="220px"
+          zIndex={5}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          bg="rgba(0,0,0,0.3)"
+          style={{ pointerEvents: 'none' }}
+        >
+          <Box
+            bg="blue.500"
+            borderRadius="full"
+            p={3}
+            cursor="pointer"
+            _hover={{ bg: 'blue.400' }}
+            transition="background 0.2s"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPlay(); }}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <Play size={28} color="white" fill="white" />
+          </Box>
+        </Box>
+      )}
 
       {/* Unmatched badge — top left */}
       {!group.matched && (
@@ -377,7 +514,9 @@ const LibraryCard: React.FC<{
           <HStack gap={2} mt={1} flexWrap="wrap">
             {group.year && <Text fontSize="xs" color="var(--muted-text)">{group.year}</Text>}
             {isShow && (
-              <Badge colorPalette="gray" fontSize="2xs">{watchedCount}/{episodeCount} eps</Badge>
+              <Badge colorPalette={fullyWatched ? 'green' : 'gray'} fontSize="2xs">
+                {fullyWatched ? `✓ ${episodeCount} eps` : `${watchedCount}/${episodeCount} eps`}
+              </Badge>
             )}
             <Text fontSize="xs" color="var(--muted-text)">{formatSize(totalSize)}</Text>
           </HStack>
@@ -388,8 +527,6 @@ const LibraryCard: React.FC<{
       </Box>
     </Box>
   );
-
-  return card;
 };
 
 export default ShowsLibrary;

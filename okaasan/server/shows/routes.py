@@ -71,26 +71,84 @@ def _get_tmdb_client_for_import(static_folder: str) -> TMDBClient:
 @router.get("/overview")
 @expose()
 def get_overview(request: Request, db: Session = Depends(_get_db)):
-    """Overview: recently watched, watchlist next, summary stats."""
-    recently_watched = (
-        db.query(WatchHistory)
-        .join(Media)
-        .order_by(desc(WatchHistory.watched_at))
-        .limit(12)
-        .all()
-    )
+    """Overview: recently added unwatched library files, watchlist next, summary stats."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
 
+    # Recently added unwatched files from the library
+    PrivateSession = sessionmaker(bind=request.app.state.private_engine)
+    pdb = PrivateSession()
+    try:
+        recent_files = (
+            pdb.query(MediaFile)
+            .filter(MediaFile.matched == True)
+            .order_by(MediaFile.last_scanned.desc().nulls_last(), MediaFile.id.desc())
+            .limit(60)
+            .all()
+        )
+        recent_raw = [f.to_json() for f in recent_files]
+    finally:
+        pdb.close()
+
+    # Get watched episodes to filter them out
+    media_ids = {f["media_id"] for f in recent_raw if f["media_id"]}
+    watched_eps: dict[int, set[tuple[int, int]]] = {}
+    media_map: dict[int, Media] = {}
+    if media_ids:
+        for wh in (
+            db.query(WatchHistory.media_id, WatchHistory.season, WatchHistory.episode)
+            .filter(
+                WatchHistory.media_id.in_(media_ids),
+                WatchHistory.season.isnot(None),
+                WatchHistory.episode.isnot(None),
+            )
+            .all()
+        ):
+            watched_eps.setdefault(wh[0], set()).add((wh[1], wh[2]))
+
+        # Also get watched movies (no season/episode)
+        watched_movie_ids = set(
+            mid for (mid,) in db.query(WatchHistory.media_id)
+            .filter(
+                WatchHistory.media_id.in_(media_ids),
+                WatchHistory.season.is_(None),
+            )
+            .distinct()
+            .all()
+        )
+
+        media_rows = db.query(Media).filter(Media.id.in_(media_ids)).all()
+        media_map = {m.id: m for m in media_rows}
+    else:
+        watched_movie_ids = set()
+
+    # Filter: keep only unwatched files
+    recently_added = []
     seen_media: set[int] = set()
-    unique_recent = []
-    for wh in recently_watched:
-        if wh.media_id not in seen_media:
-            seen_media.add(wh.media_id)
-            unique_recent.append({
-                **wh.media.to_json(),
-                "watched_at": wh.watched_at.isoformat() + "Z" if wh.watched_at else None,
-                "season": wh.season,
-                "episode": wh.episode,
-            })
+    for f in recent_raw:
+        mid = f.get("media_id")
+        if not mid:
+            continue
+        # Skip watched movies
+        if f.get("media_type") == "movie" and mid in watched_movie_ids:
+            continue
+        # Skip watched episodes
+        s, e = f.get("season"), f.get("episode")
+        if s is not None and e is not None and (s, e) in watched_eps.get(mid, set()):
+            continue
+        # Deduplicate by media_id for shows (show one entry per show)
+        if f.get("media_type") != "movie" and mid in seen_media:
+            continue
+        seen_media.add(mid)
+        # Enrich with poster
+        m = media_map.get(mid)
+        if m:
+            f["poster_path"] = m.poster_path
+            f["year"] = m.year
+            f["db_title"] = m.title
+        recently_added.append(f)
+        if len(recently_added) >= 12:
+            break
 
     watchlist_next = (
         db.query(WatchlistItem)
@@ -105,7 +163,7 @@ def get_overview(request: Request, db: Session = Depends(_get_db)):
     total_history = db.query(WatchHistory).count()
 
     return {
-        "recently_watched": unique_recent,
+        "recently_added": recently_added,
         "watchlist_next": [
             {**w.media.to_json(), "listed_at": w.listed_at.isoformat() + "Z" if w.listed_at else None}
             for w in watchlist_next
@@ -292,6 +350,46 @@ def get_favorites(request: Request, db: Session = Depends(_get_db)):
         {**ci.media.to_json(), "type": ci.media.media_type}
         for ci in items
     ]
+
+
+@router.post("/favorites/toggle")
+async def toggle_favorite(request: Request, db: Session = Depends(_get_db)):
+    """Toggle a media item in/out of favorites. Body: {media_id: int}."""
+    body = await request.json()
+    media_id = body.get("media_id")
+    if not media_id:
+        raise HTTPException(status_code=400, detail="media_id required")
+
+    media = db.query(Media).filter_by(id=media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    coll = db.query(Collection).filter_by(collection_type="favorites").first()
+    if not coll:
+        coll = Collection(name="Favorites", collection_type="favorites")
+        db.add(coll)
+        db.flush()
+
+    existing = db.query(CollectionItem).filter_by(collection_id=coll.id, media_id=media_id).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"favorited": False, "media_id": media_id}
+    else:
+        item = CollectionItem(collection_id=coll.id, media_id=media_id)
+        db.add(item)
+        db.commit()
+        return {"favorited": True, "media_id": media_id}
+
+
+@router.get("/favorites/ids")
+def get_favorite_ids(request: Request, db: Session = Depends(_get_db)):
+    """Return the set of media_ids that are favorited."""
+    coll = db.query(Collection).filter_by(collection_type="favorites").first()
+    if not coll:
+        return {"ids": []}
+    ids = [ci.media_id for ci in db.query(CollectionItem.media_id).filter_by(collection_id=coll.id).all()]
+    return {"ids": ids}
 
 
 # ── Trakt Collection (owned media) ──────────────────────────────────
@@ -1456,7 +1554,18 @@ def library_all_files(request: Request, db: Session = Depends(_get_db)):
     for mid, eps in watched_eps.items():
         watched_summary[mid] = [[s, e] for s, e in sorted(eps)]
 
-    return {"files": raw, "watched": watched_summary}
+    # Find watched movies (watch history without season/episode)
+    movie_media_ids = {f["media_id"] for f in raw if f["media_id"] and f["media_type"] == "movie"}
+    watched_movie_ids: list[int] = []
+    if movie_media_ids:
+        watched_movie_ids = [
+            mid for (mid,) in db.query(WatchHistory.media_id)
+            .filter(WatchHistory.media_id.in_(movie_media_ids))
+            .distinct()
+            .all()
+        ]
+
+    return {"files": raw, "watched": watched_summary, "watched_movies": watched_movie_ids}
 
 
 @router.get("/library/files/{media_id}")

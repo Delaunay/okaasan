@@ -140,6 +140,7 @@ const getStaticSidebarSections = () => [
       { name: 'Watchlist', href: '/shows-watchlist' },
       { name: 'Stats', href: '/shows-stats' },
       { name: 'Collections', href: '/shows-collections' },
+      { name: 'Library', href: '/shows-library' },
     ]
   },
   {

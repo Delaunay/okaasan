@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
@@ -1301,3 +1302,214 @@ def _resolve_media(db: Session, data: dict) -> Media:
     db.add(media)
     db.flush()
     return media
+
+
+# ── Library (media files on disk) ─────────────────────────────────
+
+_library_scanner = None
+
+
+def _get_private_db(request: Request):
+    from sqlalchemy.orm import sessionmaker
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@router.get("/library/status")
+def library_status(request: Request):
+    """Get library scan status and stats."""
+    from .library import load_config
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    config = load_config(request.app.state.static_folder)
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        total = db.query(MediaFile).count()
+        matched = db.query(MediaFile).filter_by(matched=True).count()
+    finally:
+        db.close()
+
+    global _library_scanner
+    last_scan = _library_scanner.last_scan.isoformat() + "Z" if _library_scanner and _library_scanner.last_scan else None
+
+    return {
+        "configured": bool(any(config.get("folders", {}).values())),
+        "folders": config.get("folders", {}),
+        "total_files": total,
+        "matched_files": matched,
+        "unmatched_files": total - matched,
+        "last_scan": last_scan,
+        "scan_interval_minutes": config.get("scan_interval_minutes", 60),
+    }
+
+
+@router.post("/library/configure")
+async def library_configure(request: Request):
+    """Save library folder configuration."""
+    from .library import save_config, load_config
+    data = await request.json()
+
+    config = load_config(request.app.state.static_folder)
+    if "folders" in data:
+        config["folders"] = data["folders"]
+    if "scan_interval_minutes" in data:
+        config["scan_interval_minutes"] = data["scan_interval_minutes"]
+    if "video_extensions" in data:
+        config["video_extensions"] = data["video_extensions"]
+
+    save_config(request.app.state.static_folder, config)
+    return {"message": "Configuration saved", "config": config}
+
+
+@router.post("/library/scan")
+async def library_scan(request: Request):
+    """Trigger a manual library scan."""
+    from .library import scan_folders
+    from sqlalchemy import create_engine
+
+    static_folder = request.app.state.static_folder
+    private_engine = request.app.state.private_engine
+
+    db_path = os.path.join(static_folder, "database.db")
+    main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+
+    result = scan_folders(static_folder, private_engine, main_engine)
+
+    global _library_scanner
+    if _library_scanner:
+        from datetime import datetime, timezone
+        _library_scanner.last_scan = datetime.now(timezone.utc)
+        _library_scanner.last_result = result
+
+    return {"message": "Scan complete", **result}
+
+
+@router.get("/library/all-files")
+def library_all_files(request: Request, db: Session = Depends(_get_db)):
+    """Get all library files, enriched with poster and watch-progress info for matched items."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    PrivateSession = sessionmaker(bind=request.app.state.private_engine)
+    pdb = PrivateSession()
+    try:
+        files = pdb.query(MediaFile).order_by(
+            MediaFile.title, MediaFile.season, MediaFile.episode
+        ).all()
+        raw = [f.to_json() for f in files]
+    finally:
+        pdb.close()
+
+    # Gather media_ids that are matched to enrich with poster + watch data
+    media_ids = {f["media_id"] for f in raw if f["media_id"]}
+    if media_ids:
+        media_rows = db.query(Media).filter(Media.id.in_(media_ids)).all()
+        media_map = {m.id: m for m in media_rows}
+
+        watched_eps: dict[int, set[tuple[int, int]]] = {}
+        for wh in (
+            db.query(WatchHistory.media_id, WatchHistory.season, WatchHistory.episode)
+            .filter(
+                WatchHistory.media_id.in_(media_ids),
+                WatchHistory.season.isnot(None),
+                WatchHistory.episode.isnot(None),
+            )
+            .all()
+        ):
+            watched_eps.setdefault(wh[0], set()).add((wh[1], wh[2]))
+    else:
+        media_map = {}
+        watched_eps = {}
+
+    # Build enrichment lookup keyed by media_id
+    enrichment: dict[int, dict] = {}
+    for mid, m in media_map.items():
+        enrichment[mid] = {
+            "poster_path": m.poster_path,
+            "year": m.year,
+            "db_title": m.title,
+        }
+
+    # Attach enrichment to each file
+    for f in raw:
+        mid = f.get("media_id")
+        if mid and mid in enrichment:
+            f["poster_path"] = enrichment[mid].get("poster_path")
+            f["year"] = enrichment[mid].get("year")
+            f["db_title"] = enrichment[mid].get("db_title")
+        else:
+            f["poster_path"] = None
+            f["year"] = None
+            f["db_title"] = None
+
+    # Build per-media watched sets summary for the frontend
+    watched_summary: dict[int, list[list[int]]] = {}
+    for mid, eps in watched_eps.items():
+        watched_summary[mid] = [[s, e] for s, e in sorted(eps)]
+
+    return {"files": raw, "watched": watched_summary}
+
+
+@router.get("/library/files/{media_id}")
+def library_files_for_media(request: Request, media_id: int):
+    """Get all library files for a given media entry."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        files = db.query(MediaFile).filter_by(media_id=media_id).order_by(
+            MediaFile.season, MediaFile.episode
+        ).all()
+        return [f.to_json() for f in files]
+    finally:
+        db.close()
+
+
+@router.get("/library/files-by-tmdb/{tmdb_id}")
+def library_files_by_tmdb(request: Request, tmdb_id: int):
+    """Get all library files for a given TMDB ID."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        files = db.query(MediaFile).filter_by(tmdb_id=tmdb_id).order_by(
+            MediaFile.season, MediaFile.episode
+        ).all()
+        return [f.to_json() for f in files]
+    finally:
+        db.close()
+
+
+@router.get("/library/stream/{file_id}")
+async def library_stream(request: Request, file_id: int):
+    """Stream a video file (transcoded)."""
+    from .library_models import MediaFile
+    from .streamer import get_streamer
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        mf = db.query(MediaFile).filter_by(id=file_id).first()
+        if not mf:
+            raise HTTPException(status_code=404, detail="File not found")
+        file_path = mf.file_path
+    finally:
+        db.close()
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File no longer exists on disk")
+
+    range_header = request.headers.get("range")
+    streamer = get_streamer(file_path)
+    return streamer.stream(file_path, range_header)

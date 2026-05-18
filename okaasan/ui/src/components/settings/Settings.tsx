@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
-    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
 import { TelegramSettings } from '../common/TelegramSettings';
@@ -92,6 +92,14 @@ const Settings: React.FC = () => {
                 icon: <Film size={20} />,
                 badge: 'Integration',
                 onOpen: () => navigate('/settings/tmdb'),
+            },
+            {
+                id: 'library',
+                title: 'Media Library',
+                description: 'Configure local media folders for shows, movies, and anime to enable playback',
+                icon: <HardDrive size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/library'),
             },
             {
                 id: 'trakt',

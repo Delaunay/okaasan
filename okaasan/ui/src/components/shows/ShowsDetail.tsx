@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Text, Image, HStack, VStack, Badge, Spinner, Button } from '@chakra-ui/react';
-import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle, Play } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
+import VideoPlayerModal from './VideoPlayerModal';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
@@ -16,12 +17,29 @@ interface DetailData {
   backdrop_local?: string;
 }
 
+interface LibraryFile {
+  id: number;
+  season: number | null;
+  episode: number | null;
+  title: string | null;
+  container: string | null;
+}
+
+interface PlayerState {
+  fileId: number;
+  title: string;
+  episodeLabel?: string;
+  fileIndex: number;
+}
+
 const ShowsDetail: React.FC = () => {
   const { mediaType, tmdbId } = useParams<{ mediaType: string; tmdbId: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<DetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([]);
+  const [player, setPlayer] = useState<PlayerState | null>(null);
 
   useEffect(() => {
     if (!mediaType || !tmdbId) return;
@@ -31,7 +49,27 @@ const ShowsDetail: React.FC = () => {
       .then(setData)
       .catch((e) => setError(e.message || 'Failed to load details'))
       .finally(() => setLoading(false));
+    // Fetch library files
+    recipeAPI.request<LibraryFile[]>(`/shows/library/files-by-tmdb/${tmdbId}`)
+      .then(setLibraryFiles)
+      .catch(() => setLibraryFiles([]));
   }, [mediaType, tmdbId]);
+
+  const playFile = useCallback((file: LibraryFile, index: number, showTitle: string) => {
+    const epLabel = file.season != null && file.episode != null
+      ? `S${String(file.season).padStart(2, '0')}E${String(file.episode).padStart(2, '0')}`
+      : undefined;
+    setPlayer({ fileId: file.id, title: showTitle, episodeLabel: epLabel, fileIndex: index });
+  }, []);
+
+  const playNext = useCallback(() => {
+    if (!player) return;
+    const nextIdx = player.fileIndex + 1;
+    if (nextIdx < libraryFiles.length) {
+      const next = libraryFiles[nextIdx];
+      playFile(next, nextIdx, player.title);
+    }
+  }, [player, libraryFiles, playFile]);
 
   if (loading) {
     return (
@@ -76,8 +114,22 @@ const ShowsDetail: React.FC = () => {
   const plays = trakt?.plays;
   const lastWatched = trakt?.last_watched_at;
 
+  const movieFile = data.media_type === 'movie' ? libraryFiles[0] : null;
+
   return (
     <Box>
+      {/* Video Player Modal */}
+      {player && (
+        <VideoPlayerModal
+          streamUrl={`/api/shows/library/stream/${player.fileId}`}
+          title={player.title}
+          episodeLabel={player.episodeLabel}
+          onClose={() => setPlayer(null)}
+          onNext={player.fileIndex < libraryFiles.length - 1 ? playNext : undefined}
+          hasNext={player.fileIndex < libraryFiles.length - 1}
+        />
+      )}
+
       {/* Backdrop */}
       {backdropUrl && (
         <Box
@@ -188,6 +240,18 @@ const ShowsDetail: React.FC = () => {
                 <Badge key={g} variant="subtle" colorPalette="blue" fontSize="xs">{g}</Badge>
               ))}
             </HStack>
+          )}
+
+          {/* Play button for movies */}
+          {movieFile && (
+            <Button
+              colorPalette="blue"
+              size="sm"
+              onClick={() => playFile(movieFile, 0, title)}
+            >
+              <Play size={16} />
+              <Text ml={1}>Play</Text>
+            </Button>
           )}
 
           {/* Overview */}
@@ -304,7 +368,13 @@ const ShowsDetail: React.FC = () => {
 
           {/* Seasons & Episodes */}
           {data.media_type === 'show' && tmdb?.seasons && tmdb.seasons.length > 0 && (
-            <SeasonsBreakdown tmdbId={data.tmdb_id} seasons={tmdb.seasons} watchedSeasons={(data as any).watched_seasons || {}} />
+            <SeasonsBreakdown
+              tmdbId={data.tmdb_id}
+              seasons={tmdb.seasons}
+              watchedSeasons={(data as any).watched_seasons || {}}
+              libraryFiles={libraryFiles}
+              onPlay={(file, idx) => playFile(file, idx, title)}
+            />
           )}
 
           {/* Trakt stats */}
@@ -372,7 +442,13 @@ interface WatchedSeasonInfo {
   complete: boolean;
 }
 
-const SeasonsBreakdown: React.FC<{ tmdbId: number; seasons: SeasonInfo[]; watchedSeasons: Record<number, WatchedSeasonInfo> }> = ({ tmdbId, seasons, watchedSeasons }) => {
+const SeasonsBreakdown: React.FC<{
+  tmdbId: number;
+  seasons: SeasonInfo[];
+  watchedSeasons: Record<number, WatchedSeasonInfo>;
+  libraryFiles: LibraryFile[];
+  onPlay: (file: LibraryFile, index: number) => void;
+}> = ({ tmdbId, seasons, watchedSeasons, libraryFiles, onPlay }) => {
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<Record<number, EpisodeDetail[]>>({});
   const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
@@ -486,6 +562,16 @@ const SeasonsBreakdown: React.FC<{ tmdbId: number; seasons: SeasonInfo[]; watche
                             )}
                           </HStack>
                         </Box>
+                        {(() => {
+                          const file = libraryFiles.find(f => f.season === season.season_number && f.episode === ep.episode_number);
+                          if (!file) return null;
+                          const idx = libraryFiles.indexOf(file);
+                          return (
+                            <Button size="xs" variant="ghost" onClick={() => onPlay(file, idx)} title="Play" p={1} minW="auto" h="auto">
+                              <Play size={14} />
+                            </Button>
+                          );
+                        })()}
                       </HStack>
                     ))}
                   </VStack>

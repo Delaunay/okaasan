@@ -33,6 +33,7 @@ import SidebarSettings from './components/settings/SidebarSettings';
 import GoogleCalendarSettings from './components/settings/GoogleCalendarSettings';
 import TMDBSettings from './components/settings/TMDBSettings';
 import TraktSettings from './components/settings/TraktSettings';
+import LibrarySettings from './components/settings/LibrarySettings';
 import ApiTester from './components/ApiTester';
 import HealthDashboard from './components/health/HealthDashboard';
 import HealthSettings from './components/health/HealthSettings';
@@ -51,6 +52,7 @@ import ShowsCollections from './components/shows/ShowsCollections';
 import ShowsDiscover from './components/shows/ShowsDiscover';
 import ShowsSchedule from './components/shows/ShowsSchedule';
 import ShowsDetail from './components/shows/ShowsDetail';
+import ShowsLibrary from './components/shows/ShowsLibrary';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
@@ -136,6 +138,7 @@ function App() {
                 <Route path="/settings/google-calendar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GoogleCalendarSettings />} />
                 <Route path="/settings/tmdb" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TMDBSettings />} />
                 <Route path="/settings/trakt" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TraktSettings />} />
+                <Route path="/settings/library" element={isStaticMode() ? <Navigate to="/settings" replace /> : <LibrarySettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
                 <Route path="/feed" element={<FeedPage />} />
@@ -158,6 +161,7 @@ function App() {
                 <Route path="/shows-collections/:collectionId" element={<ShowsCollections />} />
                 <Route path="/shows-discover" element={<ShowsDiscover />} />
                 <Route path="/shows-schedule" element={<ShowsSchedule />} />
+                <Route path="/shows-library" element={<ShowsLibrary />} />
                 <Route path="/shows-detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />

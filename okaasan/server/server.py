@@ -108,6 +108,8 @@ def create_app() -> FastAPI:
     private_db_path = os.path.join(private_dir, "database.db")
     private_engine = create_engine(f"sqlite:///{private_db_path}", connect_args={"check_same_thread": False})
 
+    from .shows.library_models import MediaFile  # noqa: F401 — registers table
+
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
 
@@ -124,6 +126,7 @@ def create_app() -> FastAPI:
     app.state.static_folder = STATIC_FOLDER
     app.state.upload_folder = STATIC_UPLOAD_FOLDER
     app.state.originals_folder = ORIGINALS_FOLDER
+    app.state.private_engine = private_engine
 
     from .route_keyvalue import router as kv_router
     from .route_images import router as images_router
@@ -166,6 +169,13 @@ def create_app() -> FastAPI:
         log.warning("Auto-import of Trakt data failed: %s", e)
     finally:
         _shows_db.close()
+
+    # Start media library background scanner
+    from .shows.library import LibraryScanner
+    from .shows import routes as _shows_routes
+    _library_scanner = LibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _shows_routes._library_scanner = _library_scanner
+    _library_scanner.start()
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations

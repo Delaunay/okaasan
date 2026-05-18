@@ -97,12 +97,30 @@ def create_app() -> FastAPI:
     from .audit import activate as activate_audit
     activate_audit()
 
+    from sqlalchemy import event
+
+    def _set_sqlite_pragmas(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
     db_path = os.path.join(STATIC_FOLDER, "database.db")
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(engine, "connect", _set_sqlite_pragmas)
     SessionLocal = sessionmaker(bind=engine)
 
     private_db_path = os.path.join(str(private_folder()), "database.db")
-    private_engine = create_engine(f"sqlite:///{private_db_path}", connect_args={"check_same_thread": False})
+    private_engine = create_engine(
+        f"sqlite:///{private_db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(private_engine, "connect", _set_sqlite_pragmas)
 
     from .shows.library_models import MediaFile  # noqa: F401 — registers table
     from .comics.library_models import ComicFile  # noqa: F401 — registers table
@@ -148,6 +166,7 @@ def create_app() -> FastAPI:
             db.close()
 
     app.state.get_db = get_db
+    app.state.SessionLocal = SessionLocal
     app.state.static_folder = STATIC_FOLDER
     app.state.upload_folder = str(public_folder())
     app.state.originals_folder = ORIGINALS_FOLDER
@@ -206,6 +225,26 @@ def create_app() -> FastAPI:
         log.warning("Auto-import of Trakt data failed: %s", e)
     finally:
         _shows_db.close()
+
+    # Auto-import Kitsu/MAL anime dump in background (doesn't block server)
+    kitsu_dumps_dir = Path(STATIC_FOLDER) / "dumps" / "kitsu"
+    kitsu_marker = private_folder() / "_kitsu_imported.marker"
+    if kitsu_dumps_dir.is_dir() and not kitsu_marker.exists():
+        import threading
+
+        def _run_kitsu_import():
+            _kitsu_db = SessionLocal()
+            try:
+                from .shows.importer import import_kitsu_data
+                import_kitsu_data(_kitsu_db, kitsu_dumps_dir)
+                kitsu_marker.write_text("done")
+            except Exception as e:
+                log.warning("Auto-import of Kitsu data failed: %s", e)
+            finally:
+                _kitsu_db.close()
+
+        threading.Thread(target=_run_kitsu_import, name="kitsu-import", daemon=True).start()
+        log.info("Kitsu import started in background thread")
 
     # Start media library background scanner
     from .shows.library import LibraryScanner

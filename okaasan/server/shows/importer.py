@@ -320,6 +320,360 @@ def _import_trakt_collection(db: Session, trakt: TraktData):
     log.info("Imported %d items into owned-media collection", count)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Kitsu / MAL XML import
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_JIKAN_API = "https://api.jikan.moe/v4/anime"
+_jikan_cache: dict[int, dict] = {}
+_jikan_last_req: float = 0
+_jikan_cache_loaded = False
+
+
+def _jikan_cache_path() -> Path:
+    from .models import Base  # just to trigger import side-effects if needed
+    from ..paths import cache_folder
+    return cache_folder() / "jikan_anime.json"
+
+
+def _load_jikan_cache():
+    """Load persistent Jikan cache from disk."""
+    global _jikan_cache, _jikan_cache_loaded
+    if _jikan_cache_loaded:
+        return
+    _jikan_cache_loaded = True
+    path = _jikan_cache_path()
+    if path.is_file():
+        try:
+            import json
+            raw = json.loads(path.read_text())
+            _jikan_cache.update({int(k): v for k, v in raw.items()})
+            log.info("Loaded %d entries from Jikan disk cache", len(_jikan_cache))
+        except Exception as e:
+            log.debug("Failed to load Jikan cache: %s", e)
+
+
+def _save_jikan_cache():
+    """Persist Jikan cache to disk."""
+    import json
+    path = _jikan_cache_path()
+    try:
+        path.write_text(json.dumps(_jikan_cache, ensure_ascii=False))
+    except Exception as e:
+        log.debug("Failed to save Jikan cache: %s", e)
+
+
+def _resolve_mal_id(mal_id: int) -> dict | None:
+    """Resolve a MAL anime ID to metadata via Jikan (free, no auth). Results are disk-cached."""
+    import time
+    import httpx
+
+    _load_jikan_cache()
+
+    if mal_id in _jikan_cache:
+        return _jikan_cache[mal_id] or None
+
+    global _jikan_last_req
+    elapsed = time.time() - _jikan_last_req
+    if elapsed < 1.0:
+        time.sleep(1.0 - elapsed)
+
+    try:
+        _jikan_last_req = time.time()
+        resp = httpx.get(f"{_JIKAN_API}/{mal_id}", timeout=15)
+        if resp.status_code == 429:
+            time.sleep(3)
+            _jikan_last_req = time.time()
+            resp = httpx.get(f"{_JIKAN_API}/{mal_id}", timeout=15)
+        if resp.status_code != 200:
+            _jikan_cache[mal_id] = {}
+            _save_jikan_cache()
+            return None
+        data = resp.json().get("data", {})
+        _jikan_cache[mal_id] = data
+        _save_jikan_cache()
+        return data
+    except Exception as e:
+        log.debug("Jikan lookup failed for MAL ID %d: %s", mal_id, e)
+        _jikan_cache[mal_id] = {}
+        return None
+
+
+def _get_or_create_media_from_mal(db: Session, mal_id: int, anime_data: dict | None) -> Media | None:
+    """Find or create a Media row for an anime identified by MAL ID."""
+    # Try to find by title match in existing DB
+    if anime_data:
+        title = anime_data.get("title_english") or anime_data.get("title") or ""
+        if title:
+            existing = db.query(Media).filter(
+                Media.media_type == "show",
+                Media.title.ilike(title),
+            ).first()
+            if existing:
+                return existing
+
+    # Try to find by title variants
+    if anime_data:
+        for t in (anime_data.get("title"), anime_data.get("title_english"), anime_data.get("title_japanese")):
+            if t:
+                existing = db.query(Media).filter(
+                    Media.media_type == "show",
+                    Media.title.ilike(t),
+                ).first()
+                if existing:
+                    return existing
+
+    if not anime_data:
+        return None
+
+    title = anime_data.get("title_english") or anime_data.get("title") or f"MAL-{mal_id}"
+    year = anime_data.get("year")
+    if not year and anime_data.get("aired", {}).get("from"):
+        try:
+            year = int(anime_data["aired"]["from"][:4])
+        except (ValueError, TypeError):
+            pass
+
+    media = Media(
+        media_type="show",
+        title=title,
+        year=year,
+        status=anime_data.get("status"),
+        overview=(anime_data.get("synopsis") or "")[:1000] if anime_data.get("synopsis") else None,
+    )
+    media._newly_created = True
+    db.add(media)
+    db.flush()
+    log.info("Created anime from Kitsu/MAL import: %s (mal_id=%d)", title, mal_id)
+    return media
+
+
+def import_kitsu_data(db: Session, dumps_dir: Path):
+    """Import anime data from Kitsu MAL-format XML export.
+
+    Parses the XML, resolves MAL IDs via Jikan, and creates:
+    - Media entries for each anime
+    - WatchHistory for completed/watching anime
+    - WatchlistItems for "Plan to Watch"
+    - Sets user_status for dropped anime
+
+    Safe to re-run. Only affects source="kitsu_import" rows.
+    """
+    import xml.etree.ElementTree as ET
+
+    anime_file = dumps_dir / "kitsu-setepenre-anime.xml"
+    if not anime_file.is_file():
+        log.info("No Kitsu anime dump found at %s, skipping", anime_file)
+        return
+
+    log.info("Starting Kitsu anime import from %s", anime_file)
+    tree = ET.parse(anime_file)
+    root = tree.getroot()
+    entries = root.findall("anime")
+    log.info("Found %d anime entries in Kitsu dump", len(entries))
+
+    # Clear previous kitsu_import data
+    db.query(WatchHistory).filter_by(source="kitsu_import").delete()
+    db.query(WatchlistItem).filter_by(source="kitsu_import").delete()
+    db.commit()
+
+    watch_count = 0
+    watchlist_count = 0
+    rating_count = 0
+    created_count = 0
+
+    for idx, entry in enumerate(entries):
+        mal_id_str = entry.findtext("series_animedb_id", "")
+        if not mal_id_str:
+            continue
+        mal_id = int(mal_id_str)
+
+        status = entry.findtext("my_status", "").strip()
+        watched_eps = int(entry.findtext("my_watched_episodes", "0") or 0)
+        start_date = entry.findtext("my_start_date", "")
+        finish_date = entry.findtext("my_finish_date", "")
+
+        # Resolve MAL ID to anime metadata
+        anime_data = _resolve_mal_id(mal_id)
+        media = _get_or_create_media_from_mal(db, mal_id, anime_data)
+        if not media:
+            log.debug("Could not resolve MAL ID %d, skipping", mal_id)
+            continue
+
+        if getattr(media, "_newly_created", False):
+            created_count += 1
+
+        # Set user_status based on Kitsu status
+        if status == "Dropped":
+            media.user_status = "dropped"
+        elif status == "Completed":
+            media.user_status = "completed"
+        elif status == "Watching":
+            media.user_status = "watching"
+
+        # Import watch history for completed/watching anime
+        if status in ("Completed", "Watching") and watched_eps > 0:
+            watched_at = None
+            if finish_date:
+                watched_at = _parse_dt(finish_date + "T00:00:00Z")
+            elif start_date:
+                watched_at = _parse_dt(start_date + "T00:00:00Z")
+            else:
+                watched_at = datetime.now(timezone.utc)
+
+            for ep_num in range(1, watched_eps + 1):
+                exists = db.query(WatchHistory).filter_by(
+                    media_id=media.id,
+                    season=1,
+                    episode=ep_num,
+                ).first()
+                if not exists:
+                    db.add(WatchHistory(
+                        media_id=media.id,
+                        watched_at=watched_at,
+                        season=1,
+                        episode=ep_num,
+                        source="kitsu_import",
+                    ))
+                    watch_count += 1
+
+        # Import Plan to Watch as watchlist
+        elif status == "Plan to Watch":
+            exists = db.query(WatchlistItem).filter_by(media_id=media.id).first()
+            if not exists:
+                db.add(WatchlistItem(
+                    media_id=media.id,
+                    listed_at=datetime.now(timezone.utc),
+                    source="kitsu_import",
+                ))
+                watchlist_count += 1
+
+        # Import rating if present
+        score_str = entry.findtext("my_score", "")
+        if score_str and score_str != "0":
+            score = int(score_str)
+            existing_rating = db.query(UserRating).filter_by(
+                media_id=media.id, source="manual"
+            ).first()
+            if not existing_rating:
+                db.query(UserRating).filter_by(
+                    media_id=media.id, source="kitsu_import"
+                ).delete()
+                db.add(UserRating(
+                    media_id=media.id,
+                    rating=score,
+                    rated_at=datetime.now(timezone.utc),
+                    source="kitsu_import",
+                ))
+                rating_count += 1
+
+        # Commit every 5 entries to release the DB write lock periodically
+        if (idx + 1) % 5 == 0:
+            db.commit()
+
+    db.commit()
+    log.info(
+        "Kitsu import complete: %d watch entries, %d watchlist items, %d ratings, %d new media created",
+        watch_count, watchlist_count, rating_count, created_count,
+    )
+
+    # Import favorites from Kitsu API
+    _import_kitsu_favorites(db)
+
+
+_KITSU_USER_ID = "136392"  # Setepenre on Kitsu
+
+
+def _import_kitsu_favorites(db: Session):
+    """Fetch favorites from the Kitsu API and add to the favorites collection."""
+    import httpx
+
+    log.info("Fetching Kitsu favorites...")
+    try:
+        resp = httpx.get(
+            f"https://kitsu.io/api/edge/users/{_KITSU_USER_ID}/favorites",
+            params={
+                "include": "item",
+                "fields[anime]": "titles,canonicalTitle,episodeCount,status,synopsis",
+                "page[limit]": "20",
+            },
+            headers={"Accept": "application/vnd.api+json"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning("Kitsu favorites fetch failed: HTTP %d", resp.status_code)
+            return
+    except Exception as e:
+        log.warning("Kitsu favorites fetch failed: %s", e)
+        return
+
+    result = resp.json()
+    data = result.get("data", [])
+    included = result.get("included", [])
+
+    if not data:
+        log.info("No Kitsu favorites found")
+        return
+
+    # Build lookup of included anime
+    inc_map = {}
+    for inc in included:
+        inc_map[f"{inc['type']}:{inc['id']}"] = inc
+
+    # Get or create favorites collection
+    coll = db.query(Collection).filter_by(collection_type="favorites").first()
+    if not coll:
+        coll = Collection(name="Favorites", collection_type="favorites")
+        db.add(coll)
+        db.flush()
+
+    count = 0
+    for fav in data:
+        item_ref = fav["relationships"]["item"]["data"]
+        key = f"{item_ref['type']}:{item_ref['id']}"
+        inc = inc_map.get(key)
+        if not inc or item_ref["type"] != "anime":
+            continue
+
+        attrs = inc.get("attributes", {})
+        titles = attrs.get("titles", {})
+        title = titles.get("en") or attrs.get("canonicalTitle", "")
+        if not title:
+            continue
+
+        # Find or create the media entry
+        existing = db.query(Media).filter(
+            Media.media_type == "show",
+            Media.title.ilike(title),
+        ).first()
+
+        if not existing:
+            existing = Media(
+                media_type="show",
+                title=title,
+                status=attrs.get("status"),
+                overview=(attrs.get("synopsis") or "")[:1000] if attrs.get("synopsis") else None,
+            )
+            db.add(existing)
+            db.flush()
+
+        # Add to favorites if not already there
+        already = db.query(CollectionItem).filter_by(
+            collection_id=coll.id, media_id=existing.id
+        ).first()
+        if not already:
+            rank = fav["attributes"].get("favRank", count)
+            db.add(CollectionItem(
+                collection_id=coll.id,
+                media_id=existing.id,
+                rank=rank,
+            ))
+            count += 1
+
+    db.commit()
+    log.info("Imported %d Kitsu favorites", count)
+
+
 def import_trakt_data(db: Session, shows_dir: Path, base_dir: Path | None = None, tmdb_client=None):
     """Main entry point: import all Trakt dump data into the database.
 

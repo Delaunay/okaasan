@@ -10,7 +10,7 @@ import {
     Badge
 } from '@chakra-ui/react';
 import {
-    Settings as SettingsLucide, FolderGit2, Download, Send,
+    Settings as SettingsLucide, FolderGit2, Download, Send, Sparkles,
     Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
@@ -92,6 +92,14 @@ const Settings: React.FC = () => {
                 icon: <Film size={20} />,
                 badge: 'Integration',
                 onOpen: () => navigate('/settings/tmdb'),
+            },
+            {
+                id: 'anilist',
+                title: 'Anime Metadata (Kitsu)',
+                description: 'Automatic anime identification via Kitsu — no API key needed',
+                icon: <Sparkles size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/anilist'),
             },
             {
                 id: 'library',

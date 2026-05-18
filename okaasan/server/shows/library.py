@@ -39,7 +39,40 @@ _PATTERNS = [
     ),
 ]
 
+# Anime-specific patterns (order matters: more specific first)
+_ANIME_PATTERNS = [
+    # [SubGroup] Title Season 2 - 01 or [SubGroup] Title S1 - 01
+    re.compile(
+        r"^\[.+?\]\s*(?P<title>.+?)\s+(?:[Ss]eason\s*|[Ss])(?P<season>\d{1,2})\s*-\s*(?P<episode>\d{1,4})\b",
+        re.IGNORECASE,
+    ),
+    # [SubGroup] Title - S01E03 [1080p].mkv
+    re.compile(
+        r"^\[.+?\]\s*(?P<title>.+?)\s*-?\s*[Ss](?P<season>\d{1,2})[Ee](?P<episode>\d{1,3})",
+    ),
+    # [SubGroup] Title - 01 [1080p].mkv
+    re.compile(
+        r"^\[.+?\]\s*(?P<title>.+?)\s*-\s*(?P<episode>\d{1,4})\b",
+    ),
+    # [SubGroup] Title Episode 01 [1080p].mkv
+    re.compile(
+        r"^\[.+?\]\s*(?P<title>.+?)\s+(?:EP?|Episode)\s*(?P<episode>\d{1,4})\b",
+        re.IGNORECASE,
+    ),
+    # Title Episode 01 (no sub group)
+    re.compile(
+        r"^(?P<title>.+?)\s+(?:Episode|EP)\s*(?P<episode>\d{1,4})\b",
+        re.IGNORECASE,
+    ),
+    # Title - 01 [quality] (no sub group, common for batch releases)
+    re.compile(
+        r"^(?P<title>[^\[\]]+?)\s*-\s*(?P<episode>\d{1,4})\s*(?:\[|\(|$)",
+    ),
+]
+
 _EP_IN_FILENAME = re.compile(r"[Ee](?:pisode)?[.\s_-]*(?P<episode>\d{1,3})")
+# Bare episode number at end of filename (common in anime)
+_BARE_EP = re.compile(r"[\s_-]+(?P<episode>\d{2,4})(?:\s*(?:v\d)?)?(?:\s*[\[\(]|$)")
 
 
 def _config_path(static_folder: str) -> Path:
@@ -83,10 +116,17 @@ def _normalize_title(name: str) -> str:
     return name
 
 
-def _parse_filename(file_path: str) -> dict | None:
+def _parse_filename(file_path: str, media_type: str = "shows") -> dict | None:
     """Extract title, season, episode from a file path."""
     fname = Path(file_path).stem
     parent = Path(file_path).parent.name
+
+    # For anime folders or files starting with [SubGroup], try anime patterns first
+    is_anime_like = fname.startswith("[") or media_type == "anime"
+    if is_anime_like:
+        result = _parse_anime_filename(fname, parent, file_path)
+        if result:
+            return result
 
     for pattern in _PATTERNS[:2]:
         m = pattern.match(fname)
@@ -102,7 +142,6 @@ def _parse_filename(file_path: str) -> dict | None:
     if season_match:
         ep_match = _EP_IN_FILENAME.search(fname)
         if ep_match:
-            # Derive title from grandparent folder
             grandparent = Path(file_path).parent.parent.name
             return {
                 "title": _normalize_title(grandparent),
@@ -110,8 +149,70 @@ def _parse_filename(file_path: str) -> dict | None:
                 "episode": int(ep_match.group("episode")),
             }
 
+    # For anime without [SubGroup], still try a bare episode number
+    if is_anime_like:
+        ep_match = _BARE_EP.search(fname)
+        if ep_match:
+            title_part = fname[:ep_match.start()]
+            title_part = re.sub(r"^\[.*?\]\s*", "", title_part)
+            return {
+                "title": _normalize_title(title_part) or _normalize_title(parent),
+                "season": 1,
+                "episode": int(ep_match.group("episode")),
+            }
+
     # Movie (no episode info)
     return {"title": _normalize_title(fname), "season": None, "episode": None}
+
+
+_EXTRAS_RE = re.compile(
+    r"\b(NCED|NCOP|NC\s?ED|NC\s?OP|Creditless|Preview|PV|Menu|Trailer|"
+    r"Opening|Ending|OP\d*|ED\d*|SP\d*|Special|OVA|OAD|Bonus)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_anime_filename(fname: str, parent: str, file_path: str) -> dict | None:
+    """Parse anime-style filenames like [SubGroup] Title - 01 [1080p]."""
+    # Normalize underscores/dots to spaces for pattern matching
+    norm = re.sub(r"[._]", " ", fname)
+
+    # Skip extras (NCED, NCOP, OVA, etc.)
+    content_part = re.sub(r"^\[.*?\]\s*", "", norm)
+    # Bare extras filenames (e.g. "ED.mkv", "OP.mkv", "Sample (+Intro).mkv")
+    if re.match(r"^(?:NCED|NCOP|OP|ED|PV|OVA|OAD|Bonus|Special|Trailer|Menu|Opening|Ending|Sample)\b", content_part, re.IGNORECASE):
+        return {"title": "__extra__", "season": 0, "episode": 0}
+    # After the last dash, if the remainder is just an extras keyword (optionally with a number), skip
+    after_dash = content_part.rsplit("-", 1)[-1].strip() if "-" in content_part else ""
+    if re.match(r"^(?:NCED|NCOP|NC\s?ED|NC\s?OP|OP|ED|SP|PV|OVA|OAD|Bonus|Special|Trailer|Menu|Opening|Ending)\s*\d*\s*[\[\(]?", after_dash, re.IGNORECASE):
+        return {"title": "__extra__", "season": 0, "episode": 0}
+
+    for pattern in _ANIME_PATTERNS:
+        m = pattern.match(norm)
+        if m:
+            title = m.group("title").strip()
+            title = _JUNK_TAGS.sub("", title)
+            title = re.sub(r"\s*[\[\(].*$", "", title).strip()
+            title = re.sub(r"\s*~\w+$", "", title).strip()
+            title = _normalize_title(title)
+            if not title:
+                title = _normalize_title(parent)
+            season = int(m.group("season")) if "season" in m.groupdict() else 1
+            episode = int(m.group("episode"))
+            return {"title": title, "season": season, "episode": episode}
+
+    # Derive title from parent folder for anime (often folder = show name)
+    # Skip if filename has a standard SxxExx pattern (handled by _PATTERNS later)
+    if not norm.startswith("[") and not re.search(r"[Ss]\d{1,2}[Ee]\d{1,3}", norm):
+        ep_match = _EP_IN_FILENAME.search(norm)
+        if ep_match:
+            return {
+                "title": _normalize_title(parent),
+                "season": 1,
+                "episode": int(ep_match.group("episode")),
+            }
+
+    return None
 
 
 def _match_to_db(db: Session, parsed: dict, media_type: str) -> tuple[int | None, int | None, bool]:
@@ -120,9 +221,9 @@ def _match_to_db(db: Session, parsed: dict, media_type: str) -> tuple[int | None
     if not title:
         return None, None, False
 
-    # Exact title match (case-insensitive)
+    db_media_type = "show" if media_type in ("shows", "anime") else "movie"
     candidates = db.query(Media).filter(
-        Media.media_type == ("show" if media_type in ("shows", "anime") else "movie"),
+        Media.media_type == db_media_type,
     ).all()
 
     best_match = None
@@ -179,13 +280,30 @@ def scan_folders(static_folder: str, private_engine, main_engine):
                         existing = private_db.query(MediaFile).filter_by(file_path=full_path).first()
                         if existing:
                             existing.last_scanned = datetime.now(timezone.utc)
+                            # Re-evaluate unmatched files with current patterns
+                            if not existing.matched:
+                                parsed = _parse_filename(full_path, media_type)
+                                if parsed and parsed.get("title") != "__extra__":
+                                    media_id, tmdb_id, matched = _match_to_db(main_db, parsed, media_type)
+                                    if not matched and media_type == "anime":
+                                        media_id, tmdb_id, matched = _match_anime_online(main_db, parsed)
+                                    if matched:
+                                        existing.media_id = media_id
+                                        existing.tmdb_id = tmdb_id
+                                        existing.title = parsed["title"]
+                                        existing.season = parsed.get("season")
+                                        existing.episode = parsed.get("episode")
+                                        existing.matched = True
+                                        total_matched += 1
                             continue
 
-                        parsed = _parse_filename(full_path)
-                        if not parsed:
+                        parsed = _parse_filename(full_path, media_type)
+                        if not parsed or parsed.get("title") == "__extra__":
                             continue
 
                         media_id, tmdb_id, matched = _match_to_db(main_db, parsed, media_type)
+                        if not matched and media_type == "anime":
+                            media_id, tmdb_id, matched = _match_anime_online(main_db, parsed)
                         if matched:
                             total_matched += 1
 
@@ -215,6 +333,137 @@ def scan_folders(static_folder: str, private_engine, main_engine):
     finally:
         private_db.close()
         main_db.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Kitsu anime lookup (for unmatched anime files) — no auth required
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_KITSU_API = "https://kitsu.io/api/edge/anime"
+
+_kitsu_cache: dict[str, list[dict]] = {}
+_kitsu_last_req: float = 0
+_KITSU_MIN_INTERVAL = 1.0  # generous rate limit, 1s between requests is safe
+
+
+def _search_kitsu_anime(title: str) -> list[dict]:
+    """Search Kitsu for anime by title. No auth required. Returns list of results."""
+    import time
+
+    key = title.lower().strip()
+    if key in _kitsu_cache:
+        return _kitsu_cache[key]
+
+    global _kitsu_last_req
+    elapsed = time.time() - _kitsu_last_req
+    if elapsed < _KITSU_MIN_INTERVAL:
+        time.sleep(_KITSU_MIN_INTERVAL - elapsed)
+
+    try:
+        import httpx
+        _kitsu_last_req = time.time()
+        resp = httpx.get(
+            _KITSU_API,
+            params={"filter[text]": title, "page[limit]": "5"},
+            headers={
+                "Accept": "application/vnd.api+json",
+                "User-Agent": "okaasan-media-server/1.0",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 429:
+            log.warning("Kitsu 429 rate limited, pausing 5s")
+            time.sleep(5)
+            _kitsu_last_req = time.time()
+            resp = httpx.get(
+                _KITSU_API,
+                params={"filter[text]": title, "page[limit]": "5"},
+                headers={
+                    "Accept": "application/vnd.api+json",
+                    "User-Agent": "okaasan-media-server/1.0",
+                },
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                _kitsu_cache[key] = []
+                return []
+
+        resp.raise_for_status()
+        results = resp.json().get("data", [])
+        _kitsu_cache[key] = results
+        return results
+    except Exception as e:
+        log.debug("Kitsu anime search failed for %r: %s", title, e)
+        _kitsu_cache[key] = []
+        return []
+
+
+def _match_anime_online(db: Session, parsed: dict) -> tuple[int | None, int | None, bool]:
+    """Try to match an anime title via Kitsu, creating a Media entry if found."""
+    title = parsed["title"]
+    if not title or len(title) < 3:
+        return None, None, False
+
+    results = _search_kitsu_anime(title)
+    if not results:
+        return None, None, False
+
+    # Pick the best result
+    best = results[0]
+    attrs = best.get("attributes", {})
+    titles = attrs.get("titles", {})
+    kitsu_titles = [
+        (titles.get("en") or "").lower(),
+        (titles.get("en_jp") or "").lower(),
+        (titles.get("ja_jp") or "").lower(),
+        (attrs.get("canonicalTitle") or "").lower(),
+    ]
+
+    # Verify the match is reasonable
+    title_lower = title.lower()
+    matched = any(
+        t and (title_lower in t or t in title_lower)
+        for t in kitsu_titles if t
+    )
+    if not matched and len(results) > 1:
+        best = results[1]
+        attrs = best.get("attributes", {})
+        titles = attrs.get("titles", {})
+        kitsu_titles = [
+            (titles.get("en") or "").lower(),
+            (titles.get("en_jp") or "").lower(),
+            (titles.get("ja_jp") or "").lower(),
+            (attrs.get("canonicalTitle") or "").lower(),
+        ]
+        matched = any(
+            t and (title_lower in t or t in title_lower)
+            for t in kitsu_titles if t
+        )
+
+    if not matched:
+        return None, None, False
+
+    display_title = titles.get("en") or attrs.get("canonicalTitle") or titles.get("en_jp") or title
+
+    # Check if we already have this in our DB (by title)
+    existing = db.query(Media).filter(
+        Media.media_type == "show",
+        Media.title.ilike(display_title),
+    ).first()
+    if existing:
+        return existing.id, existing.tmdb_id, True
+
+    # Create a new Media entry for this anime
+    media = Media(
+        media_type="show",
+        title=display_title,
+        year=None,
+        tmdb_id=None,
+    )
+    db.add(media)
+    db.flush()
+    log.info("Created anime entry from Kitsu: %s (kitsu_id=%s)", display_title, best.get("id"))
+    return media.id, None, True
 
 
 class LibraryScanner(BaseLibraryScanner):

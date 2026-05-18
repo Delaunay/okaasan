@@ -448,8 +448,8 @@ const Layout: FC<LayoutProps> = ({ children }) => {
         </nav>
       </div>
 
-      <div className="main-content" style={{ height: "100%", width: "100%" }}>
-        <div className="content-wrapper" style={{ height: "100%", width: "100%" }}>
+      <div className="main-content">
+        <div className="content-wrapper">
           {children}
         </div>
       </div>

@@ -1,6 +1,7 @@
 """API routes for Shows & Movies section."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -74,87 +75,96 @@ def get_overview(request: Request, db: Session = Depends(_get_db)):
     """Overview: recently added unwatched library files, watchlist next, summary stats."""
     from .library_models import MediaFile
     from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import func as sa_func
 
-    # Recently added unwatched files from the library
+    # Get IDs of fully-watched media:
+    # 1. user_status explicitly set to "completed"
+    # 2. Movies with watch history (season IS NULL)
+    # 3. Shows with any episode watch history (from Trakt/Kitsu imports)
+    completed_ids = set(
+        mid for (mid,) in db.query(Media.id).filter(Media.user_status == "completed").all()
+    )
+    watched_movie_ids = set(
+        mid for (mid,) in db.query(WatchHistory.media_id)
+        .filter(WatchHistory.season.is_(None))
+        .distinct()
+        .all()
+    )
+    watched_show_ids = set(
+        mid for (mid,) in db.query(WatchHistory.media_id)
+        .filter(WatchHistory.season.isnot(None))
+        .distinct()
+        .all()
+    )
+    fully_watched_ids = completed_ids | watched_movie_ids | watched_show_ids
+
+    # Recently added library files — split into shows and movies
     PrivateSession = sessionmaker(bind=request.app.state.private_engine)
     pdb = PrivateSession()
-    try:
-        recent_files = (
+
+    def _recent_by_type(media_types: list[str], limit: int = 12) -> list[dict]:
+        sub = (
+            pdb.query(
+                MediaFile.media_id,
+                sa_func.max(MediaFile.last_scanned).label("latest"),
+            )
+            .filter(
+                MediaFile.matched == True,
+                MediaFile.media_id.isnot(None),
+                MediaFile.media_type.in_(media_types),
+                MediaFile.media_id.notin_(fully_watched_ids) if fully_watched_ids else True,
+            )
+            .group_by(MediaFile.media_id)
+            .order_by(sa_func.max(MediaFile.last_scanned).desc())
+            .limit(limit)
+            .subquery()
+        )
+        rows = (
             pdb.query(MediaFile)
-            .filter(MediaFile.matched == True)
-            .order_by(MediaFile.last_scanned.desc().nulls_last(), MediaFile.id.desc())
-            .limit(60)
+            .join(sub, (MediaFile.media_id == sub.c.media_id) & (MediaFile.last_scanned == sub.c.latest))
+            .order_by(MediaFile.last_scanned.desc().nulls_last())
             .all()
         )
-        recent_raw = [f.to_json() for f in recent_files]
+        seen: set[int] = set()
+        result = []
+        for f in rows:
+            if f.media_id in seen:
+                continue
+            seen.add(f.media_id)
+            result.append(f.to_json())
+        return result
+
+    try:
+        recent_shows_raw = _recent_by_type(["show", "anime"], limit=20)
+        recent_movies_raw = _recent_by_type(["movie"], limit=20)
     finally:
         pdb.close()
 
-    # Get watched episodes to filter them out
-    media_ids = {f["media_id"] for f in recent_raw if f["media_id"]}
-    watched_eps: dict[int, set[tuple[int, int]]] = {}
+    # Enrich with poster/metadata from main DB
+    all_media_ids = {f["media_id"] for f in recent_shows_raw + recent_movies_raw if f["media_id"]}
     media_map: dict[int, Media] = {}
-    if media_ids:
-        for wh in (
-            db.query(WatchHistory.media_id, WatchHistory.season, WatchHistory.episode)
-            .filter(
-                WatchHistory.media_id.in_(media_ids),
-                WatchHistory.season.isnot(None),
-                WatchHistory.episode.isnot(None),
-            )
-            .all()
-        ):
-            watched_eps.setdefault(wh[0], set()).add((wh[1], wh[2]))
-
-        # Also get watched movies (no season/episode)
-        watched_movie_ids = set(
-            mid for (mid,) in db.query(WatchHistory.media_id)
-            .filter(
-                WatchHistory.media_id.in_(media_ids),
-                WatchHistory.season.is_(None),
-            )
-            .distinct()
-            .all()
-        )
-
-        media_rows = db.query(Media).filter(Media.id.in_(media_ids)).all()
+    if all_media_ids:
+        media_rows = db.query(Media).filter(Media.id.in_(all_media_ids)).all()
         media_map = {m.id: m for m in media_rows}
-    else:
-        watched_movie_ids = set()
 
-    # Filter: keep only unwatched files
-    recently_added = []
-    seen_media: set[int] = set()
-    for f in recent_raw:
-        mid = f.get("media_id")
-        if not mid:
-            continue
-        # Skip watched movies
-        if f.get("media_type") == "movie" and mid in watched_movie_ids:
-            continue
-        # Skip watched episodes
-        s, e = f.get("season"), f.get("episode")
-        if s is not None and e is not None and (s, e) in watched_eps.get(mid, set()):
-            continue
-        # Deduplicate by media_id for shows (show one entry per show)
-        if f.get("media_type") != "movie" and mid in seen_media:
-            continue
-        seen_media.add(mid)
-        # Enrich with poster
-        m = media_map.get(mid)
-        if m:
-            f["poster_path"] = m.poster_path
-            f["year"] = m.year
-            f["db_title"] = m.title
-        recently_added.append(f)
-        if len(recently_added) >= 12:
-            break
+    def _enrich(items: list[dict]) -> list[dict]:
+        for f in items:
+            mid = f.get("media_id")
+            m = media_map.get(mid) if mid else None
+            if m:
+                f["poster_path"] = m.poster_path
+                f["year"] = m.year
+                f["db_title"] = m.title
+        return items
+
+    recently_added_shows = _enrich(recent_shows_raw)
+    recently_added_movies = _enrich(recent_movies_raw)
 
     watchlist_next = (
         db.query(WatchlistItem)
         .join(Media)
         .order_by(WatchlistItem.rank.asc().nulls_last())
-        .limit(10)
+        .limit(20)
         .all()
     )
 
@@ -163,7 +173,8 @@ def get_overview(request: Request, db: Session = Depends(_get_db)):
     total_history = db.query(WatchHistory).count()
 
     return {
-        "recently_added": recently_added,
+        "recently_added_shows": recently_added_shows,
+        "recently_added_movies": recently_added_movies,
         "watchlist_next": [
             {**w.media.to_json(), "listed_at": w.listed_at.isoformat() + "Z" if w.listed_at else None}
             for w in watchlist_next
@@ -831,6 +842,63 @@ async def configure_tmdb(request: Request):
     )
 
     return {"configured": True}
+
+
+# ── Anime Metadata (Kitsu) ────────────────────────────────────────
+
+@router.get("/anime/status")
+def get_anime_status():
+    """Check if Kitsu API is reachable (no auth needed)."""
+    return {"provider": "kitsu", "configured": True, "auth_required": False}
+
+
+@router.post("/anime/test")
+async def test_anime_search():
+    """Test Kitsu anime search with a known title."""
+    from .library import _search_kitsu_anime
+    results = _search_kitsu_anime("Solo Leveling")
+    if results:
+        attrs = results[0].get("attributes", {})
+        titles = attrs.get("titles", {})
+        return {
+            "success": True,
+            "provider": "kitsu",
+            "sample_result": {
+                "title": titles.get("en") or attrs.get("canonicalTitle"),
+                "japanese": titles.get("ja_jp"),
+                "episodes": attrs.get("episodeCount"),
+            },
+        }
+    return {"success": False, "provider": "kitsu", "error": "No results returned — Kitsu may be down"}
+
+
+@router.post("/anime/import")
+async def import_kitsu_dump(request: Request):
+    """Re-import Kitsu/MAL XML dump in the background."""
+    import asyncio
+    from pathlib import Path
+    from ..paths import STATIC_FOLDER, private_folder
+    from .importer import import_kitsu_data
+
+    dumps_dir = Path(STATIC_FOLDER) / "dumps" / "kitsu"
+    if not dumps_dir.is_dir():
+        return {"success": False, "error": "No Kitsu dump found at dumps/kitsu/"}
+
+    SessionLocal = request.app.state.SessionLocal
+
+    def _run():
+        db = SessionLocal()
+        try:
+            import_kitsu_data(db, dumps_dir)
+            marker = private_folder() / "_kitsu_imported.marker"
+            marker.write_text("done")
+        except Exception as e:
+            log.warning("Kitsu import failed: %s", e)
+        finally:
+            db.close()
+
+    asyncio.get_event_loop().run_in_executor(None, _run)
+    return {"success": True, "message": "Kitsu import started in background"}
 
 
 # ── Discovery ──────────────────────────────────────────────────────

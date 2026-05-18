@@ -33,6 +33,7 @@ import SidebarSettings from './components/settings/SidebarSettings';
 import GoogleCalendarSettings from './components/settings/GoogleCalendarSettings';
 import TMDBSettings from './components/settings/TMDBSettings';
 import TraktSettings from './components/settings/TraktSettings';
+import AniListSettings from './components/settings/AniListSettings';
 import LibrarySettings from './components/settings/LibrarySettings';
 import ApiTester from './components/ApiTester';
 import HealthDashboard from './components/health/HealthDashboard';
@@ -226,6 +227,7 @@ function App() {
                 <Route path="/settings/sidebar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <SidebarSettings />} />
                 <Route path="/settings/google-calendar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GoogleCalendarSettings />} />
                 <Route path="/settings/tmdb" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TMDBSettings />} />
+                <Route path="/settings/anilist" element={isStaticMode() ? <Navigate to="/settings" replace /> : <AniListSettings />} />
                 <Route path="/settings/trakt" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TraktSettings />} />
                 <Route path="/settings/library" element={isStaticMode() ? <Navigate to="/settings" replace /> : <LibrarySettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />

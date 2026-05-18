@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge } from '@chakra-ui/react';
 import { BarChart3, Music, Users, Disc3, Clock, Play, TrendingUp } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 import { VegaProvider } from '../../contexts/VegaContext';
 import VegaPlot from '../health/VegaPlot';
@@ -23,13 +23,7 @@ interface StatsData {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 function formatDuration(ms: number): string {

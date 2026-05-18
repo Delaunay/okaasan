@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .models import Comic, ComicProgress
 from .metadata import ComicVineClient, AniListClient, download_cover
+from ..paths import cache_folder
 
 log = logging.getLogger("okaasan.comics")
 
@@ -41,14 +42,10 @@ def _get_private_db(request: Request):
 
 def _init_clients(static_folder: str):
     global _comicvine, _anilist
-    base = Path(static_folder)
-    cv_cache = base / "uploads" / "data" / "comics" / "cv_cache"
-    al_cache = base / "uploads" / "data" / "comics" / "al_cache"
-
     from .metadata import _load_api_key
     api_key = _load_api_key(static_folder) or ""
-    _comicvine = ComicVineClient(api_key, cv_cache)
-    _anilist = AniListClient(al_cache)
+    _comicvine = ComicVineClient(api_key, cache_folder() / "comics" / "comicvine")
+    _anilist = AniListClient(cache_folder() / "comics" / "anilist")
 
 
 def _get_comicvine(request: Request) -> ComicVineClient:

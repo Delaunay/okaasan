@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .models import MusicTrack, MusicPlaylist, MusicPlaylistItem, MusicEvent
 from .metadata import MusicBrainzClient
+from ..paths import public_folder, cache_folder
 
 log = logging.getLogger("okaasan.music")
 
@@ -37,10 +38,10 @@ def _get_private_db(request: Request):
 def _get_mb(request: Request) -> MusicBrainzClient:
     global _mb_client
     if _mb_client is None:
-        base = Path(request.app.state.static_folder)
-        cache_dir = base / "uploads" / "data" / "music" / "mb_cache"
-        covers_dir = base / "uploads" / "data" / "music" / "covers"
-        _mb_client = MusicBrainzClient(cache_dir, covers_dir)
+        _mb_client = MusicBrainzClient(
+            cache_folder() / "music" / "mb",
+            public_folder() / "data" / "music" / "covers",
+        )
     return _mb_client
 
 

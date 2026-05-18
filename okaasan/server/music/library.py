@@ -4,17 +4,16 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .library_models import MusicFile
 from .models import MusicTrack
+from ..paths import private_folder, public_folder, cache_folder
+from ..scanner import BaseLibraryScanner
 
 log = logging.getLogger("okaasan.music.library")
 
@@ -35,7 +34,7 @@ except ImportError:
 
 
 def _config_path(static_folder: str) -> Path:
-    return Path(static_folder) / "private" / "_music.json"
+    return private_folder() / "_music.json"
 
 
 def load_config(static_folder: str) -> dict[str, Any]:
@@ -257,10 +256,10 @@ def _get_mb_client(static_folder: str, config: dict[str, Any]):
     if not config.get("metadata_enabled"):
         return None
     from .metadata import MusicBrainzClient
-    base = Path(static_folder)
-    cache_dir = base / "uploads" / "data" / "music" / "mb_cache"
-    covers_dir = base / "uploads" / "data" / "music" / "covers"
-    client = MusicBrainzClient(cache_dir, covers_dir)
+    client = MusicBrainzClient(
+        cache_folder() / "music" / "mb",
+        public_folder() / "data" / "music" / "covers",
+    )
     contact = config.get("contact_email", "")
     if contact:
         client._http.headers["User-Agent"] = f"Okaasan/1.0 ({contact})"
@@ -327,7 +326,7 @@ def scan_folders(static_folder: str, private_engine, main_engine):
     folders = config.get("folders", [])
     fetch_covers = config.get("fetch_covers", True)
 
-    covers_dir = Path(static_folder) / "uploads" / "data" / "music" / "covers"
+    covers_dir = public_folder() / "data" / "music" / "covers"
     covers_dir.mkdir(parents=True, exist_ok=True)
 
     mb_client = _get_mb_client(static_folder, config)
@@ -470,51 +469,19 @@ def scan_folders(static_folder: str, private_engine, main_engine):
         main_db.close()
 
 
-class MusicLibraryScanner:
+class MusicLibraryScanner(BaseLibraryScanner):
     """Background scanner that periodically crawls music folders."""
 
-    def __init__(self, static_folder: str, private_engine, main_engine):
-        self.static_folder = static_folder
-        self.private_engine = private_engine
-        self.main_engine = main_engine
-        self._thread: threading.Thread | None = None
-        self._stop_event = threading.Event()
-        self.last_scan: datetime | None = None
-        self.last_result: dict | None = None
+    _log_name = "music"
 
-    def start(self):
-        config = load_config(self.static_folder)
-        if not config.get("folders"):
-            log.info("No music library folders configured, skipping background scan")
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+    def _load_config(self) -> dict[str, Any]:
+        return load_config(self.static_folder)
 
-    def stop(self):
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
+    def _get_folders(self, config: dict) -> list[str]:
+        return config.get("folders", [])
 
-    def scan_now(self) -> dict:
-        """Trigger an immediate scan (synchronous)."""
-        result = scan_folders(self.static_folder, self.private_engine, self.main_engine)
-        self.last_scan = datetime.now(timezone.utc)
-        self.last_result = result
-        return result
+    def _get_extensions(self, config: dict) -> set[str] | None:
+        return set(config.get("extensions", DEFAULT_EXTENSIONS))
 
-    def _run(self):
-        try:
-            self.scan_now()
-        except Exception as e:
-            log.warning("Initial music library scan failed: %s", e)
-
-        while not self._stop_event.is_set():
-            config = load_config(self.static_folder)
-            interval = config.get("scan_interval_minutes", 60) * 60
-            self._stop_event.wait(timeout=interval)
-            if self._stop_event.is_set():
-                break
-            try:
-                self.scan_now()
-            except Exception as e:
-                log.warning("Periodic music library scan failed: %s", e)
+    def _do_scan(self) -> dict:
+        return scan_folders(self.static_folder, self.private_engine, self.main_engine)

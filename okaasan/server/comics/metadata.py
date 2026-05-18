@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from ..paths import private_folder
+
 log = logging.getLogger("okaasan.comics.metadata")
 
 COMICVINE_API_BASE = "https://comicvine.gamespot.com/api"
@@ -60,7 +62,7 @@ def _write_cache(cache_dir: Path, key: str, data: Any):
 
 
 def _load_api_key(static_folder: str) -> str | None:
-    config_path = Path(static_folder) / "private" / "_comics.json"
+    config_path = private_folder() / "_comics.json"
     if not config_path.is_file():
         return None
     try:

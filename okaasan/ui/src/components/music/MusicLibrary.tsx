@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge, Input, Button } from '@chakra-ui/react';
 import { Music, Disc3, Users, Play, Plus, Shuffle, ListPlus } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 import AddToPlaylistPopup from './AddToPlaylistPopup';
 
@@ -25,13 +25,7 @@ interface LibraryPage {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 function formatDuration(seconds: number): string {

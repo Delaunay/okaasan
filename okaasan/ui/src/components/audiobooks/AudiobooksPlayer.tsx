@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Box, Flex, Heading, Text, VStack, HStack, Spinner, Image, Button } from '@chakra-ui/react';
 import { X, Play, Pause, SkipBack, SkipForward, Moon, ChevronDown, Headphones } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 
 interface Chapter {
   id: number;
@@ -44,11 +44,7 @@ function formatTimestamp(seconds: number): string {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('uploads/')) return `/api/${coverPath}`;
-  if (coverPath.startsWith('/uploads/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 interface AudiobooksPlayerProps {

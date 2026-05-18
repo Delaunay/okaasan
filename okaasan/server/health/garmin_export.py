@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .importer import import_metrics, import_activities, import_daily_summaries, ImportResult
+from ..paths import private_folder
 
 log = logging.getLogger("okaasan.health.garmin_export")
 
@@ -203,7 +204,7 @@ def import_garmin_export(
 
         # 3. Extract and import FIT files
         _emit("Extracting FIT files...")
-        fit_dest = upload_folder / "data" / "fit_archive"
+        fit_dest = private_folder() / "fit_archive"
         fit_files = _extract_fit_files(extract_dir, fit_dest)
         _emit(f"Extracted {len(fit_files)} new FIT files")
 

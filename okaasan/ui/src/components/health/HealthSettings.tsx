@@ -512,7 +512,7 @@ const HealthSettings: React.FC = () => {
                                     type="text"
                                     value={exportPath}
                                     onChange={(e) => setExportPath(e.target.value)}
-                                    placeholder="uploads/data/private/garmin_dump/export.zip"
+                                    placeholder="private/garmin_dump/export.zip"
                                     style={{ fontSize: '0.85rem', flex: 1, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
                                 />
                                 <Button size="sm" onClick={handleExportFromPath} disabled={exportLoading || !exportPath.trim()}>

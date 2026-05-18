@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..paths import private_folder
+
 log = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
@@ -31,21 +33,12 @@ def set_config_dir(path: Path) -> None:
     _config_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _private_dir() -> Path:
-    """Return the gitignored private directory (uploads/data/private/)."""
-    if _config_dir is None:
-        raise RuntimeError("gcalendar config dir not initialised")
-    d = _config_dir.parent / "private"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def _config_path() -> Path:
-    return _private_dir() / "_gcalendar.json"
+    return private_folder() / "_gcalendar.json"
 
 
 def _key_path() -> Path:
-    return _private_dir() / "_gcalendar_key.json"
+    return private_folder() / "_gcalendar_key.json"
 
 
 # ── Config persistence ───────────────────────────────────────

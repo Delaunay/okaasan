@@ -6,7 +6,7 @@ Every API call is saved to disk before normalization so that:
 
 Cache layout::
 
-    uploads/data/private/garminconnect/<endpoint>/<date>.json
+    private/garminconnect/<endpoint>/<date>.json
 """
 
 from __future__ import annotations
@@ -17,11 +17,13 @@ from datetime import date as date_type
 from pathlib import Path
 from typing import Any
 
+from ..paths import private_folder
+
 log = logging.getLogger("okaasan.health.garmin_cache")
 
 
 def _cache_dir(config_dir: Path) -> Path:
-    d = config_dir.parent / "private" / "garminconnect"
+    d = private_folder() / "garminconnect"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Button, Input } from '@chakra-ui/react';
 import { Film, Tv, Search, Trash2 } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, isStaticMode } from '../../services/api';
 import MediaCard from './MediaCard';
 import TMDBAttribution from './TMDBAttribution';
 
@@ -195,7 +195,7 @@ const HistoryItem: React.FC<{ item: any; onDelete?: () => void }> = ({ item, onD
   return (
     <Box>
       <Box position="relative" overflow="hidden" borderRadius="lg">
-        {onDelete && (
+        {onDelete && !isStaticMode() && (
           <Box position="absolute" bottom={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
             <Button
               size="xs"

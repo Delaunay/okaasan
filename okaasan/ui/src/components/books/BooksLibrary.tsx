@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Input } from '@chakra-ui/react';
 import { BookOpen, FileText, File } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 
 interface Book {
   id: number;
@@ -26,11 +26,7 @@ type FormatFilter = 'all' | 'epub' | 'pdf';
 type StatusFilter = 'all' | 'reading' | 'completed';
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('uploads/')) return `/api/${coverPath}`;
-  if (coverPath.startsWith('/uploads/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return undefined;
+  return resolveMediaUrl(coverPath);
 }
 
 const BooksLibrary: React.FC = () => {

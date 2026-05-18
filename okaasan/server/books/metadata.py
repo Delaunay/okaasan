@@ -23,9 +23,9 @@ CACHE_TTL_WORK = 0  # books never expire
 class OpenLibraryClient:
     """Open Library API client with local disk caching for metadata and covers."""
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, cache_dir: Path | None = None):
         self.data_dir = data_dir
-        self.cache_dir = data_dir / "ol_cache"
+        self.cache_dir = cache_dir if cache_dir else data_dir / "ol_cache"
         self.covers_dir = data_dir / "covers"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.covers_dir.mkdir(parents=True, exist_ok=True)

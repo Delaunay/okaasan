@@ -39,12 +39,12 @@ PLATFORM_TO_IGDB: dict[str, int] = {
 class IGDBClient:
     """IGDB API client with Twitch OAuth and local disk caching."""
 
-    def __init__(self, cache_dir: Path, client_id: str | None = None, client_secret: str | None = None):
+    def __init__(self, cache_dir: Path, client_id: str | None = None, client_secret: str | None = None, covers_dir: Path | None = None):
         self.client_id = client_id or ""
         self.client_secret = client_secret or ""
         self.cache_dir = cache_dir
         self.meta_cache_dir = cache_dir / "metadata"
-        self.cover_dir = cache_dir.parent / "covers"
+        self.cover_dir = covers_dir if covers_dir else cache_dir.parent / "covers"
         self.meta_cache_dir.mkdir(parents=True, exist_ok=True)
         self.cover_dir.mkdir(parents=True, exist_ok=True)
 

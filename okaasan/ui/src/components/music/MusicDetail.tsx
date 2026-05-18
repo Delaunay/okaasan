@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge, Button } from '@chakra-ui/react';
 import { ArrowLeft, Disc3, Play, Plus, ListMusic } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 
 interface AlbumDetail {
@@ -15,13 +15,7 @@ interface AlbumDetail {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 function formatDuration(seconds: number): string {

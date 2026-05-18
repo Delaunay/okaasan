@@ -49,6 +49,20 @@ export function imagePath(image: string): string {
   return SITE_BASE + path;
 }
 
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w300';
+
+export function resolveMediaUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return USE_STATIC_MODE ? undefined : path;
+  if (path.startsWith('uploads/')) return `${SITE_BASE}/api/${path}`;
+  if (path.startsWith('/uploads/')) return `${SITE_BASE}/api${path}`;
+  if (path.startsWith('/api/')) return `${SITE_BASE}${path}`;
+  // TMDB poster path (starts with / but not /uploads or /api)
+  // In static mode, don't load from external TMDB CDN
+  if (path.startsWith('/')) return USE_STATIC_MODE ? undefined : `${TMDB_IMAGE_BASE}${path}`;
+  return `${SITE_BASE}/api/${path}`;
+}
+
 export { isStaticMode };
 
 /** Extend a bare YYYY-MM-DD date to end-of-day for chart domain bounds. */

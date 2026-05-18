@@ -10,6 +10,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from ..decorators import expose
+from ..paths import private_folder, public_folder, cache_folder
 from .models import Media, WatchHistory, WatchlistItem, UserRating, Collection, CollectionItem
 from .tmdb import TMDBClient
 from .posters import PosterStore
@@ -30,11 +31,12 @@ def _init_tmdb(static_folder: str) -> TMDBClient:
     import json as _json
     global _tmdb, _posters
     base = Path(static_folder)
-    cache_dir = base / "uploads" / "data" / "shows" / "tmdb_cache"
+    cache_dir = cache_folder() / "shows" / "tmdb"
+    image_dir = public_folder() / "data" / "shows" / "tmdb_images"
 
     tmdb_key = None
     tmdb_bearer = None
-    config_path = base / "private" / "_tmdb.json"
+    config_path = private_folder() / "_tmdb.json"
     if config_path.is_file():
         try:
             with open(config_path) as f:
@@ -44,7 +46,7 @@ def _init_tmdb(static_folder: str) -> TMDBClient:
         except (ValueError, OSError):
             pass
 
-    _tmdb = TMDBClient(cache_dir, api_key=tmdb_key, bearer_token=tmdb_bearer)
+    _tmdb = TMDBClient(cache_dir, api_key=tmdb_key, bearer_token=tmdb_bearer, image_dir=image_dir)
     _posters = PosterStore(base)
     return _tmdb
 
@@ -704,9 +706,7 @@ async def configure_tmdb(request: Request):
     if not bearer_token and not api_key:
         raise HTTPException(status_code=400, detail="bearer_token or api_key is required")
 
-    private_dir = Path(request.app.state.static_folder) / "private"
-    private_dir.mkdir(parents=True, exist_ok=True)
-    config_path = private_dir / "_tmdb.json"
+    config_path = private_folder() / "_tmdb.json"
 
     existing = {}
     if config_path.is_file():
@@ -725,9 +725,12 @@ async def configure_tmdb(request: Request):
         json.dump(existing, f)
 
     global _tmdb
-    base = Path(request.app.state.static_folder)
-    cache_dir = base / "uploads" / "data" / "shows" / "tmdb_cache"
-    _tmdb = TMDBClient(cache_dir, api_key=existing.get("api_key"), bearer_token=existing.get("bearer_token"))
+    _tmdb = TMDBClient(
+        cache_folder() / "shows" / "tmdb",
+        api_key=existing.get("api_key"),
+        bearer_token=existing.get("bearer_token"),
+        image_dir=public_folder() / "data" / "shows" / "tmdb_images",
+    )
 
     return {"configured": True}
 

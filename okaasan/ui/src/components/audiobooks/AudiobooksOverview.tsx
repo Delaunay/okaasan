@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { Headphones, Clock, BookOpen, Play } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 
 interface AudiobookSummary {
   id: number;
@@ -37,11 +37,7 @@ function formatDuration(seconds: number): string {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('uploads/')) return `/api/${coverPath}`;
-  if (coverPath.startsWith('/uploads/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 const AudiobooksOverview: React.FC = () => {

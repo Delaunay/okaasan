@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .models import Game, GameSaveState
 from .metadata import IGDBClient
+from ..paths import private_folder, public_folder, cache_folder
 
 log = logging.getLogger("okaasan.games")
 
@@ -55,12 +56,10 @@ def _get_private_db(request: Request):
 def _init_igdb(static_folder: str) -> IGDBClient:
     import json as _json
     global _igdb
-    base = Path(static_folder)
-    cache_dir = base / "uploads" / "data" / "games" / "igdb_cache"
 
     client_id = None
     client_secret = None
-    config_path = base / "private" / "_games.json"
+    config_path = private_folder() / "_games.json"
     if config_path.is_file():
         try:
             with open(config_path) as f:
@@ -70,7 +69,12 @@ def _init_igdb(static_folder: str) -> IGDBClient:
         except (ValueError, OSError):
             pass
 
-    _igdb = IGDBClient(cache_dir, client_id=client_id, client_secret=client_secret)
+    _igdb = IGDBClient(
+        cache_folder() / "games" / "igdb",
+        client_id=client_id,
+        client_secret=client_secret,
+        covers_dir=public_folder() / "data" / "games" / "covers",
+    )
     return _igdb
 
 
@@ -165,9 +169,7 @@ async def configure_igdb(request: Request):
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="client_id and client_secret are required")
 
-    private_dir = Path(request.app.state.static_folder) / "private"
-    private_dir.mkdir(parents=True, exist_ok=True)
-    config_path = private_dir / "_games.json"
+    config_path = private_folder() / "_games.json"
 
     existing = {}
     if config_path.is_file():
@@ -184,9 +186,12 @@ async def configure_igdb(request: Request):
         json.dump(existing, f)
 
     global _igdb
-    base = Path(request.app.state.static_folder)
-    cache_dir = base / "uploads" / "data" / "games" / "igdb_cache"
-    _igdb = IGDBClient(cache_dir, client_id=client_id, client_secret=client_secret)
+    _igdb = IGDBClient(
+        cache_folder() / "games" / "igdb",
+        client_id=client_id,
+        client_secret=client_secret,
+        covers_dir=public_folder() / "data" / "games" / "covers",
+    )
 
     return {"configured": True}
 
@@ -354,8 +359,7 @@ async def upload_save_state(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    base = Path(request.app.state.static_folder)
-    save_dir = base / "uploads" / "data" / "games" / "save_states" / str(game_id)
+    save_dir = public_folder() / "data" / "games" / "save_states" / str(game_id)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     data_path = save_dir / f"slot_{slot}.sav"

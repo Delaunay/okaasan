@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ..paths import public_folder
+
 log = logging.getLogger("okaasan.shows.collections")
 
 
@@ -13,7 +15,7 @@ class CollectionManager:
     """Manages user-created playlists/collections stored as JSON files."""
 
     def __init__(self, data_dir: Path):
-        self.collections_dir = data_dir / "uploads" / "data" / "shows" / "collections"
+        self.collections_dir = public_folder() / "data" / "shows" / "collections"
         self.collections_dir.mkdir(parents=True, exist_ok=True)
 
     def _collection_path(self, collection_id: str) -> Path:

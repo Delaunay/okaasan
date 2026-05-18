@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Text, Image } from '@chakra-ui/react';
+import { resolveMediaUrl } from '../../services/api';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w300';
 
@@ -19,16 +20,7 @@ interface MediaInfo {
 }
 
 function resolvePoster(posterPath: string | undefined | null): string | undefined {
-  if (!posterPath) return undefined;
-  // Local relative path (from our poster store, stored as "uploads/...")
-  if (posterPath.startsWith('uploads/')) return `/api/${posterPath}`;
-  // Already has /uploads prefix
-  if (posterPath.startsWith('/uploads/')) return `/api${posterPath}`;
-  // TMDB absolute path (starts with /)
-  if (posterPath.startsWith('/')) return `${TMDB_IMAGE_BASE}${posterPath}`;
-  // Already a full URL
-  if (posterPath.startsWith('http')) return posterPath;
-  return undefined;
+  return resolveMediaUrl(posterPath);
 }
 
 function getMediaInfo(item: any): MediaInfo {

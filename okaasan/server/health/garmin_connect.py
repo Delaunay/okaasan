@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from .importer import import_metrics, import_activities, import_daily_summaries, ImportResult
 from .garmin_cache import fetch_or_cache, load_cached
+from ..paths import private_folder
 
 log = logging.getLogger("okaasan.health.garmin")
 
@@ -29,14 +30,8 @@ SOURCE = "garmin_api"
 # Auth helpers
 # ---------------------------------------------------------------------------
 
-def _private_dir(config_dir: Path) -> Path:
-    d = config_dir.parent / "private"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def _token_path(config_dir: Path) -> Path:
-    return _private_dir(config_dir) / "_garmin_tokens.json"
+    return private_folder() / "_garmin_tokens.json"
 
 
 def _get_client(config_dir: Path):

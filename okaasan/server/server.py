@@ -23,15 +23,13 @@ from . import gitsync, updater
 
 log = logging.getLogger("okaasan")
 
+from .paths import (
+    STATIC_FOLDER, STATIC_UPLOAD_FOLDER, ORIGINALS_FOLDER,
+    private_folder, public_folder, cache_folder,
+)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
-
-STATIC_FOLDER_DEFAULT = os.path.join(ROOT, 'static')
-STATIC_FOLDER = os.path.abspath(
-    os.getenv("OKAASAN_DATA") or os.getenv("FLASK_STATIC", STATIC_FOLDER_DEFAULT)
-)
-STATIC_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'uploads')
-ORIGINALS_FOLDER = '/mnt/xshare/projects/recipes/originals'
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _BUNDLED_STATIC = _PACKAGE_DIR / "static"
@@ -103,9 +101,7 @@ def create_app() -> FastAPI:
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)
 
-    private_dir = os.path.join(STATIC_FOLDER, "private")
-    os.makedirs(private_dir, exist_ok=True)
-    private_db_path = os.path.join(private_dir, "database.db")
+    private_db_path = os.path.join(str(private_folder()), "database.db")
     private_engine = create_engine(f"sqlite:///{private_db_path}", connect_args={"check_same_thread": False})
 
     from .shows.library_models import MediaFile  # noqa: F401 — registers table
@@ -384,12 +380,68 @@ def create_app() -> FastAPI:
         "Retro Games": "_games.json",
     }
 
+    # ── Scan schedule API ──────────────────────────────────────
+
+    @app.get("/scan/schedule")
+    def get_scan_schedule():
+        """Return the current scan schedule settings (reads from first available config)."""
+        priv = private_folder()
+        for config_file in _MEDIA_CONFIG_FILES.values():
+            p = priv / config_file
+            if p.is_file():
+                try:
+                    with open(p) as f:
+                        cfg = json.load(f)
+                    return {
+                        "scan_mode": cfg.get("scan_mode", "daily"),
+                        "scan_hour": cfg.get("scan_hour", 1),
+                        "scan_timezone": cfg.get("scan_timezone", "UTC"),
+                        "scan_interval_minutes": cfg.get("scan_interval_minutes", 1440),
+                    }
+                except (ValueError, OSError):
+                    pass
+        return {"scan_mode": "daily", "scan_hour": 1, "scan_timezone": "UTC", "scan_interval_minutes": 1440}
+
+    @app.post("/scan/schedule")
+    async def set_scan_schedule(request: Request):
+        """Update scan schedule for all configured media libraries."""
+        data = await request.json()
+        scan_mode = data.get("scan_mode", "daily")
+        scan_hour = int(data.get("scan_hour", 1))
+        scan_timezone = data.get("scan_timezone", "UTC")
+        scan_interval_minutes = int(data.get("scan_interval_minutes", 1440))
+
+        priv = private_folder()
+        updated = 0
+        for config_file in _MEDIA_CONFIG_FILES.values():
+            p = priv / config_file
+            if p.is_file():
+                try:
+                    with open(p) as f:
+                        cfg = json.load(f)
+                    cfg["scan_mode"] = scan_mode
+                    cfg["scan_hour"] = scan_hour
+                    cfg["scan_timezone"] = scan_timezone
+                    cfg["scan_interval_minutes"] = scan_interval_minutes
+                    with open(p, "w") as f:
+                        json.dump(cfg, f, indent=2)
+                    updated += 1
+                except (ValueError, OSError):
+                    pass
+        return {
+            "updated": updated,
+            "scan_mode": scan_mode,
+            "scan_hour": scan_hour,
+            "scan_timezone": scan_timezone,
+            "scan_interval_minutes": scan_interval_minutes,
+        }
+
     def _get_configured_media() -> set[str]:
         """Return set of sidebar titles whose media sections have been configured."""
         configured = set()
-        private_dir = Path(STATIC_FOLDER) / "private"
+        priv = private_folder()
         for title, config_file in _MEDIA_CONFIG_FILES.items():
-            p = private_dir / config_file
+            p = priv / config_file
             if p.is_file():
                 try:
                     with open(p) as f:

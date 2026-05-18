@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Flex, Text, HStack, VStack, Button } from '@chakra-ui/react';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ListMusic, X, Music, Shuffle, ListPlus } from 'lucide-react';
+import { resolveMediaUrl } from '../../services/api';
 import { useMusicPlayer } from './MusicPlayerContext';
 import AddToPlaylistPopup from './AddToPlaylistPopup';
 
@@ -12,13 +13,7 @@ function formatTime(seconds: number): string {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 const MusicPlayer: React.FC = () => {

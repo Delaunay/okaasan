@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Input, Button } from '@chakra-ui/react';
 import { Headphones, Play, BookOpen } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import AudiobooksPlayer from './AudiobooksPlayer';
 
 interface Audiobook {
@@ -34,11 +34,7 @@ function formatDuration(seconds: number): string {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('uploads/')) return `/api/${coverPath}`;
-  if (coverPath.startsWith('/uploads/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 const FilterChip: React.FC<{ label: string; count: number; active: boolean; onClick: () => void; icon?: React.ReactNode }> = ({

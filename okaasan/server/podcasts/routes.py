@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from .models import Podcast, PodcastEpisode, PodcastProgress
 from .metadata import PodcastIndexClient
 from .rss_fetcher import fetch_feed, PodcastRefresher
+from ..paths import private_folder, public_folder, cache_folder
 
 log = logging.getLogger("okaasan.podcasts")
 
@@ -29,7 +30,7 @@ def _get_db(request: Request):
 
 
 def _config_path(static_folder: str) -> Path:
-    return Path(static_folder) / "private" / "_podcasts.json"
+    return private_folder() / "_podcasts.json"
 
 
 def _load_config(static_folder: str) -> dict:
@@ -45,15 +46,16 @@ def _load_config(static_folder: str) -> dict:
 
 def _init_client(static_folder: str) -> PodcastIndexClient:
     global _client
-    base = Path(static_folder)
-    cache_dir = base / "uploads" / "data" / "podcasts" / "metadata_cache"
-    covers_dir = base / "uploads" / "data" / "podcasts" / "covers"
-
     cfg = _load_config(static_folder)
     api_key = cfg.get("api_key", "")
     api_secret = cfg.get("api_secret", "")
 
-    _client = PodcastIndexClient(cache_dir, covers_dir, api_key=api_key, api_secret=api_secret)
+    _client = PodcastIndexClient(
+        cache_folder() / "podcasts",
+        public_folder() / "data" / "podcasts" / "covers",
+        api_key=api_key,
+        api_secret=api_secret,
+    )
     return _client
 
 

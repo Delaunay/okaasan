@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Input, Button } from '@chakra-ui/react';
 import { HardDrive, Film, Tv, Play, Filter } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import VideoPlayerModal from './VideoPlayerModal';
 
 interface LibraryFile {
@@ -42,15 +42,8 @@ interface AllFilesResponse {
 type MatchFilter = 'all' | 'matched' | 'unmatched';
 type TypeFilter = 'all' | 'shows' | 'movies';
 
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w300';
-
 function resolvePoster(posterPath: string | null | undefined): string | undefined {
-  if (!posterPath) return undefined;
-  if (posterPath.startsWith('uploads/')) return `/api/${posterPath}`;
-  if (posterPath.startsWith('/uploads/')) return `/api${posterPath}`;
-  if (posterPath.startsWith('/')) return `${TMDB_IMAGE_BASE}${posterPath}`;
-  if (posterPath.startsWith('http')) return posterPath;
-  return undefined;
+  return resolveMediaUrl(posterPath);
 }
 
 function formatSize(bytes: number | null): string {

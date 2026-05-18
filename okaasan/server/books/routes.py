@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .models import Book, ReadingProgress
 from .metadata import OpenLibraryClient
+from ..paths import public_folder, cache_folder
 
 log = logging.getLogger("okaasan.books")
 
@@ -37,9 +38,8 @@ def _get_private_db(request: Request):
 def _get_ol(request: Request) -> OpenLibraryClient:
     global _ol_client
     if _ol_client is None:
-        base = Path(request.app.state.static_folder)
-        data_dir = base / "uploads" / "data" / "books"
-        _ol_client = OpenLibraryClient(data_dir)
+        data_dir = public_folder() / "data" / "books"
+        _ol_client = OpenLibraryClient(data_dir, cache_dir=cache_folder() / "books" / "openlibrary")
     return _ol_client
 
 

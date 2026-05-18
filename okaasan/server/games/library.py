@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .library_models import RomFile
 from .models import Game
+from ..paths import private_folder
+from ..scanner import BaseLibraryScanner
 
 log = logging.getLogger("okaasan.games.library")
 
@@ -58,7 +59,7 @@ _SCENE_TAGS = re.compile(
 
 
 def _config_path(static_folder: str) -> Path:
-    return Path(static_folder) / "private" / "_games.json"
+    return private_folder() / "_games.json"
 
 
 def load_config(static_folder: str) -> dict[str, Any]:
@@ -182,50 +183,22 @@ def scan_folders(static_folder: str, private_engine, main_engine) -> dict:
         main_db.close()
 
 
-class GameLibraryScanner:
+class GameLibraryScanner(BaseLibraryScanner):
     """Background scanner that periodically crawls ROM folders."""
 
-    def __init__(self, static_folder: str, private_engine, main_engine):
-        self.static_folder = static_folder
-        self.private_engine = private_engine
-        self.main_engine = main_engine
-        self._thread: threading.Thread | None = None
-        self._stop_event = threading.Event()
-        self.last_scan: datetime | None = None
-        self.last_result: dict | None = None
+    _log_name = "games"
 
-    def start(self):
-        config = load_config(self.static_folder)
-        if not config.get("folders"):
-            log.info("No ROM folders configured, skipping background scan")
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+    def _load_config(self) -> dict[str, Any]:
+        return load_config(self.static_folder)
 
-    def stop(self):
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
+    def _get_folders(self, config: dict) -> list[str]:
+        return config.get("folders", [])
 
-    def scan_now(self) -> dict:
-        result = scan_folders(self.static_folder, self.private_engine, self.main_engine)
-        self.last_scan = datetime.now(timezone.utc)
-        self.last_result = result
-        return result
+    def _get_extensions(self, config: dict) -> set[str] | None:
+        exts = set()
+        for ext in EXTENSION_TO_PLATFORM:
+            exts.add(ext)
+        return exts
 
-    def _run(self):
-        try:
-            self.scan_now()
-        except Exception as e:
-            log.warning("Initial ROM scan failed: %s", e)
-
-        while not self._stop_event.is_set():
-            config = load_config(self.static_folder)
-            interval = config.get("scan_interval_minutes", 60) * 60
-            self._stop_event.wait(timeout=interval)
-            if self._stop_event.is_set():
-                break
-            try:
-                self.scan_now()
-            except Exception as e:
-                log.warning("Periodic ROM scan failed: %s", e)
+    def _do_scan(self) -> dict:
+        return scan_folders(self.static_folder, self.private_engine, self.main_engine)

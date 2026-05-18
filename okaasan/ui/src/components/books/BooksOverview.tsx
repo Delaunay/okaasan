@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge } from '@chakra-ui/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { BookOpen, Clock, Library, TrendingUp } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 
 interface Book {
   id: number;
@@ -34,11 +34,7 @@ interface OverviewData {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('uploads/')) return `/api/${coverPath}`;
-  if (coverPath.startsWith('/uploads/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return undefined;
+  return resolveMediaUrl(coverPath);
 }
 
 const BooksOverview: React.FC = () => {

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Button } from '@chakra-ui/react';
 import { Calendar, Play, CheckCircle, X } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 
 interface EpisodeInfo {
@@ -39,12 +39,7 @@ interface ScheduleData {
 }
 
 function resolvePoster(path: string | null): string | undefined {
-  if (!path) return undefined;
-  if (path.startsWith('uploads/')) return `/api/${path}`;
-  if (path.startsWith('/uploads/')) return `/api${path}`;
-  if (path.startsWith('/')) return `https://image.tmdb.org/t/p/w300${path}`;
-  if (path.startsWith('http')) return path;
-  return undefined;
+  return resolveMediaUrl(path);
 }
 
 function getDayLabel(dateStr: string): string {

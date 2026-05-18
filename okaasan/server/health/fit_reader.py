@@ -1,6 +1,6 @@
 """FIT file parser connector.
 
-Copies .fit files into a local archive (``uploads/data/private/fit/``),
+Copies .fit files into a local archive (``private/fit/``),
 parses them with ``fitparse``, and imports the extracted metrics and
 activities via the dedup importer.
 """
@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .importer import import_metrics, import_activities, ImportResult
+from ..paths import private_folder
 
 _SPORT_NORMALIZE: dict[str, str] = {
     "64": "badminton",
@@ -31,7 +32,7 @@ SOURCE = "fit_file"
 
 
 def _fit_archive_dir(upload_folder: str | Path) -> Path:
-    d = Path(upload_folder) / "data" / "private" / "fit"
+    d = private_folder() / "fit"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

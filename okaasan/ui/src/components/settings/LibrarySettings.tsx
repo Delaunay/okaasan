@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, VStack, HStack, Text, Heading, Input, Button, Badge, Spinner } from '@chakra-ui/react';
-import { HardDrive, ArrowLeft, FolderOpen, Trash2, RefreshCw, Film, Tv, Sparkles } from 'lucide-react';
+import { HardDrive, ArrowLeft, FolderOpen, Trash2, RefreshCw, Film, Tv, Sparkles, Clock } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
 interface LibraryStatus {
@@ -11,6 +11,13 @@ interface LibraryStatus {
   matched_files: number;
   unmatched_files: number;
   last_scan: string | null;
+  scan_interval_minutes: number;
+}
+
+interface ScanSchedule {
+  scan_mode: 'daily' | 'interval';
+  scan_hour: number;
+  scan_timezone: string;
   scan_interval_minutes: number;
 }
 
@@ -25,6 +32,10 @@ const LibrarySettings: React.FC = () => {
   });
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [schedule, setSchedule] = useState<ScanSchedule>({
+    scan_mode: 'daily', scan_hour: 1, scan_timezone: 'UTC', scan_interval_minutes: 1440,
+  });
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     recipeAPI.request<LibraryStatus>('/shows/library/status')
@@ -32,6 +43,9 @@ const LibrarySettings: React.FC = () => {
         setStatus(data);
         setFolders(data.folders);
       })
+      .catch(console.error);
+    recipeAPI.request<ScanSchedule>('/scan/schedule')
+      .then(setSchedule)
       .catch(console.error);
   }, []);
 
@@ -62,6 +76,21 @@ const LibrarySettings: React.FC = () => {
       console.error(e);
     } finally {
       setScanning(false);
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true);
+    try {
+      const result = await recipeAPI.request<ScanSchedule>('/scan/schedule', {
+        method: 'POST',
+        body: JSON.stringify(schedule),
+      });
+      setSchedule(result);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -162,6 +191,86 @@ const LibrarySettings: React.FC = () => {
             </VStack>
           </Box>
         ))}
+
+        {/* Scan Schedule */}
+        <Box p={4} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+          <HStack mb={3}>
+            <Clock size={16} color="var(--icon-color)" />
+            <Text fontWeight="semibold">Scan Schedule</Text>
+            <Badge colorPalette="blue" fontSize="xs">All Libraries</Badge>
+          </HStack>
+          <Text fontSize="xs" color="var(--muted-text)" mb={3}>
+            Controls when all media libraries are re-scanned. Scans are skipped if no files changed.
+          </Text>
+          <VStack align="stretch" gap={3}>
+            <HStack>
+              <Text fontSize="sm" minW="80px">Mode:</Text>
+              <HStack gap={2}>
+                <Button
+                  size="xs"
+                  variant={schedule.scan_mode === 'daily' ? 'solid' : 'outline'}
+                  colorPalette={schedule.scan_mode === 'daily' ? 'blue' : 'gray'}
+                  onClick={() => setSchedule(s => ({ ...s, scan_mode: 'daily' }))}
+                >
+                  Daily
+                </Button>
+                <Button
+                  size="xs"
+                  variant={schedule.scan_mode === 'interval' ? 'solid' : 'outline'}
+                  colorPalette={schedule.scan_mode === 'interval' ? 'blue' : 'gray'}
+                  onClick={() => setSchedule(s => ({ ...s, scan_mode: 'interval' }))}
+                >
+                  Interval
+                </Button>
+              </HStack>
+            </HStack>
+            {schedule.scan_mode === 'daily' ? (
+              <HStack>
+                <Text fontSize="sm" minW="80px">Scan at:</Text>
+                <Input
+                  size="sm"
+                  type="number"
+                  min={0}
+                  max={23}
+                  w="70px"
+                  value={schedule.scan_hour}
+                  onChange={(e) => setSchedule(s => ({ ...s, scan_hour: parseInt(e.target.value) || 0 }))}
+                />
+                <Text fontSize="sm">:00</Text>
+                <Input
+                  size="sm"
+                  w="140px"
+                  placeholder="UTC"
+                  value={schedule.scan_timezone}
+                  onChange={(e) => setSchedule(s => ({ ...s, scan_timezone: e.target.value }))}
+                />
+              </HStack>
+            ) : (
+              <HStack>
+                <Text fontSize="sm" minW="80px">Every:</Text>
+                <Input
+                  size="sm"
+                  type="number"
+                  min={15}
+                  w="80px"
+                  value={schedule.scan_interval_minutes}
+                  onChange={(e) => setSchedule(s => ({ ...s, scan_interval_minutes: parseInt(e.target.value) || 60 }))}
+                />
+                <Text fontSize="sm">minutes</Text>
+              </HStack>
+            )}
+            <Button
+              size="sm"
+              colorPalette="blue"
+              variant="outline"
+              onClick={handleSaveSchedule}
+              disabled={savingSchedule}
+              alignSelf="flex-start"
+            >
+              {savingSchedule ? 'Saving...' : 'Save Schedule'}
+            </Button>
+          </VStack>
+        </Box>
 
         <Button onClick={handleSave} disabled={saving} colorPalette="blue">
           {saving ? 'Saving...' : 'Save Configuration'}

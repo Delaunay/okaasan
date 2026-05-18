@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Button } from '@chakra-ui/react';
 import { Bookmark, CheckCircle } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, isStaticMode, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 
 const ShowsWatchlist: React.FC = () => {
@@ -100,16 +100,7 @@ const WatchlistCard: React.FC<{ item: any; onMarkWatched: () => void }> = ({ ite
   const mediaType = item.media_type === 'show' ? 'tv' : 'movie';
   const to = item.tmdb_id ? `/shows-detail/${mediaType}/${item.tmdb_id}` : undefined;
 
-  let posterUrl: string | null = null;
-  if (posterPath) {
-    if (posterPath.startsWith('http')) {
-      posterUrl = posterPath;
-    } else if (posterPath.startsWith('uploads/')) {
-      posterUrl = `/api/${posterPath}`;
-    } else if (posterPath.startsWith('/')) {
-      posterUrl = `https://image.tmdb.org/t/p/w300${posterPath}`;
-    }
-  }
+  const posterUrl = resolveMediaUrl(posterPath) || null;
 
   const content = (
     <>
@@ -141,31 +132,32 @@ const WatchlistCard: React.FC<{ item: any; onMarkWatched: () => void }> = ({ ite
       _hover={{ transform: 'translateY(-2px)', boxShadow: 'md' }}
       position="relative"
     >
-      {/* Icon-only watched button on top-right */}
-      <Box
-        position="absolute"
-        top={1}
-        right={1}
-        zIndex={2}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={(e) => { e.preventDefault(); onMarkWatched(); }}
-          title="Mark as watched and remove from watchlist"
-          p={1}
-          minW="auto"
-          h="auto"
-          borderRadius="full"
-          bg="rgba(0,0,0,0.5)"
-          color="white"
-          _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+      {!isStaticMode() && (
+        <Box
+          position="absolute"
+          top={1}
+          right={1}
+          zIndex={2}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          <CheckCircle size={14} />
-        </Button>
-      </Box>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={(e) => { e.preventDefault(); onMarkWatched(); }}
+            title="Mark as watched and remove from watchlist"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <CheckCircle size={14} />
+          </Button>
+        </Box>
+      )}
 
       {to ? (
         <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>

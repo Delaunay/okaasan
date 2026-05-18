@@ -16,6 +16,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from .models import HealthMetric, HealthActivity, HealthDailySummary, HealthConnector
+from ..paths import private_folder
 
 log = logging.getLogger("okaasan.health.routes")
 
@@ -608,8 +609,7 @@ def create_health_router(engine) -> APIRouter:
         from sqlalchemy.orm import sessionmaker
 
         contents = await file.read()
-        upload_dir = Path(_upload_folder(request))
-        export_dir = upload_dir / "data" / "private" / "garmin_dump"
+        export_dir = private_folder() / "garmin_dump"
         export_dir.mkdir(parents=True, exist_ok=True)
         zip_path = export_dir / (file.filename or "garmin_export.zip")
         zip_path.write_bytes(contents)

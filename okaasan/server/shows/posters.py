@@ -6,6 +6,8 @@ from pathlib import Path
 
 import httpx
 
+from ..paths import public_folder
+
 log = logging.getLogger("okaasan.shows.posters")
 
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
@@ -15,7 +17,7 @@ class PosterStore:
     """Manages poster files in uploads/data/shows/posters/."""
 
     def __init__(self, base_dir: Path):
-        self.posters_dir = base_dir / "uploads" / "data" / "shows" / "posters"
+        self.posters_dir = public_folder() / "data" / "shows" / "posters"
         self.posters_dir.mkdir(parents=True, exist_ok=True)
         transport = httpx.HTTPTransport(local_address="0.0.0.0")
         self._http = httpx.Client(

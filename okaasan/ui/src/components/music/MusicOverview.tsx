@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Button } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { Music, Users, Disc3, ListMusic, Play, Plus, Shuffle } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 
 interface Genre {
@@ -39,13 +39,7 @@ interface OverviewData {
 }
 
 function resolveCover(coverPath: string | null | undefined): string | undefined {
-  if (!coverPath) return undefined;
-  if (coverPath.startsWith('/uploads/') || coverPath.startsWith('uploads/')) {
-    return `/api/${coverPath.replace(/^\//, '')}`;
-  }
-  if (coverPath.startsWith('/')) return `/api${coverPath}`;
-  if (coverPath.startsWith('http')) return coverPath;
-  return `/api/${coverPath}`;
+  return resolveMediaUrl(coverPath);
 }
 
 const MusicOverview: React.FC = () => {

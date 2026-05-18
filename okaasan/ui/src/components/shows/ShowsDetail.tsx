@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Text, Image, HStack, VStack, Badge, Spinner, Button } from '@chakra-ui/react';
 import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle, Play } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, isStaticMode, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 import VideoPlayerModal from './VideoPlayerModal';
 
@@ -104,8 +104,12 @@ const ShowsDetail: React.FC = () => {
   const episodes = tmdb?.number_of_episodes;
   const country = tmdb?.origin_country?.[0] || tmdb?.production_countries?.[0]?.iso_3166_1 || source.country;
   const imdbId = tmdb?.imdb_id || source?.ids?.imdb;
-  const posterUrl = tmdb?.poster_path ? `${TMDB_IMAGE_BASE}/w500${tmdb.poster_path}` : null;
-  const backdropUrl = tmdb?.backdrop_path ? `${TMDB_IMAGE_BASE}/w1280${tmdb.backdrop_path}` : null;
+  const posterUrl = tmdb?.poster_path
+    ? (isStaticMode() ? resolveMediaUrl(data.poster_path) : `${TMDB_IMAGE_BASE}/w500${tmdb.poster_path}`)
+    : resolveMediaUrl(data.poster_path) || null;
+  const backdropUrl = tmdb?.backdrop_path && !isStaticMode()
+    ? `${TMDB_IMAGE_BASE}/w1280${tmdb.backdrop_path}`
+    : null;
   const nextEpisode = tmdb?.next_episode_to_air;
   const lastEpisode = tmdb?.last_episode_to_air;
 

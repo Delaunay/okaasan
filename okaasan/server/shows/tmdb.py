@@ -26,12 +26,12 @@ MAX_REQUESTS_PER_SECOND = 40
 class TMDBClient:
     """TMDB API client with local disk caching for metadata and images."""
 
-    def __init__(self, cache_dir: Path, api_key: str | None = None, bearer_token: str | None = None):
+    def __init__(self, cache_dir: Path, api_key: str | None = None, bearer_token: str | None = None, image_dir: Path | None = None):
         self.api_key = api_key or os.getenv("TMDB_API_KEY", "")
         self.bearer_token = bearer_token or os.getenv("TMDB_BEARER_TOKEN", "")
         self.cache_dir = cache_dir
         self.meta_cache_dir = cache_dir / "metadata"
-        self.image_cache_dir = cache_dir / "images"
+        self.image_cache_dir = image_dir if image_dir else cache_dir / "images"
         self.meta_cache_dir.mkdir(parents=True, exist_ok=True)
         self.image_cache_dir.mkdir(parents=True, exist_ok=True)
         self._rate_lock = threading.Lock()

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image } from '@chakra-ui/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Layers, BookOpen, Clock, Library } from 'lucide-react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, resolveMediaUrl } from '../../services/api';
 
 interface ComicSeries {
   id: number;
@@ -25,10 +25,7 @@ interface OverviewData {
 }
 
 function resolveCover(coverUrl: string | null | undefined): string | undefined {
-  if (!coverUrl) return undefined;
-  if (coverUrl.startsWith('/api/') || coverUrl.startsWith('http')) return coverUrl;
-  if (coverUrl.startsWith('/')) return `/api${coverUrl}`;
-  return `/api/${coverUrl}`;
+  return resolveMediaUrl(coverUrl);
 }
 
 const ComicsOverview: React.FC = () => {

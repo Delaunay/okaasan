@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ..task_registry import registry
+
 log = logging.getLogger("okaasan.podcasts.rss")
 
 try:
@@ -155,6 +157,7 @@ class PodcastRefresher:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
+        registry.register("podcast_refresh", "Podcast Refresh")
         self._thread = threading.Thread(target=self._run, daemon=True, name="podcast-refresher")
         self._thread.start()
         log.info("Podcast refresher started (interval=%dm)", self._interval // 60)
@@ -173,8 +176,11 @@ class PodcastRefresher:
     def _run(self):
         time.sleep(10)
         while not self._stop_event.is_set():
+            registry.update("podcast_refresh", status="running", detail="Refreshing feeds...")
             try:
-                refresh_all_feeds(self._session_factory)
+                count = refresh_all_feeds(self._session_factory)
+                registry.update("podcast_refresh", status="idle", detail=f"{count} new episodes" if count else "")
             except Exception as e:
                 log.error("Podcast refresh loop error: %s", e)
+                registry.update("podcast_refresh", status="error", error=str(e))
             self._stop_event.wait(self._interval)

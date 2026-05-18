@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, DateTime, ForeignKey, Index,
+    Column, Integer, String, Boolean, DateTime, ForeignKey, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -31,6 +32,7 @@ class MusicTrack(Base):
     genre = Column(String(200), nullable=True)
     year = Column(Integer, nullable=True)
     musicbrainz_id = Column(String(36), nullable=True)
+    spotify_id = Column(String(100), nullable=True)
     cover_path = Column(String(500), nullable=True)
     play_count = Column(Integer, default=0, nullable=False, server_default="0")
     last_played_at = Column(DateTime, nullable=True)
@@ -41,6 +43,7 @@ class MusicTrack(Base):
         Index("idx_mt_album", "album"),
         Index("idx_mt_title", "title"),
         Index("idx_mt_mbid", "musicbrainz_id"),
+        Index("idx_mt_spotify", "spotify_id"),
     )
 
     def to_json(self) -> dict:
@@ -56,6 +59,7 @@ class MusicTrack(Base):
             "genre": self.genre,
             "year": self.year,
             "musicbrainz_id": self.musicbrainz_id,
+            "spotify_id": self.spotify_id,
             "cover_path": self.cover_path,
             "play_count": self.play_count or 0,
             "last_played_at": self.last_played_at.isoformat() + "Z" if self.last_played_at else None,
@@ -159,4 +163,55 @@ class MusicEvent(Base):
             "notes": self.notes,
             "cover_path": self.cover_path,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+
+
+class MusicListeningHistory(Base):
+    """A single play event from streaming history (Spotify, etc.)."""
+
+    __tablename__ = "music_listening_history"
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("music_tracks.id", ondelete="SET NULL"), nullable=True)
+    played_at = Column(DateTime, nullable=False)
+    ms_played = Column(Integer, nullable=True)
+    spotify_track_uri = Column(String(200), nullable=True)
+    track_name = Column(String(500), nullable=True)
+    artist_name = Column(String(500), nullable=True)
+    album_name = Column(String(500), nullable=True)
+    platform = Column(String(200), nullable=True)
+    skipped = Column(Boolean, nullable=True)
+    shuffle = Column(Boolean, nullable=True)
+    offline = Column(Boolean, nullable=True)
+    reason_start = Column(String(50), nullable=True)
+    reason_end = Column(String(50), nullable=True)
+    source = Column(String(50), nullable=False, default="spotify_import")
+
+    track = relationship("MusicTrack")
+
+    __table_args__ = (
+        UniqueConstraint("spotify_track_uri", "played_at", "source", name="uq_music_listen_dedup"),
+        Index("idx_mlh_track", "track_id"),
+        Index("idx_mlh_played", "played_at"),
+        Index("idx_mlh_artist", "artist_name"),
+        Index("idx_mlh_source", "source"),
+    )
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "track_id": self.track_id,
+            "played_at": self.played_at.isoformat() + "Z" if self.played_at else None,
+            "ms_played": self.ms_played,
+            "spotify_track_uri": self.spotify_track_uri,
+            "track_name": self.track_name,
+            "artist_name": self.artist_name,
+            "album_name": self.album_name,
+            "platform": self.platform,
+            "skipped": self.skipped,
+            "shuffle": self.shuffle,
+            "offline": self.offline,
+            "reason_start": self.reason_start,
+            "reason_end": self.reason_end,
+            "source": self.source,
         }

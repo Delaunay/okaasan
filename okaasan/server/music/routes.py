@@ -107,21 +107,16 @@ async def library_configure(request: Request):
 @router.post("/library/scan")
 async def library_scan(request: Request):
     """Trigger a manual music library scan. Pass {"force": true} to re-scan all files."""
-    from .library import scan_folders
-    from .library_models import MusicFile
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
     data = {}
     try:
         data = await request.json()
     except Exception:
         pass
 
-    static_folder = request.app.state.static_folder
-    private_engine = request.app.state.private_engine
-
     if data.get("force"):
+        from .library_models import MusicFile
+        from sqlalchemy.orm import sessionmaker
+        private_engine = request.app.state.private_engine
         PrivateSession = sessionmaker(bind=private_engine)
         pdb = PrivateSession()
         try:
@@ -131,16 +126,18 @@ async def library_scan(request: Request):
         finally:
             pdb.close()
 
-    db_path = os.path.join(static_folder, "database.db")
-    main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-
-    result = scan_folders(static_folder, private_engine, main_engine)
-
+    import asyncio
     global _music_scanner
     if _music_scanner:
-        from datetime import datetime, timezone
-        _music_scanner.last_scan = datetime.now(timezone.utc)
-        _music_scanner.last_result = result
+        result = await asyncio.to_thread(_music_scanner.scan_now)
+    else:
+        from .library import scan_folders
+        from sqlalchemy import create_engine
+        static_folder = request.app.state.static_folder
+        private_engine = request.app.state.private_engine
+        db_path = os.path.join(static_folder, "database.db")
+        main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, main_engine)
 
     return {"message": "Scan complete", **result}
 
@@ -987,3 +984,79 @@ def delete_event(request: Request, event_id: int, db: Session = Depends(_get_db)
     db.delete(event)
     db.commit()
     return {"message": "Deleted"}
+
+
+# ── Spotify import ────────────────────────────────────────────
+
+@router.post("/import/spotify")
+async def import_spotify(request: Request):
+    """Import Spotify Extended Streaming History from extracted JSON files.
+
+    Runs in a background thread and streams SSE progress events.
+    """
+    import json as _json
+    import queue
+    import threading
+    from starlette.responses import StreamingResponse
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    static_folder = request.app.state.static_folder
+    dump_dir = body.get("dump_dir") or os.path.join(static_folder, "dumps", "spotify")
+
+    if not Path(dump_dir).is_dir():
+        raise HTTPException(status_code=404, detail=f"Dump directory not found: {dump_dir}")
+
+    SL = request.app.state.SessionLocal
+    q: queue.Queue = queue.Queue()
+
+    def _worker():
+        from .spotify_importer import import_spotify_data
+        from ..task_registry import registry
+
+        registry.register("spotify_import", "Spotify Import", status="running")
+        db = SL()
+        try:
+            def _on_progress(stats):
+                registry.update(
+                    "spotify_import",
+                    detail=f"{stats['total_processed']} events processed",
+                    progress=None,
+                )
+                q.put({"progress": stats.copy()})
+
+            result = import_spotify_data(db, dump_dir, on_progress=_on_progress)
+            q.put({"done": True, **result})
+            registry.update("spotify_import", status="idle", detail=f"{result['music_plays_imported']} plays imported")
+        except Exception as exc:
+            log.error("Spotify import failed: %s", exc, exc_info=True)
+            db.rollback()
+            q.put({"error": str(exc)})
+            registry.update("spotify_import", status="error", error=str(exc))
+        finally:
+            db.close()
+            registry.unregister("spotify_import")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _stream():
+        while True:
+            try:
+                evt = q.get(timeout=300)
+            except queue.Empty:
+                yield f"data: {_json.dumps({'error': 'Import timed out'})}\n\n"
+                return
+            yield f"data: {_json.dumps(evt)}\n\n"
+            if "done" in evt or "error" in evt:
+                return
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

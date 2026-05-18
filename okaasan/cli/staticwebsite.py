@@ -16,7 +16,7 @@ from argklass.command import Command, newparser
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass 
 class Arguments:
     output: str = None
     skip_frontend: bool = False

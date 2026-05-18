@@ -529,12 +529,16 @@ def create_health_router(engine) -> APIRouter:
 
         def _worker():
             from ..notifications import hub as _hub
+            from ..task_registry import registry
+            registry.register("health_sync_manual", "Health Sync", status="running")
             client = None
             if not replay:
                 try:
                     client = _get_client(config_dir)
                 except Exception as exc:
                     q.put({"error": str(exc), "fatal": True})
+                    registry.update("health_sync_manual", status="error", error=str(exc))
+                    registry.unregister("health_sync_manual")
                     return
 
             _hub.publish({"type": "garmin_sync", "status": "started", "total_days": total_days})
@@ -564,17 +568,20 @@ def create_health_router(engine) -> APIRouter:
                     db.close()
 
                 q.put(evt)
+                registry.update("health_sync_manual", detail=f"Day {idx}/{total_days}", progress=idx / total_days)
 
                 if consecutive_dups >= dup_threshold:
                     msg = f"No new data for {dup_threshold} consecutive days"
                     q.put({"stopped": True, "reason": msg, "days_synced": idx})
                     _hub.publish({"type": "garmin_sync", "status": "done", "days_synced": idx, "message": f"Sync stopped: {msg}"})
+                    registry.unregister("health_sync_manual")
                     return
 
                 day -= timedelta(days=1)
 
             q.put({"done": True, "days_synced": idx})
             _hub.publish({"type": "garmin_sync", "status": "done", "days_synced": idx, "message": f"Synced {idx} days"})
+            registry.unregister("health_sync_manual")
 
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()

@@ -76,3 +76,31 @@ def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "
         app.include_router(ocr_router)
     except Exception as exc:
         log.warning("OCR routes not available: %s", exc)
+
+    # --- qBittorrent (torrent management) ---
+    try:
+        from .qbittorrent import create_qbittorrent_router
+
+        qbt_router = create_qbittorrent_router(private_engine or engine, engine)
+        app.include_router(qbt_router)
+    except Exception as exc:
+        log.warning("qBittorrent routes not available: %s", exc)
+
+    # --- VPN management ---
+    try:
+        from .vpn import create_vpn_router
+
+        vpn_router = create_vpn_router()
+        app.include_router(vpn_router)
+    except Exception as exc:
+        log.warning("VPN routes not available: %s", exc)
+
+    # --- Status broadcast (qBittorrent + VPN → WebSocket) ---
+    try:
+        from .status_broadcast import start as start_broadcast
+
+        @app.on_event("startup")
+        async def _start_status_broadcast():
+            start_broadcast()
+    except Exception as exc:
+        log.warning("Status broadcast not available: %s", exc)

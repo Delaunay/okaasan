@@ -31,6 +31,32 @@ config.set_main_option("sqlalchemy.url", db_url)
 
 from okaasan.server.models import Base
 
+# Import ALL model modules so Alembic sees every table.
+# Without these, autogenerate thinks the tables are "removed".
+from okaasan.server.models.common import Base  # noqa: F811
+from okaasan.server.shows.models import *  # noqa: F401,F403
+from okaasan.server.shows.library_models import *  # noqa: F401,F403
+from okaasan.server.music.models import *  # noqa: F401,F403
+from okaasan.server.music.library_models import *  # noqa: F401,F403
+from okaasan.server.podcasts.models import *  # noqa: F401,F403
+from okaasan.server.books.models import *  # noqa: F401,F403
+from okaasan.server.books.library_models import *  # noqa: F401,F403
+from okaasan.server.audiobooks.models import *  # noqa: F401,F403
+from okaasan.server.audiobooks.library_models import *  # noqa: F401,F403
+from okaasan.server.games.models import *  # noqa: F401,F403
+from okaasan.server.games.library_models import *  # noqa: F401,F403
+from okaasan.server.comics.models import *  # noqa: F401,F403
+from okaasan.server.comics.library_models import *  # noqa: F401,F403
+from okaasan.server.podcasts.library_models import *  # noqa: F401,F403
+try:
+    from okaasan.server.audit.models import *  # noqa: F401,F403
+except Exception:
+    pass
+try:
+    from okaasan.server.integrations.qbittorrent.models import *  # noqa: F401,F403
+except Exception:
+    pass
+
 target_metadata = Base.metadata
 
 

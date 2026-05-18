@@ -11,6 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .paths import private_folder
+from .task_registry import registry
 
 log = logging.getLogger("okaasan.scanner")
 
@@ -110,6 +111,7 @@ class BaseLibraryScanner:
         if not folders:
             log.info("No %s folders configured, skipping background scan", self._log_name)
             return
+        registry.register(f"scanner:{self._log_name}", f"{self._log_name.title()} Scanner")
         self._thread = threading.Thread(target=self._run, daemon=True, name=f"{self._log_name}-scanner")
         self._thread.start()
 
@@ -120,7 +122,13 @@ class BaseLibraryScanner:
 
     def scan_now(self) -> dict:
         """Trigger an immediate scan (synchronous), bypassing change detection and recency check."""
-        result = self._do_scan()
+        tid = f"scanner:{self._log_name}"
+        registry.update(tid, status="running", detail="Scanning...")
+        try:
+            result = self._do_scan()
+        except Exception:
+            registry.update(tid, status="error", detail="Scan failed")
+            raise
         self.last_scan = datetime.now(timezone.utc)
         self.last_result = result
         self._save_last_scan_time()
@@ -129,6 +137,7 @@ class BaseLibraryScanner:
         extensions = self._get_extensions(config)
         if folders:
             self._last_fingerprint = compute_fingerprint(folders, extensions)
+        registry.update(tid, status="idle", detail="")
         return result
 
     # ── Scan state persistence ──────────────────────────────────────────
@@ -217,6 +226,7 @@ class BaseLibraryScanner:
         return (target - now_local).total_seconds()
 
     def _run(self):
+        tid = f"scanner:{self._log_name}"
         if self._was_scanned_recently():
             log.info("%s: skipping startup scan (last scan was recent)", self._log_name)
         else:
@@ -224,6 +234,7 @@ class BaseLibraryScanner:
                 self.scan_now()
             except Exception as e:
                 log.warning("Initial %s scan failed: %s", self._log_name, e)
+                registry.update(tid, status="error", error=str(e))
 
         while not self._stop_event.is_set():
             config = self._load_config()
@@ -238,10 +249,11 @@ class BaseLibraryScanner:
             else:
                 wait_secs = interval_minutes * 60
 
+            registry.update(tid, status="idle", detail="Waiting for next scan")
+
             if self._stop_event.wait(timeout=wait_secs):
                 break
 
-            # Check for actual filesystem changes before running a full scan
             if not self._has_changes(config):
                 log.debug("%s: no changes detected, skipping scan", self._log_name)
                 continue
@@ -250,3 +262,4 @@ class BaseLibraryScanner:
                 self.scan_now()
             except Exception as e:
                 log.warning("Periodic %s scan failed: %s", self._log_name, e)
+                registry.update(tid, status="error", error=str(e))

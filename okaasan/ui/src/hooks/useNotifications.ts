@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { isStaticMode } from '../services/api';
 
 export interface ServerEvent {
@@ -11,58 +11,75 @@ type EventHandler = (event: ServerEvent) => void;
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
+// ── Shared singleton WebSocket ──────────────────────────────
+
+const listeners = new Set<EventHandler>();
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelay = RECONNECT_DELAY_MS;
+
+function ensureConnected() {
+  if (isStaticMode() || ws) return;
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(`${protocol}//${location.host}/api/ws`);
+
+  socket.onopen = () => {
+    reconnectDelay = RECONNECT_DELAY_MS;
+  };
+
+  socket.onmessage = (e) => {
+    try {
+      const event = JSON.parse(e.data) as ServerEvent;
+      listeners.forEach(fn => fn(event));
+    } catch { /* ignore malformed */ }
+  };
+
+  socket.onclose = () => {
+    ws = null;
+    if (listeners.size === 0) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
+      ensureConnected();
+    }, reconnectDelay);
+  };
+
+  socket.onerror = () => {
+    socket.close();
+  };
+
+  ws = socket;
+}
+
+function disconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+}
+
+// ── Hook ────────────────────────────────────────────────────
+
 export function useNotifications(onEvent: EventHandler) {
-  const wsRef = useRef<WebSocket | null>(null);
   const handlerRef = useRef(onEvent);
   handlerRef.current = onEvent;
 
-  const reconnectDelay = useRef(RECONNECT_DELAY_MS);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const unmounted = useRef(false);
-
-  const connect = useCallback(() => {
-    if (unmounted.current || isStaticMode()) return;
-
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${location.host}/api/ws`);
-
-    ws.onopen = () => {
-      reconnectDelay.current = RECONNECT_DELAY_MS;
-    };
-
-    ws.onmessage = (e) => {
-      try {
-        const event = JSON.parse(e.data) as ServerEvent;
-        handlerRef.current(event);
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onclose = () => {
-      wsRef.current = null;
-      if (unmounted.current) return;
-      reconnectTimer.current = setTimeout(() => {
-        reconnectDelay.current = Math.min(reconnectDelay.current * 2, MAX_RECONNECT_DELAY_MS);
-        connect();
-      }, reconnectDelay.current);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
-
-    wsRef.current = ws;
-  }, []);
-
   useEffect(() => {
     if (isStaticMode()) return;
-    unmounted.current = false;
-    connect();
+
+    const handler: EventHandler = (event) => handlerRef.current(event);
+    listeners.add(handler);
+    ensureConnected();
+
     return () => {
-      unmounted.current = true;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (wsRef.current) wsRef.current.close();
+      listeners.delete(handler);
+      if (listeners.size === 0) {
+        disconnect();
+      }
     };
-  }, [connect]);
+  }, []);
 }

@@ -88,6 +88,7 @@ import MusicSchedule from './components/music/MusicSchedule';
 import MusicDetail from './components/music/MusicDetail';
 import { MusicPlayerProvider } from './components/music/MusicPlayerContext';
 import MusicSettings from './components/settings/MusicSettings';
+import TorrentsPage from './components/torrents/TorrentsPage';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
@@ -188,6 +189,15 @@ function App() {
                         key={section.href}
                         path={section.href}
                         element={<MusicOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/torrents') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<TorrentsPage />}
                       />
                     );
                   }

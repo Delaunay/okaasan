@@ -36,3 +36,10 @@ def cache_folder(base: str | Path | None = None) -> Path:
     d = root / "cache"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def logs_folder(base: str | Path | None = None) -> Path:
+    """Return the logs directory under private/, creating it if needed."""
+    d = private_folder(base) / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d

@@ -128,3 +128,48 @@ class PodcastProgress(Base):
             "completed": self.completed,
             "last_listened_at": self.last_listened_at.isoformat() + "Z" if self.last_listened_at else None,
         }
+
+
+class PodcastListeningHistory(Base):
+    """A single podcast play event from streaming history (Spotify, etc.)."""
+
+    __tablename__ = "podcast_listening_history"
+
+    id = Column(Integer, primary_key=True)
+    podcast_id = Column(Integer, ForeignKey("podcasts_media.id", ondelete="SET NULL"), nullable=True)
+    episode_id = Column(Integer, ForeignKey("podcasts_episodes.id", ondelete="SET NULL"), nullable=True)
+    played_at = Column(DateTime, nullable=False)
+    ms_played = Column(Integer, nullable=True)
+    spotify_episode_uri = Column(String(200), nullable=True)
+    episode_name = Column(String(500), nullable=True)
+    show_name = Column(String(500), nullable=True)
+    platform = Column(String(200), nullable=True)
+    skipped = Column(Boolean, nullable=True)
+    source = Column(String(50), nullable=False, default="spotify_import")
+
+    podcast = relationship("Podcast")
+    episode = relationship("PodcastEpisode")
+
+    __table_args__ = (
+        UniqueConstraint("spotify_episode_uri", "played_at", "source", name="uq_podcast_listen_dedup"),
+        Index("idx_plh_podcast", "podcast_id"),
+        Index("idx_plh_episode", "episode_id"),
+        Index("idx_plh_played", "played_at"),
+        Index("idx_plh_show", "show_name"),
+        Index("idx_plh_source", "source"),
+    )
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "podcast_id": self.podcast_id,
+            "episode_id": self.episode_id,
+            "played_at": self.played_at.isoformat() + "Z" if self.played_at else None,
+            "ms_played": self.ms_played,
+            "spotify_episode_uri": self.spotify_episode_uri,
+            "episode_name": self.episode_name,
+            "show_name": self.show_name,
+            "platform": self.platform,
+            "skipped": self.skipped,
+            "source": self.source,
+        }

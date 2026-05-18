@@ -97,22 +97,18 @@ async def library_configure(request: Request):
 @router.post("/library/scan")
 async def library_scan(request: Request):
     """Trigger a manual book library scan."""
-    from .library import scan_folders
-    from sqlalchemy import create_engine
-
-    static_folder = request.app.state.static_folder
-    private_engine = request.app.state.private_engine
-
-    db_path = os.path.join(static_folder, "database.db")
-    main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-
-    result = scan_folders(static_folder, private_engine, main_engine)
-
+    import asyncio
     global _library_scanner
     if _library_scanner:
-        from datetime import datetime, timezone
-        _library_scanner.last_scan = datetime.now(timezone.utc)
-        _library_scanner.last_result = result
+        result = await asyncio.to_thread(_library_scanner.scan_now)
+    else:
+        from .library import scan_folders
+        from sqlalchemy import create_engine
+        static_folder = request.app.state.static_folder
+        private_engine = request.app.state.private_engine
+        db_path = os.path.join(static_folder, "database.db")
+        main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, main_engine)
 
     return {"message": "Scan complete", **result}
 

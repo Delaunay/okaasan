@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from ..task_registry import registry
+
 log = logging.getLogger("okaasan.health.scheduler")
 
 _scheduler_thread: threading.Thread | None = None
@@ -43,6 +45,7 @@ def _run_daily_sync(engine, config_dir: Path, sync_hour: int = 1, tz_name: str =
         today = datetime.now(timezone.utc).date()
 
         log.info("Starting daily sync for %s and %s", yesterday, today)
+        registry.update("health_sync", status="running", detail=f"Syncing {yesterday} and {today}")
 
         from ..notifications import hub as _hub
         _hub.publish({"type": "garmin_sync", "status": "started", "source": "scheduler"})
@@ -65,8 +68,10 @@ def _run_daily_sync(engine, config_dir: Path, sync_hour: int = 1, tz_name: str =
         except Exception as exc:
             log.error("Daily sync client error: %s", exc)
             _hub.publish({"type": "garmin_sync", "status": "error", "error": str(exc), "source": "scheduler"})
+            registry.update("health_sync", status="error", error=str(exc))
         else:
             _hub.publish({"type": "garmin_sync", "status": "done", "source": "scheduler", "message": f"Daily sync: {total_inserted} new records"})
+            registry.update("health_sync", status="idle", detail=f"{total_inserted} new records")
         finally:
             db.close()
 
@@ -78,6 +83,7 @@ def start_scheduler(engine, config_dir: Path, sync_hour: int = 1, tz_name: str =
         return
 
     _stop_event.clear()
+    registry.register("health_sync", "Health Sync")
     _scheduler_thread = threading.Thread(
         target=_run_daily_sync,
         args=(engine, config_dir, sync_hour, tz_name),
@@ -95,6 +101,7 @@ def stop_scheduler() -> None:
         _scheduler_thread.join(timeout=5)
         log.info("Daily health sync scheduler stopped")
     _scheduler_thread = None
+    registry.unregister("health_sync")
 
 
 def is_running() -> bool:

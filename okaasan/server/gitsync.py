@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from .task_registry import registry
+
 log = logging.getLogger("okaasan.gitsync")
 
 _pending: asyncio.Event | None = None
@@ -274,19 +276,25 @@ async def _sync_loop(data_dir: Path, debounce_s: float = 5.0):
         if _pending.is_set():
             _pending.clear()
 
+        registry.update("gitsync", status="running", detail="Syncing...")
         try:
             result = await asyncio.get_event_loop().run_in_executor(
                 None, git_sync, data_dir
             )
             if result.commit:
                 log.info("Committed %s", result.commit)
+                registry.update("gitsync", status="idle", detail=f"Committed {result.commit}")
+            elif result.error:
+                log.error("Sync error: %s", result.error)
+                registry.update("gitsync", status="error", error=result.error)
+            else:
+                registry.update("gitsync", status="idle", detail="")
             if result.push_error:
                 log.warning("Push failed: %s", result.push_error)
-            if result.error:
-                log.error("Sync error: %s", result.error)
         except Exception as exc:
             log.exception("git sync failed")
             _last_sync = SyncResult(error=str(exc))
+            registry.update("gitsync", status="error", error=str(exc))
 
 
 def notify_write():
@@ -304,6 +312,7 @@ def start_sync(data_dir: Path, debounce_s: float = 5.0):
         log.info("Data dir is not a git repo — auto-save disabled")
         return
 
+    registry.register("gitsync", "Git Auto-Save")
     _pending = asyncio.Event()
     _task = asyncio.create_task(_sync_loop(data_dir, debounce_s))
     log.info("Git auto-save started (debounce=%ss)", debounce_s)

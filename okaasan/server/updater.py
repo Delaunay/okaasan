@@ -13,6 +13,8 @@ from urllib.request import Request, urlopen
 
 import okaasan
 
+from .task_registry import registry
+
 log = logging.getLogger("okaasan.updater")
 
 PYPI_URL = "https://pypi.org/pypi/okaasan/json"
@@ -195,14 +197,20 @@ async def _update_loop(interval_hours: float):
     interval_s = interval_hours * 3600
     while True:
         await asyncio.sleep(interval_s)
+        registry.update("auto_updater", status="running", detail="Checking PyPI...")
         try:
             result = await check_and_update()
             if result["status"] == "updated":
                 log.info("Updated to %s, restarting...", result["to"])
+                registry.update("auto_updater", status="running", detail=f"Updated to {result['to']}, restarting")
             elif result["status"] == "error":
                 log.warning("Update check: %s", result.get("message"))
+                registry.update("auto_updater", status="idle", detail=result.get("message", ""))
+            else:
+                registry.update("auto_updater", status="idle", detail="Up to date")
         except Exception:
             log.exception("Update loop error")
+            registry.update("auto_updater", status="error", error="Update check failed")
 
 
 _update_task: asyncio.Task | None = None
@@ -210,5 +218,6 @@ _update_task: asyncio.Task | None = None
 
 def start_update_loop(interval_hours: float = 24.0):
     global _update_task
+    registry.register("auto_updater", "Auto-Updater")
     _update_task = asyncio.create_task(_update_loop(interval_hours))
     log.info("Auto-update loop started (check every %sh)", interval_hours)

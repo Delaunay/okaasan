@@ -128,10 +128,14 @@ class MusicBrainzClient:
         """Download cover art from Cover Art Archive, save locally.
 
         Returns relative path to the cover image, or None.
+        404s are cached as empty marker files to avoid repeated lookups.
         """
         local_file = self.covers_dir / f"{mbid}.jpg"
         if local_file.exists():
-            return str(local_file)
+            return str(local_file) if local_file.stat().st_size > 0 else None
+        local_png = self.covers_dir / f"{mbid}.png"
+        if local_png.exists():
+            return str(local_png) if local_png.stat().st_size > 0 else None
 
         url = f"{COVER_ART_BASE}/release/{mbid}/front-250"
         try:
@@ -147,6 +151,8 @@ class MusicBrainzClient:
             return str(local_file)
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             log.debug("Cover art not available for %s: %s", mbid, e)
+            local_file.parent.mkdir(parents=True, exist_ok=True)
+            local_file.touch()
             return None
 
     def search_artist(self, name: str) -> dict | None:

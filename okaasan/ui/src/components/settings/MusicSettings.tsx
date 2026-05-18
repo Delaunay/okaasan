@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, VStack, HStack, Text, Heading, Input, Button, Badge, Spinner } from '@chakra-ui/react';
-import { Music, ArrowLeft, FolderOpen, Trash2, RefreshCw, Globe, Image } from 'lucide-react';
+import { Music, ArrowLeft, FolderOpen, Trash2, RefreshCw, Globe, Image, Upload } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
 interface MusicLibraryStatus {
@@ -26,6 +26,10 @@ const MusicSettings: React.FC = () => {
   const [contactEmail, setContactEmail] = useState('');
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [spotifyDir, setSpotifyDir] = useState('');
+  const [spotifyImporting, setSpotifyImporting] = useState(false);
+  const [spotifyResult, setSpotifyResult] = useState<any>(null);
+  const [spotifyError, setSpotifyError] = useState<string | null>(null);
 
   useEffect(() => {
     recipeAPI.request<MusicLibraryStatus>('/music/library/status')
@@ -81,6 +85,54 @@ const MusicSettings: React.FC = () => {
 
   const removeFolder = (idx: number) => {
     setFolders(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSpotifyImport = async () => {
+    setSpotifyImporting(true);
+    setSpotifyResult(null);
+    setSpotifyError(null);
+    try {
+      const body: any = {};
+      if (spotifyDir.trim()) body.dump_dir = spotifyDir.trim();
+      const resp = await fetch('/api/music/import/spotify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error(err.detail || resp.statusText);
+      }
+      const reader = resp.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error('No response stream');
+      let lastResult: any = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        for (const line of text.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.error) throw new Error(evt.error);
+            lastResult = evt;
+            if (evt.progress) {
+              setSpotifyResult({ ...evt.progress });
+            }
+          } catch (e: any) {
+            if (e.message && e.message !== 'Unexpected end of JSON input') {
+              throw e;
+            }
+          }
+        }
+      }
+      if (lastResult?.done) setSpotifyResult(lastResult);
+    } catch (e: any) {
+      setSpotifyError(e.message || 'Import failed');
+    } finally {
+      setSpotifyImporting(false);
+    }
   };
 
   return (
@@ -219,6 +271,77 @@ const MusicSettings: React.FC = () => {
                   />
                 </Box>
               </>
+            )}
+          </VStack>
+        </Box>
+
+        <Box p={4} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+          <HStack mb={3}>
+            <Upload size={16} />
+            <Text fontWeight="semibold">Spotify Import</Text>
+            {spotifyImporting && <Badge colorPalette="blue" fontSize="xs">Importing...</Badge>}
+          </HStack>
+          <Text fontSize="sm" color="var(--muted-text)" mb={3}>
+            Import your Spotify Extended Streaming History. Request your data from Spotify's privacy settings, extract the ZIP, and point to the folder containing the JSON files.
+          </Text>
+          <VStack align="stretch" gap={3}>
+            <Box>
+              <Text fontSize="xs" color="var(--muted-text)" mb={1}>
+                Path to extracted Spotify dump folder
+              </Text>
+              <Input
+                size="sm"
+                placeholder="/path/to/Spotify Extended Streaming History"
+                value={spotifyDir}
+                onChange={(e) => setSpotifyDir(e.target.value)}
+                fontFamily="mono"
+              />
+            </Box>
+            <HStack>
+              <Button
+                size="sm"
+                colorPalette="green"
+                onClick={handleSpotifyImport}
+                disabled={spotifyImporting}
+              >
+                {spotifyImporting ? <Spinner size="xs" /> : <Upload size={14} />}
+                <Text ml={1}>{spotifyImporting ? 'Importing...' : 'Import Spotify History'}</Text>
+              </Button>
+            </HStack>
+            {spotifyError && (
+              <Box p={3} bg="red.50" borderColor="red.200" border="1px solid" borderRadius="md">
+                <Text fontSize="sm" color="red.600">{spotifyError}</Text>
+              </Box>
+            )}
+            {spotifyResult && (
+              <Box p={3} bg="var(--surface-muted)" borderRadius="md">
+                <HStack gap={4} flexWrap="wrap">
+                  {spotifyResult.total_processed != null && (
+                    <Box>
+                      <Text fontSize="xs" color="var(--muted-text)">Processed</Text>
+                      <Text fontSize="sm" fontWeight="bold">{spotifyResult.total_processed.toLocaleString()}</Text>
+                    </Box>
+                  )}
+                  {spotifyResult.tracks_created != null && (
+                    <Box>
+                      <Text fontSize="xs" color="var(--muted-text)">Tracks Created</Text>
+                      <Text fontSize="sm" fontWeight="bold">{spotifyResult.tracks_created.toLocaleString()}</Text>
+                    </Box>
+                  )}
+                  {spotifyResult.music_plays_imported != null && (
+                    <Box>
+                      <Text fontSize="xs" color="var(--muted-text)">Music Plays</Text>
+                      <Text fontSize="sm" fontWeight="bold">{spotifyResult.music_plays_imported.toLocaleString()}</Text>
+                    </Box>
+                  )}
+                  {spotifyResult.podcast_plays_imported != null && (
+                    <Box>
+                      <Text fontSize="xs" color="var(--muted-text)">Podcast Plays</Text>
+                      <Text fontSize="sm" fontWeight="bold">{spotifyResult.podcast_plays_imported.toLocaleString()}</Text>
+                    </Box>
+                  )}
+                </HStack>
+              </Box>
             )}
           </VStack>
         </Box>

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import asyncio
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -132,6 +132,10 @@ def create_app() -> FastAPI:
     from .books.models import Book, ReadingProgress  # noqa: F401
     from .games.library_models import RomFile  # noqa: F401 — registers table
     from .games.models import Game, GameSaveState  # noqa: F401
+    try:
+        from .integrations.qbittorrent.models import CompletedDownload  # noqa: F401
+    except Exception:
+        pass
 
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
@@ -303,6 +307,12 @@ def create_app() -> FastAPI:
     def health_check():
         return {"status": "healthy"}
 
+    from .task_registry import registry as _task_registry
+
+    @app.get("/background-tasks")
+    def get_background_tasks():
+        return {"tasks": _task_registry.snapshot()}
+
     # WebSocket notification endpoint
     from starlette.websockets import WebSocketDisconnect
     from .notifications import hub as _notification_hub
@@ -312,7 +322,7 @@ def create_app() -> FastAPI:
         _notification_hub.set_loop(asyncio.get_running_loop())
 
     @app.websocket("/ws")
-    async def websocket_notifications(ws):
+    async def websocket_notifications(ws: WebSocket):
         await _notification_hub.connect(ws)
         try:
             while True:
@@ -415,7 +425,7 @@ def create_app() -> FastAPI:
         "Audiobooks": "_audiobooks.json",
         "Books": "_books.json",
         "Comics & Manga": "_comics.json",
-        "Podcasts": "_podcasts.json",
+        "Podcasts": "_podcasts.json", 
         "Retro Games": "_games.json",
     }
 

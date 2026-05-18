@@ -6,6 +6,7 @@ import { Bug } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import SidebarSection, { SidebarItem } from './SidebarSection';
 import MusicPlayer from '../components/music/MusicPlayer';
+import TaskStatusIndicator from '../components/tasks/TaskStatusIndicator';
 import './Layout.css';
 
 const GITHUB_REPO = 'https://github.com/Delaunay/okaasan';
@@ -102,7 +103,7 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
-    title: 'Home Management',
+    title: 'Home Management', 
     href: '/home-management',
     items: [
       { name: 'Computers', href: '/computers' },
@@ -111,6 +112,12 @@ const getStaticSidebarSections = () => [
       { name: 'Switches', href: "/switches"},
       { name: 'AI', href: "/ai"}
     ]
+  },
+  {
+    title: 'Downloads',
+    href: '/torrents',
+    isSelected: (location: Location) => location.pathname.startsWith('/torrents'),
+    items: [],
   },
   {
     title: 'Investing',
@@ -303,11 +310,12 @@ const Layout: FC<LayoutProps> = ({ children }) => {
   const STATIC_HIDDEN_ITEMS = new Set([
     '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
     '/shows-discover', '/shows-schedule', '/music-discover', '/music-schedule',
+    '/torrents',
   ]);
 
   const visibleSections = useMemo(() => {
     const filtered = allSections.filter(s => {
-      if (isStaticMode() && s.title === 'Settings') return false;
+      if (isStaticMode() && (s.title === 'Settings' || s.title === 'Downloads')) return false;
       const alwaysShow = ALWAYS_VISIBLE.has(s.title) || (!isStaticMode() && s.title === 'Settings');
       return alwaysShow || !hiddenSections.has(s.title);
     });
@@ -434,6 +442,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
           </div>
 
           <MusicPlayer />
+          <TaskStatusIndicator />
           <div className="nav-section" style={{ borderTop: '1px solid var(--chakra-colors-border)', paddingTop: '0.5rem' }}>
             <a
               href={`${GITHUB_REPO}/issues/new?labels=bug&title=Bug+Report`}

@@ -54,6 +54,7 @@ setup(
         "python-telegram-bot",
         "argklass",
         "usda_fdc",
+        "qbittorrent-api",
     ],
     entry_points={
         "console_scripts": [

@@ -5,6 +5,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 httpx
+mutagen
 pillow
 appdirs
 python-telegram-bot

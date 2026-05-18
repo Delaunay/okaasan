@@ -44,6 +44,7 @@ const LibrarySettings: React.FC = () => {
       });
       const updated = await recipeAPI.request<LibraryStatus>('/shows/library/status');
       setStatus(updated);
+      window.dispatchEvent(new Event('sidebar-config-changed'));
     } catch (e) {
       console.error(e);
     } finally {

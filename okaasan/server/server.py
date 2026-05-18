@@ -109,6 +109,15 @@ def create_app() -> FastAPI:
     private_engine = create_engine(f"sqlite:///{private_db_path}", connect_args={"check_same_thread": False})
 
     from .shows.library_models import MediaFile  # noqa: F401 — registers table
+    from .comics.library_models import ComicFile  # noqa: F401 — registers table
+    from .music.library_models import MusicFile  # noqa: F401 — registers table
+    from .podcasts.library_models import PodcastDownload  # noqa: F401 — registers table
+    from .audiobooks.library_models import AudiobookFile  # noqa: F401 — registers table
+    from .audiobooks.models import Audiobook, AudiobookChapter, ListeningProgress  # noqa: F401
+    from .books.library_models import BookFile  # noqa: F401 — registers table
+    from .books.models import Book, ReadingProgress  # noqa: F401
+    from .games.library_models import RomFile  # noqa: F401 — registers table
+    from .games.models import Game, GameSaveState  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
@@ -140,6 +149,12 @@ def create_app() -> FastAPI:
     from .articles import router as article_router
     from .feed.routes import router as feed_router
     from .shows import router as shows_router
+    from .audiobooks import router as audiobooks_router
+    from .books import router as books_router
+    from .music import router as music_router
+    from .podcasts import router as podcasts_router
+    from .games import router as games_router
+    from .comics import router as comics_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)
@@ -153,6 +168,12 @@ def create_app() -> FastAPI:
     app.include_router(graph_router)
     app.include_router(feed_router)
     app.include_router(shows_router)
+    app.include_router(audiobooks_router)
+    app.include_router(books_router)
+    app.include_router(music_router)
+    app.include_router(podcasts_router)
+    app.include_router(games_router)
+    app.include_router(comics_router)
 
     # Auto-import Trakt data if shows tables are empty
     from .shows.models import Media as _ShowsMedia
@@ -176,6 +197,48 @@ def create_app() -> FastAPI:
     _library_scanner = LibraryScanner(STATIC_FOLDER, private_engine, engine)
     _shows_routes._library_scanner = _library_scanner
     _library_scanner.start()
+
+    # Start book library background scanner
+    from .books.library import BookLibraryScanner
+    from .books import routes as _books_routes
+    _book_scanner = BookLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _books_routes._library_scanner = _book_scanner
+    _book_scanner.start()
+
+    # Start audiobook library background scanner
+    from .audiobooks.library import AudiobookLibraryScanner
+    from .audiobooks import routes as _audiobooks_routes
+    _ab_scanner = AudiobookLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _audiobooks_routes._library_scanner = _ab_scanner
+    _ab_scanner.start()
+
+    # Start music library background scanner
+    from .music.library import MusicLibraryScanner
+    from .music import routes as _music_routes
+    _music_scanner = MusicLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _music_routes._music_scanner = _music_scanner
+    _music_scanner.start()
+
+    # Start ROM library background scanner
+    from .games.library import GameLibraryScanner
+    from .games import routes as _games_routes
+    _game_scanner = GameLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _games_routes._library_scanner = _game_scanner
+    _game_scanner.start()
+
+    # Start podcast feed refresher
+    from .podcasts.rss_fetcher import PodcastRefresher
+    from .podcasts import routes as _podcasts_routes
+    _podcast_refresher = PodcastRefresher(SessionLocal, interval_minutes=30)
+    _podcasts_routes._refresher = _podcast_refresher
+    _podcast_refresher.start()
+
+    # Start comic library background scanner
+    from .comics.library import ComicLibraryScanner
+    from .comics import routes as _comics_routes
+    _comic_scanner = ComicLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _comics_routes._library_scanner = _comic_scanner
+    _comic_scanner.start()
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
@@ -267,7 +330,13 @@ def create_app() -> FastAPI:
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
         {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
-        {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections"]},
+        {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections", "Library"]},
+        {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Schedule"]},
+        {"title": "Audiobooks",            "href": "/audiobooks",          "items": ["Library"]},
+        {"title": "Podcasts",              "href": "/podcasts",            "items": ["Library"]},
+        {"title": "Books",                 "href": "/books",               "items": ["Library"]},
+        {"title": "Comics & Manga",        "href": "/comics",              "items": ["Library"]},
+        {"title": "Retro Games",           "href": "/games",               "items": ["Library"]},
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
@@ -284,17 +353,60 @@ def create_app() -> FastAPI:
                 return json.load(f)
         return {}
 
+    # Map sidebar titles to their config files in private/
+    _MEDIA_CONFIG_FILES: dict[str, str] = {
+        "Shows & Movies": "_library.json",
+        "Music": "_music.json",
+        "Audiobooks": "_audiobooks.json",
+        "Books": "_books.json",
+        "Comics & Manga": "_comics.json",
+        "Podcasts": "_podcasts.json",
+        "Retro Games": "_games.json",
+    }
+
+    def _get_configured_media() -> set[str]:
+        """Return set of sidebar titles whose media sections have been configured."""
+        configured = set()
+        private_dir = Path(STATIC_FOLDER) / "private"
+        for title, config_file in _MEDIA_CONFIG_FILES.items():
+            p = private_dir / config_file
+            if p.is_file():
+                try:
+                    with open(p) as f:
+                        cfg = json.load(f)
+                    folders = cfg.get("folders", {})
+                    if isinstance(folders, list):
+                        has_folders = len(folders) > 0
+                    elif isinstance(folders, dict):
+                        has_folders = any(
+                            isinstance(v, list) and len(v) > 0
+                            for v in folders.values()
+                        )
+                    else:
+                        has_folders = False
+                    has_api_key = bool(cfg.get("api_key") or cfg.get("client_id"))
+                    if has_folders or has_api_key:
+                        configured.add(title)
+                except (json.JSONDecodeError, OSError):
+                    pass
+        return configured
+
     @app.get("/sidebar")
     def get_sidebar():
         cfg = _load_sidebar_config()
         hidden = set(cfg.get("hidden", []))
         static_hidden = set(cfg.get("static_hidden", []))
-        sections = [s for s in _ALL_SECTIONS if s["title"] not in hidden]
+        configured_media = _get_configured_media()
+        # Auto-hide media sections that aren't configured yet
+        unconfigured = set(_MEDIA_CONFIG_FILES.keys()) - configured_media
+        effective_hidden = hidden | unconfigured
+        sections = [s for s in _ALL_SECTIONS if s["title"] not in effective_hidden]
         return {
             "sections": sections,
             "all_sections": _ALL_SECTIONS,
             "hidden": list(hidden),
             "static_hidden": list(static_hidden),
+            "configured_media": list(configured_media),
         }
 
     @app.put("/sidebar")
@@ -477,7 +589,8 @@ def create_app() -> FastAPI:
                          "ingredient/", "sidebar", "version", "update",
                          "git/", "usda/", "subtasks",
                          "gcalendar/", "garmin/", "weather/",
-                         "health-data/", "shows/")
+                         "health-data/", "shows/", "audiobooks/", "books/", "music/",
+                         "comics/", "games/")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

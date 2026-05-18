@@ -53,6 +53,33 @@ import ShowsDiscover from './components/shows/ShowsDiscover';
 import ShowsSchedule from './components/shows/ShowsSchedule';
 import ShowsDetail from './components/shows/ShowsDetail';
 import ShowsLibrary from './components/shows/ShowsLibrary';
+import GamesOverview from './components/games/GamesOverview';
+import GamesLibrary from './components/games/GamesLibrary';
+import GamesDetail from './components/games/GamesDetail';
+import GamesSettings from './components/settings/GamesSettings';
+import BooksOverview from './components/books/BooksOverview';
+import BooksLibrary from './components/books/BooksLibrary';
+import BooksDetail from './components/books/BooksDetail';
+import BooksSettings from './components/settings/BooksSettings';
+import ComicsOverview from './components/comics/ComicsOverview';
+import ComicsLibrary from './components/comics/ComicsLibrary';
+import ComicsDetail from './components/comics/ComicsDetail';
+import ComicsSettings from './components/settings/ComicsSettings';
+import PodcastsOverview from './components/podcasts/PodcastsOverview';
+import PodcastsLibrary from './components/podcasts/PodcastsLibrary';
+import PodcastsDetail from './components/podcasts/PodcastsDetail';
+import PodcastsSettings from './components/settings/PodcastsSettings';
+import AudiobooksOverview from './components/audiobooks/AudiobooksOverview';
+import AudiobooksLibrary from './components/audiobooks/AudiobooksLibrary';
+import AudiobooksDetail from './components/audiobooks/AudiobooksDetail';
+import AudiobooksSettings from './components/settings/AudiobooksSettings';
+import MusicOverview from './components/music/MusicOverview';
+import MusicDiscover from './components/music/MusicDiscover';
+import MusicLibrary from './components/music/MusicLibrary';
+import MusicSchedule from './components/music/MusicSchedule';
+import MusicDetail from './components/music/MusicDetail';
+import { MusicPlayerProvider } from './components/music/MusicPlayerContext';
+import MusicSettings from './components/settings/MusicSettings';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
@@ -77,6 +104,7 @@ function App() {
         <ColorModeProvider>
           <Toaster />
           <Router>
+            <MusicPlayerProvider>
             <Layout>
               <Routes>
                 <Route path="/" element={<Home />} />
@@ -98,6 +126,60 @@ function App() {
                         key={section.href}
                         path={section.href}
                         element={<ShowsOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/games') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<GamesOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/books') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<BooksOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/comics') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<ComicsOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/podcasts') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<PodcastsOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/audiobooks') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<AudiobooksOverview />}
+                      />
+                    );
+                  }
+                  if (section.href === '/music') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<MusicOverview />}
                       />
                     );
                   }
@@ -164,6 +246,38 @@ function App() {
                 <Route path="/shows-library" element={<ShowsLibrary />} />
                 <Route path="/shows-detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
 
+                {/* Retro Games */}
+                <Route path="/games-library" element={<GamesLibrary />} />
+                <Route path="/games-detail/:id" element={<GamesDetail />} />
+                <Route path="/settings/games" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GamesSettings />} />
+
+                {/* Comics & Manga */}
+                <Route path="/comics-library" element={<ComicsLibrary />} />
+                <Route path="/comics-detail/:id" element={<ComicsDetail />} />
+                <Route path="/settings/comics" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ComicsSettings />} />
+
+                {/* Podcasts */}
+                <Route path="/podcasts-library" element={<PodcastsLibrary />} />
+                <Route path="/podcasts-detail/:id" element={<PodcastsDetail />} />
+                <Route path="/settings/podcasts" element={isStaticMode() ? <Navigate to="/settings" replace /> : <PodcastsSettings />} />
+
+                {/* Books */}
+                <Route path="/books-library" element={<BooksLibrary />} />
+                <Route path="/books-detail/:id" element={<BooksDetail />} />
+                <Route path="/settings/books" element={isStaticMode() ? <Navigate to="/settings" replace /> : <BooksSettings />} />
+
+                {/* Audiobooks */}
+                <Route path="/audiobooks-library" element={<AudiobooksLibrary />} />
+                <Route path="/audiobooks-detail/:id" element={<AudiobooksDetail />} />
+                <Route path="/settings/audiobooks" element={isStaticMode() ? <Navigate to="/settings" replace /> : <AudiobooksSettings />} />
+
+                {/* Music */}
+                <Route path="/music-discover" element={<MusicDiscover />} />
+                <Route path="/music-library" element={<MusicLibrary />} />
+                <Route path="/music-schedule" element={<MusicSchedule />} />
+                <Route path="/music-detail/:albumId" element={<MusicDetail />} />
+                <Route path="/settings/music" element={isStaticMode() ? <Navigate to="/settings" replace /> : <MusicSettings />} />
+
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />
                 <Route path="/scratch/filament-math" element={<FilamentMath />} />
                 <Route path="/scratch/wood-planner" element={<WoodPlanner />} />
@@ -177,6 +291,7 @@ function App() {
                 <Route path="/scratch/article-blocks" element={<ArticleTestPage />} />
               </Routes>
             </Layout>
+            </MusicPlayerProvider>
           </Router>
         </ColorModeProvider>
       </ChakraProvider>

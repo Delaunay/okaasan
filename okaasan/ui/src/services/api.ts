@@ -949,7 +949,7 @@ class RecipeAPI {
   }
 
   // Sidebar configuration
-  async getSidebar(): Promise<{ sections: any[]; all_sections: any[]; hidden: string[]; static_hidden: string[] }> {
+  async getSidebar(): Promise<{ sections: any[]; all_sections: any[]; hidden: string[]; static_hidden: string[]; configured_media: string[] }> {
     if (isStaticMode()) {
       return this.requestStatic('/sidebar');
     }

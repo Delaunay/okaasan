@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
-    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
 import { TelegramSettings } from '../common/TelegramSettings';
@@ -108,6 +108,54 @@ const Settings: React.FC = () => {
                 icon: <Tv size={20} />,
                 badge: 'Integration',
                 onOpen: () => navigate('/settings/trakt'),
+            },
+            {
+                id: 'podcasts',
+                title: 'Podcasts',
+                description: 'Configure Podcast Index API for podcast search, discovery, and feed updates',
+                icon: <Podcast size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/podcasts'),
+            },
+            {
+                id: 'comics',
+                title: 'Comics & Manga',
+                description: 'Configure comic folders, ComicVine API key, and scan your library',
+                icon: <Layers size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/comics'),
+            },
+            {
+                id: 'games',
+                title: 'Retro Games',
+                description: 'Configure ROM folders and IGDB credentials for in-browser retro game emulation',
+                icon: <Gamepad2 size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/games'),
+            },
+            {
+                id: 'books',
+                title: 'Books Library',
+                description: 'Configure book folders, scan for ePub and PDF files, and manage your reading library',
+                icon: <BookOpen size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/books'),
+            },
+            {
+                id: 'audiobooks',
+                title: 'Audiobooks Library',
+                description: 'Configure audiobook folders, scan your library, and manage listening progress',
+                icon: <Headphones size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/audiobooks'),
+            },
+            {
+                id: 'music',
+                title: 'Music Library',
+                description: 'Configure music folders, scan for audio files, and manage your music collection',
+                icon: <Music size={20} />,
+                badge: 'Library',
+                onOpen: () => navigate('/settings/music'),
             },
         ]),
         {

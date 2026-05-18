@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Flex, Heading, HStack, Text, VStack,
+  Box, Flex, Heading, HStack, Text, VStack, Badge,
 } from '@chakra-ui/react';
 import { useToast } from '../ui/toaster';
 import { LayoutDashboard, Eye, EyeOff, Loader2, Lock, Globe } from 'lucide-react';
@@ -18,8 +18,13 @@ export default function SidebarSettings() {
   const [allSections, setAllSections] = useState<SectionInfo[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [staticHidden, setStaticHidden] = useState<Set<string>>(new Set());
+  const [configuredMedia, setConfiguredMedia] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  const MEDIA_SECTIONS = new Set([
+    'Shows & Movies', 'Music', 'Audiobooks', 'Podcasts', 'Books', 'Comics & Manga', 'Retro Games',
+  ]);
 
   const cardBg = 'var(--card-bg)';
   const border = 'var(--border-color)';
@@ -33,6 +38,7 @@ export default function SidebarSettings() {
       setAllSections(data.all_sections || []);
       setHidden(new Set(data.hidden || []));
       setStaticHidden(new Set(data.static_hidden || []));
+      setConfiguredMedia(new Set(data.configured_media || []));
     } catch {
       toast('error', 'Failed to load sidebar configuration');
     } finally {
@@ -121,6 +127,8 @@ export default function SidebarSettings() {
           const locked = ALWAYS_VISIBLE.has(section.title);
           const isHidden = hidden.has(section.title);
           const isStaticHidden = staticHidden.has(section.title);
+          const isMedia = MEDIA_SECTIONS.has(section.title);
+          const isUnconfigured = isMedia && !configuredMedia.has(section.title);
 
           return (
             <Box
@@ -142,6 +150,9 @@ export default function SidebarSettings() {
                     <Text fontWeight="bold" fontSize="sm">{section.title}</Text>
                     {locked && (
                       <Lock size={12} style={{ opacity: 0.5 }} />
+                    )}
+                    {isUnconfigured && (
+                      <Badge colorPalette="orange" fontSize="2xs">Not configured</Badge>
                     )}
                   </HStack>
                   {section.items && section.items.length > 0 && (

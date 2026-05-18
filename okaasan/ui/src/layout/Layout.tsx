@@ -5,6 +5,7 @@ import { IconButton, Box, Flex } from '@chakra-ui/react';
 import { Bug } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../services/api';
 import SidebarSection, { SidebarItem } from './SidebarSection';
+import MusicPlayer from '../components/music/MusicPlayer';
 import './Layout.css';
 
 const GITHUB_REPO = 'https://github.com/Delaunay/okaasan';
@@ -144,6 +145,56 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
+    title: 'Audiobooks',
+    href: '/audiobooks',
+    isSelected: (location: Location) => location.pathname.startsWith('/audiobooks'),
+    items: [
+      { name: 'Library', href: '/audiobooks-library' },
+    ]
+  },
+  {
+    title: 'Music',
+    href: '/music',
+    isSelected: (location: Location) => location.pathname.startsWith('/music'),
+    items: [
+      { name: 'Discover', href: '/music-discover' },
+      { name: 'Library', href: '/music-library' },
+      { name: 'Schedule', href: '/music-schedule' },
+    ]
+  },
+  {
+    title: 'Retro Games',
+    href: '/games',
+    isSelected: (location: Location) => location.pathname.startsWith('/games'),
+    items: [
+      { name: 'Library', href: '/games-library' },
+    ]
+  },
+  {
+    title: 'Podcasts',
+    href: '/podcasts',
+    isSelected: (location: Location) => location.pathname.startsWith('/podcasts'),
+    items: [
+      { name: 'Library', href: '/podcasts-library' },
+    ]
+  },
+  {
+    title: 'Books',
+    href: '/books',
+    isSelected: (location: Location) => location.pathname.startsWith('/books'),
+    items: [
+      { name: 'Library', href: '/books-library' },
+    ]
+  },
+  {
+    title: 'Comics & Manga',
+    href: '/comics',
+    isSelected: (location: Location) => location.pathname.startsWith('/comics'),
+    items: [
+      { name: 'Library', href: '/comics-library' },
+    ]
+  },
+  {
     title: 'Notes',
     href: '/content',
     isSelected: function (location: Location) {
@@ -216,11 +267,18 @@ const Layout: FC<LayoutProps> = ({ children }) => {
 
   const allSections = getStaticSidebarSections();
 
+  const MEDIA_SECTIONS = new Set([
+    'Shows & Movies', 'Music', 'Audiobooks', 'Podcasts', 'Books', 'Comics & Manga', 'Retro Games',
+  ]);
+
   const fetchSidebarConfig = useCallback(async () => {
     try {
       const data = await recipeAPI.getSidebar();
+      const configuredMedia = new Set(data.configured_media || []);
+      const unconfigured = [...MEDIA_SECTIONS].filter(s => !configuredMedia.has(s));
       const merged = new Set([
         ...(data.hidden || []),
+        ...unconfigured,
         ...(isStaticMode() ? (data.static_hidden || []) : []),
       ]);
       setHiddenSections(merged);
@@ -365,6 +423,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
             ))}
           </div>
 
+          <MusicPlayer />
           <div className="nav-section" style={{ borderTop: '1px solid var(--chakra-colors-border)', paddingTop: '0.5rem' }}>
             <a
               href={`${GITHUB_REPO}/issues/new?labels=bug&title=Bug+Report`}

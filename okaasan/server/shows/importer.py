@@ -18,6 +18,7 @@ from .posters import PosterStore
 log = logging.getLogger("okaasan.shows.importer")
 
 _poster_store: PosterStore | None = None
+_tmdb_client = None  # optional TMDBClient for poster fallback
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -68,7 +69,7 @@ def _get_or_create_media(db: Session, media_type: str, source: dict) -> Media:
 
 
 def _maybe_fetch_poster(media: Media, source: dict) -> str | None:
-    """Download poster from Trakt images if not already on disk."""
+    """Download poster from Trakt images or TMDB if not already on disk."""
     if _poster_store is None:
         return None
     if _poster_store.has_poster(media.media_type, media.trakt_id, media.tmdb_id):
@@ -76,6 +77,7 @@ def _maybe_fetch_poster(media: Media, source: dict) -> str | None:
             media.poster_path = _poster_store.get_path(media.media_type, media.trakt_id, media.tmdb_id)
         return media.poster_path
 
+    # Try Trakt images first
     images = source.get("images", {})
     posters = images.get("poster", [])
     if posters:
@@ -85,6 +87,24 @@ def _maybe_fetch_poster(media: Media, source: dict) -> str | None:
         if path:
             media.poster_path = path
             return path
+
+    # Fall back to TMDB
+    if _tmdb_client and _tmdb_client.available and media.tmdb_id:
+        try:
+            if media.media_type == "show":
+                info = _tmdb_client.get_show(media.tmdb_id)
+            else:
+                info = _tmdb_client.get_movie(media.tmdb_id)
+            if info and info.get("poster_path"):
+                path = _poster_store.save_from_tmdb(
+                    media.media_type, media.tmdb_id, info["poster_path"], media.trakt_id
+                )
+                if path:
+                    media.poster_path = path
+                    return path
+        except Exception as e:
+            log.debug("TMDB poster fetch failed for %s %s: %s", media.media_type, media.tmdb_id, e)
+
     return None
 
 
@@ -300,7 +320,7 @@ def _import_trakt_collection(db: Session, trakt: TraktData):
     log.info("Imported %d items into owned-media collection", count)
 
 
-def import_trakt_data(db: Session, shows_dir: Path, base_dir: Path | None = None):
+def import_trakt_data(db: Session, shows_dir: Path, base_dir: Path | None = None, tmdb_client=None):
     """Main entry point: import all Trakt dump data into the database.
 
     Safe to re-run. Only affects source="trakt_import" rows.
@@ -308,9 +328,12 @@ def import_trakt_data(db: Session, shows_dir: Path, base_dir: Path | None = None
 
     Args:
         base_dir: the STATIC_FOLDER root for poster storage. If None, posters won't be fetched.
+        tmdb_client: optional TMDBClient instance for poster fallback.
     """
-    global _poster_store
+    global _poster_store, _tmdb_client
     log.info("Starting Trakt data import from %s", shows_dir)
+
+    _tmdb_client = tmdb_client
 
     if base_dir:
         _poster_store = PosterStore(base_dir)

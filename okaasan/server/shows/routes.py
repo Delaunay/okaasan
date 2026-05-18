@@ -55,6 +55,14 @@ def _get_tmdb(request: Request) -> TMDBClient:
     return _tmdb
 
 
+def _get_tmdb_client_for_import(static_folder: str) -> TMDBClient:
+    """Get TMDB client without a Request object (for startup import)."""
+    global _tmdb
+    if _tmdb is None:
+        _init_tmdb(static_folder)
+    return _tmdb
+
+
 # ── Overview ────────────────────────────────────────────────────────
 
 @router.get("/overview")
@@ -306,6 +314,134 @@ def get_ratings(request: Request, db: Session = Depends(_get_db)):
     ]
 
     return {"shows": shows, "movies": movies}
+
+
+# ── Schedule: upcoming & continue watching ─────────────────────────
+
+@router.get("/schedule")
+def get_schedule(request: Request, db: Session = Depends(_get_db)):
+    """Get upcoming episodes (next 7 days) and continue-watching shows."""
+    from datetime import datetime, timezone, timedelta
+
+    tmdb = _get_tmdb(request)
+    today = datetime.now(timezone.utc).date()
+    week_ahead = today + timedelta(days=7)
+
+    # Get all tracked shows that might still be airing (exclude dropped/completed)
+    shows = (
+        db.query(Media)
+        .filter(
+            Media.media_type == "show",
+            Media.tmdb_id.isnot(None),
+            Media.user_status.is_(None),
+        )
+        .all()
+    )
+
+    upcoming_episodes = []
+    continue_watching = []
+
+    for show in shows:
+        if not tmdb.available:
+            break
+
+        tmdb_data = tmdb.get_show(show.tmdb_id)
+        if not tmdb_data:
+            continue
+
+        show_info = {
+            "id": show.id,
+            "title": show.title,
+            "tmdb_id": show.tmdb_id,
+            "poster_path": show.poster_path,
+            "media_type": "show",
+        }
+
+        next_ep = tmdb_data.get("next_episode_to_air")
+        if next_ep and next_ep.get("air_date"):
+            try:
+                air_date = datetime.strptime(next_ep["air_date"], "%Y-%m-%d").date()
+                if today <= air_date <= week_ahead:
+                    upcoming_episodes.append({
+                        **show_info,
+                        "episode": {
+                            "season": next_ep.get("season_number"),
+                            "episode": next_ep.get("episode_number"),
+                            "name": next_ep.get("name"),
+                            "air_date": next_ep["air_date"],
+                            "overview": next_ep.get("overview", ""),
+                        },
+                    })
+            except (ValueError, TypeError):
+                pass
+
+        # Continue watching: show has aired episodes beyond what user watched
+        last_ep = tmdb_data.get("last_episode_to_air")
+        if last_ep and last_ep.get("air_date"):
+            try:
+                last_air = datetime.strptime(last_ep["air_date"], "%Y-%m-%d").date()
+                if last_air > today:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+            # Get the user's most recent watched entry that has episode info
+            last_watched = (
+                db.query(WatchHistory)
+                .filter(
+                    WatchHistory.media_id == show.id,
+                    WatchHistory.season.isnot(None),
+                    WatchHistory.season > 0,
+                )
+                .order_by(desc(WatchHistory.season), desc(WatchHistory.episode))
+                .first()
+            )
+            if not last_watched:
+                # No episode-level tracking — can't determine progress, skip
+                continue
+
+            user_season = last_watched.season
+            user_episode = last_watched.episode or 0
+            tmdb_season = last_ep.get("season_number", 0)
+            tmdb_episode = last_ep.get("episode_number", 0)
+
+            if (tmdb_season, tmdb_episode) > (user_season, user_episode):
+                # Determine next unwatched episode
+                next_season = user_season
+                next_episode = user_episode + 1
+                # Check if the next episode exists in the same season
+                seasons_data = tmdb_data.get("seasons", [])
+                current_season_info = next(
+                    (s for s in seasons_data if s.get("season_number") == user_season), None
+                )
+                if current_season_info:
+                    ep_count = current_season_info.get("episode_count", 0)
+                    if next_episode > ep_count:
+                        next_season = user_season + 1
+                        next_episode = 1
+
+                continue_watching.append({
+                    **show_info,
+                    "last_watched": {
+                        "season": user_season,
+                        "episode": user_episode,
+                    },
+                    "next_episode": {
+                        "season": next_season,
+                        "episode": next_episode,
+                    },
+                    "latest_aired": {
+                        "season": tmdb_season,
+                        "episode": tmdb_episode,
+                    },
+                })
+
+    upcoming_episodes.sort(key=lambda x: x["episode"]["air_date"])
+
+    return {
+        "upcoming": upcoming_episodes,
+        "continue_watching": continue_watching,
+    }
 
 
 # ── Detail page (single show/movie) ───────────────────────────────
@@ -726,13 +862,21 @@ def remove_collection_item(request: Request, collection_id: str, item_id: int, d
 
 @router.post("/history")
 async def add_watch_history(request: Request, db: Session = Depends(_get_db)):
-    """Mark a show/movie as watched (no duplicates)."""
+    """Mark a show/movie as watched (no duplicates per media+season+episode)."""
     from datetime import datetime, timezone
     data = await request.json()
 
     media = _resolve_media(db, data)
+    season = data.get("season")
+    episode = data.get("episode")
 
-    existing = db.query(WatchHistory).filter_by(media_id=media.id).first()
+    # Dedup: check for same media + season + episode combo
+    q = db.query(WatchHistory).filter_by(media_id=media.id)
+    if season is not None:
+        q = q.filter_by(season=season, episode=episode)
+    else:
+        q = q.filter(WatchHistory.season.is_(None))
+    existing = q.first()
     if existing:
         return {"id": existing.id, "media": media.to_json(), "watched_at": existing.watched_at.isoformat() + "Z"}
 
@@ -745,8 +889,8 @@ async def add_watch_history(request: Request, db: Session = Depends(_get_db)):
     wh = WatchHistory(
         media_id=media.id,
         watched_at=watched_at,
-        season=data.get("season"),
-        episode=data.get("episode"),
+        season=season,
+        episode=episode,
         source="manual",
     )
     db.add(wh)
@@ -790,6 +934,43 @@ def remove_from_watchlist(request: Request, media_id: int, db: Session = Depends
     return {"message": "Removed from watchlist"}
 
 
+@router.post("/mark-completed")
+async def mark_show_completed(request: Request, db: Session = Depends(_get_db)):
+    """Mark a show as fully watched (completed). Records latest aired episode."""
+    from datetime import datetime, timezone
+    data = await request.json()
+    media = _resolve_media(db, data)
+
+    season = data.get("season")
+    episode = data.get("episode")
+    if season and episode:
+        existing = db.query(WatchHistory).filter_by(
+            media_id=media.id, season=season, episode=episode
+        ).first()
+        if not existing:
+            db.add(WatchHistory(
+                media_id=media.id,
+                watched_at=datetime.now(timezone.utc),
+                season=season,
+                episode=episode,
+                source="manual",
+            ))
+
+    media.user_status = "completed"
+    db.commit()
+    return {"message": "Marked as completed", "media": media.to_json()}
+
+
+@router.post("/mark-dropped")
+async def mark_show_dropped(request: Request, db: Session = Depends(_get_db)):
+    """Mark a show as dropped (not going to watch anymore)."""
+    data = await request.json()
+    media = _resolve_media(db, data)
+    media.user_status = "dropped"
+    db.commit()
+    return {"message": "Marked as dropped", "media": media.to_json()}
+
+
 @router.post("/rate")
 async def rate_media(request: Request, db: Session = Depends(_get_db)):
     """Rate a show/movie (1-10)."""
@@ -828,8 +1009,45 @@ async def trigger_import(request: Request, db: Session = Depends(_get_db)):
     if not shows_dir.exists():
         raise HTTPException(status_code=404, detail="No shows data directory found")
 
-    import_trakt_data(db, shows_dir, base_dir=base)
+    tmdb = _get_tmdb(request)
+    import_trakt_data(db, shows_dir, base_dir=base, tmdb_client=tmdb)
     return {"message": "Import complete"}
+
+
+@router.post("/backfill-posters")
+async def backfill_posters(request: Request, db: Session = Depends(_get_db)):
+    """Fetch posters from TMDB for all media entries missing a poster."""
+    tmdb = _get_tmdb(request)
+    if not tmdb.available:
+        raise HTTPException(status_code=400, detail="TMDB not configured")
+
+    base = Path(request.app.state.static_folder)
+    posters = PosterStore(base)
+
+    missing = db.query(Media).filter(
+        Media.poster_path.is_(None),
+        Media.tmdb_id.isnot(None),
+    ).all()
+
+    fetched = 0
+    for media in missing:
+        try:
+            if media.media_type == "show":
+                info = tmdb.get_show(media.tmdb_id)
+            else:
+                info = tmdb.get_movie(media.tmdb_id)
+            if info and info.get("poster_path"):
+                path = posters.save_from_tmdb(
+                    media.media_type, media.tmdb_id, info["poster_path"], media.trakt_id
+                )
+                if path:
+                    media.poster_path = path
+                    fetched += 1
+        except Exception:
+            continue
+
+    db.commit()
+    return {"message": f"Backfilled {fetched} posters out of {len(missing)} missing"}
 
 
 def _resolve_media(db: Session, data: dict) -> Media:

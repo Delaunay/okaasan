@@ -17,7 +17,9 @@ log = logging.getLogger("okaasan.shows.tmdb")
 
 TMDB_API_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
-CACHE_TTL_SECONDS = 60 * 60  # 1 hour
+CACHE_TTL_MOVIE = 0           # movies never expire
+CACHE_TTL_TV = 30 * 24 * 60 * 60  # 30 days for TV shows (new seasons/episodes)
+CACHE_TTL_DISCOVER = 24 * 60 * 60  # 24 hours for discover/search results
 MAX_REQUESTS_PER_SECOND = 40
 
 
@@ -51,14 +53,22 @@ class TMDBClient:
         safe_key = hashlib.md5(key.encode()).hexdigest()
         return self.meta_cache_dir / category / f"{safe_key}.json"
 
-    def _read_cache(self, category: str, key: str) -> dict | None:
+    def _read_cache(self, category: str, key: str, ttl: int | None = None) -> dict | None:
         path = self._cache_path(category, key)
         if not path.exists():
             return None
+        if ttl is None:
+            if category == "movie":
+                ttl = CACHE_TTL_MOVIE
+            elif category == "discover":
+                ttl = CACHE_TTL_DISCOVER
+            else:
+                ttl = CACHE_TTL_TV
         try:
-            mtime = path.stat().st_mtime
-            if time.time() - mtime > CACHE_TTL_SECONDS:
-                return None
+            if ttl > 0:
+                mtime = path.stat().st_mtime
+                if time.time() - mtime > ttl:
+                    return None
             with open(path) as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):

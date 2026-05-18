@@ -45,6 +45,7 @@ class Media(Base):
 
     poster_path = Column(String(500), nullable=True)
     backdrop_path = Column(String(500), nullable=True)
+    user_status = Column(String(20), nullable=True)  # "dropped", "completed", etc.
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -77,6 +78,7 @@ class Media(Base):
             "overview": self.overview,
             "poster_path": self.poster_path,
             "backdrop_path": self.backdrop_path,
+            "user_status": self.user_status,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }

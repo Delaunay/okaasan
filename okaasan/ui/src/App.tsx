@@ -49,6 +49,7 @@ import ShowsWatchlist from './components/shows/ShowsWatchlist';
 import ShowsStats from './components/shows/ShowsStats';
 import ShowsCollections from './components/shows/ShowsCollections';
 import ShowsDiscover from './components/shows/ShowsDiscover';
+import ShowsSchedule from './components/shows/ShowsSchedule';
 import ShowsDetail from './components/shows/ShowsDetail';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
@@ -156,6 +157,7 @@ function App() {
                 <Route path="/shows-collections" element={<ShowsCollections />} />
                 <Route path="/shows-collections/:collectionId" element={<ShowsCollections />} />
                 <Route path="/shows-discover" element={<ShowsDiscover />} />
+                <Route path="/shows-schedule" element={<ShowsSchedule />} />
                 <Route path="/shows-detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />

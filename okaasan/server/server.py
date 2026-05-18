@@ -159,7 +159,9 @@ def create_app() -> FastAPI:
             shows_dir = os.path.join(STATIC_FOLDER, "shows")
             if os.path.isdir(shows_dir):
                 from .shows.importer import import_trakt_data
-                import_trakt_data(_shows_db, Path(shows_dir), base_dir=Path(STATIC_FOLDER))
+                from .shows.routes import _get_tmdb_client_for_import
+                _tmdb_for_import = _get_tmdb_client_for_import(STATIC_FOLDER)
+                import_trakt_data(_shows_db, Path(shows_dir), base_dir=Path(STATIC_FOLDER), tmdb_client=_tmdb_for_import)
     except Exception as e:
         log.warning("Auto-import of Trakt data failed: %s", e)
     finally:

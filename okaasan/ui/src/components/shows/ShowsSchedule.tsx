@@ -123,28 +123,7 @@ const ShowsSchedule: React.FC = () => {
           episode: item.next_episode.episode,
         }),
       });
-      // Advance to next episode locally
-      setData(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          continue_watching: prev.continue_watching.map(cw => {
-            if (cw.tmdb_id !== item.tmdb_id) return cw;
-            const nextEp = cw.next_episode.episode + 1;
-            const nextSeason = cw.next_episode.season;
-            // If we've caught up to latest aired, remove from list
-            if (nextSeason > cw.latest_aired.season ||
-                (nextSeason === cw.latest_aired.season && nextEp > cw.latest_aired.episode)) {
-              return null as any;
-            }
-            return {
-              ...cw,
-              last_watched: { season: cw.next_episode.season, episode: cw.next_episode.episode },
-              next_episode: { season: nextSeason, episode: nextEp },
-            };
-          }).filter(Boolean),
-        };
-      });
+      fetchData();
     } catch (e) {
       console.error(e);
     }

@@ -146,6 +146,7 @@ def get_history(
         "items": [
             {
                 **wh.media.to_json(),
+                "watch_history_id": wh.id,
                 "watched_at": wh.watched_at.isoformat() + "Z" if wh.watched_at else None,
                 "season": wh.season,
                 "episode": wh.episode,
@@ -188,41 +189,64 @@ def get_watchlist(request: Request, db: Session = Depends(_get_db)):
 @router.get("/stats")
 @expose()
 def get_stats(request: Request, db: Session = Depends(_get_db)):
-    """Comprehensive viewing statistics."""
+    """Comprehensive viewing statistics, split by media type."""
     total_shows = db.query(Media).filter_by(media_type="show").count()
     total_movies = db.query(Media).filter_by(media_type="movie").count()
+
+    def _ratings_dist(media_type: str | None = None) -> dict[int, int]:
+        q = db.query(UserRating.rating, func.count(UserRating.id))
+        if media_type:
+            q = q.join(Media).filter(Media.media_type == media_type)
+        return {r: c for r, c in q.group_by(UserRating.rating).all()}
+
+    def _genre_country(media_type: str | None = None):
+        q = db.query(Media)
+        if media_type:
+            q = q.filter(Media.media_type == media_type)
+        genres: dict[str, int] = {}
+        countries: dict[str, int] = {}
+        for m in q.all():
+            if m.genres:
+                for g in m.genres:
+                    genres[g] = genres.get(g, 0) + 1
+            if m.country:
+                countries[m.country] = countries.get(m.country, 0) + 1
+        return (
+            sorted(genres.items(), key=lambda x: x[1], reverse=True)[:15],
+            sorted(countries.items(), key=lambda x: x[1], reverse=True)[:20],
+        )
+
+    all_genres, all_countries = _genre_country()
+    show_genres, show_countries = _genre_country("show")
+    movie_genres, movie_countries = _genre_country("movie")
+
     total_ratings = db.query(UserRating).count()
-
-    ratings_rows = (
-        db.query(UserRating.rating, func.count(UserRating.id))
-        .group_by(UserRating.rating)
-        .all()
-    )
-    ratings_distribution = {r: c for r, c in ratings_rows}
-
-    genre_counts: dict[str, int] = {}
-    country_counts: dict[str, int] = {}
-    for media in db.query(Media).all():
-        if media.genres:
-            for g in media.genres:
-                genre_counts[g] = genre_counts.get(g, 0) + 1
-        if media.country:
-            country_counts[media.country] = country_counts.get(media.country, 0) + 1
-
-    top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:15]
-    top_countries = sorted(country_counts.items(), key=lambda x: x[1], reverse=True)[:20]
+    show_ratings = db.query(UserRating).join(Media).filter(Media.media_type == "show").count()
+    movie_ratings = db.query(UserRating).join(Media).filter(Media.media_type == "movie").count()
 
     return {
         "total_shows_watched": total_shows,
         "total_movies_watched": total_movies,
-        "ratings_distribution": ratings_distribution,
-        "top_genres": top_genres,
-        "top_countries": top_countries,
+        "ratings_distribution": _ratings_dist(),
+        "top_genres": all_genres,
+        "top_countries": all_countries,
         "total_ratings": total_ratings,
         "user_stats": {
             "shows": total_shows,
             "movies": total_movies,
             "ratings": total_ratings,
+        },
+        "shows": {
+            "ratings_distribution": _ratings_dist("show"),
+            "top_genres": show_genres,
+            "top_countries": show_countries,
+            "total_ratings": show_ratings,
+        },
+        "movies": {
+            "ratings_distribution": _ratings_dist("movie"),
+            "top_genres": movie_genres,
+            "top_countries": movie_countries,
+            "total_ratings": movie_ratings,
         },
     }
 
@@ -400,14 +424,35 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
                 .order_by(desc(WatchHistory.season), desc(WatchHistory.episode))
                 .first()
             )
+
+            tmdb_season = last_ep.get("season_number", 0)
+            tmdb_episode = last_ep.get("episode_number", 0)
+
             if not last_watched:
-                # No episode-level tracking — can't determine progress, skip
+                # No episode-level tracking — user added show but hasn't
+                # logged specific episodes yet.  Suggest starting from S01E01.
+                first_regular = next(
+                    (s for s in tmdb_data.get("seasons", []) if s.get("season_number", 0) >= 1),
+                    None,
+                )
+                if not first_regular:
+                    continue
+                any_history = (
+                    db.query(WatchHistory)
+                    .filter(WatchHistory.media_id == show.id)
+                    .first()
+                )
+                continue_watching.append({
+                    **show_info,
+                    "last_watched": {"season": 0, "episode": 0},
+                    "next_episode": {"season": first_regular.get("season_number", 1), "episode": 1},
+                    "latest_aired": {"season": tmdb_season, "episode": tmdb_episode},
+                    "last_watched_at": any_history.watched_at.isoformat() + "Z" if any_history and any_history.watched_at else None,
+                })
                 continue
 
             user_season = last_watched.season
             user_episode = last_watched.episode or 0
-            tmdb_season = last_ep.get("season_number", 0)
-            tmdb_episode = last_ep.get("episode_number", 0)
 
             if (tmdb_season, tmdb_episode) > (user_season, user_episode):
                 # Determine next unwatched episode
@@ -821,8 +866,14 @@ def search_tmdb(request: Request, q: str = Query(..., min_length=1), media_type:
 
 @router.get("/watched-tmdb-ids")
 def get_watched_tmdb_ids(request: Request, db: Session = Depends(_get_db)):
-    """Return set of TMDB IDs the user has watched (for filtering discover results)."""
-    rows = db.query(Media.tmdb_id, Media.media_type).filter(Media.tmdb_id.isnot(None)).all()
+    """Return set of TMDB IDs the user has actually watched (has history entries)."""
+    rows = (
+        db.query(Media.tmdb_id, Media.media_type)
+        .join(WatchHistory, WatchHistory.media_id == Media.id)
+        .filter(Media.tmdb_id.isnot(None))
+        .distinct()
+        .all()
+    )
     return {
         "ids": {f"{row.media_type}-{row.tmdb_id}": True for row in rows}
     }
@@ -962,6 +1013,9 @@ async def add_watch_history(request: Request, db: Session = Depends(_get_db)):
     data = await request.json()
 
     media = _resolve_media(db, data)
+    if media.user_status is not None:
+        media.user_status = None
+
     season = data.get("season")
     episode = data.get("episode")
 
@@ -991,6 +1045,26 @@ async def add_watch_history(request: Request, db: Session = Depends(_get_db)):
     db.add(wh)
     db.commit()
     return {"id": wh.id, "media": media.to_json(), "watched_at": wh.watched_at.isoformat() + "Z"}
+
+
+@router.delete("/history/{history_id}")
+def delete_watch_history(request: Request, history_id: int, db: Session = Depends(_get_db)):
+    """Delete a single watch-history entry.  Resets user_status when no history remains."""
+    wh = db.query(WatchHistory).filter_by(id=history_id).first()
+    if not wh:
+        raise HTTPException(status_code=404, detail="History entry not found")
+    media_id = wh.media_id
+    db.delete(wh)
+    db.flush()
+
+    remaining = db.query(WatchHistory).filter_by(media_id=media_id).count()
+    if remaining == 0:
+        media = db.query(Media).filter_by(id=media_id).first()
+        if media and media.user_status is not None:
+            media.user_status = None
+
+    db.commit()
+    return {"message": "Deleted"}
 
 
 @router.post("/watchlist/add")
@@ -1031,25 +1105,71 @@ def remove_from_watchlist(request: Request, media_id: int, db: Session = Depends
 
 @router.post("/mark-completed")
 async def mark_show_completed(request: Request, db: Session = Depends(_get_db)):
-    """Mark a show as fully watched (completed). Records latest aired episode."""
+    """Mark a show as fully watched (completed).
+
+    Backfills watch-history for every episode from the user's last
+    watched position up to the latest aired episode using TMDB season
+    data, then sets user_status = "completed".
+    """
     from datetime import datetime, timezone
     data = await request.json()
     media = _resolve_media(db, data)
 
-    season = data.get("season")
-    episode = data.get("episode")
-    if season and episode:
-        existing = db.query(WatchHistory).filter_by(
-            media_id=media.id, season=season, episode=episode
-        ).first()
-        if not existing:
-            db.add(WatchHistory(
-                media_id=media.id,
-                watched_at=datetime.now(timezone.utc),
-                season=season,
-                episode=episode,
-                source="manual",
-            ))
+    target_season = data.get("season")
+    target_episode = data.get("episode")
+
+    if target_season and target_episode and media.tmdb_id:
+        tmdb = _get_tmdb(request)
+        now = datetime.now(timezone.utc)
+
+        # Figure out where the user left off
+        last_watched = (
+            db.query(WatchHistory)
+            .filter(
+                WatchHistory.media_id == media.id,
+                WatchHistory.season.isnot(None),
+                WatchHistory.season > 0,
+            )
+            .order_by(desc(WatchHistory.season), desc(WatchHistory.episode))
+            .first()
+        )
+        start_season = last_watched.season if last_watched else 1
+        start_episode = (last_watched.episode or 0) + 1 if last_watched else 1
+
+        already_watched: set[tuple[int, int]] = set()
+        for row in (
+            db.query(WatchHistory.season, WatchHistory.episode)
+            .filter(
+                WatchHistory.media_id == media.id,
+                WatchHistory.season.isnot(None),
+                WatchHistory.episode.isnot(None),
+            )
+            .all()
+        ):
+            already_watched.add((row[0], row[1]))
+
+        added = 0
+        for sn in range(start_season, target_season + 1):
+            season_data = tmdb.get_season(media.tmdb_id, sn) if tmdb.available else None
+            if season_data:
+                ep_count = len(season_data.get("episodes", []))
+            else:
+                ep_count = target_episode if sn == target_season else 0
+
+            first_ep = start_episode if sn == start_season else 1
+            last_ep = target_episode if sn == target_season else ep_count
+
+            for ep in range(first_ep, last_ep + 1):
+                if (sn, ep) in already_watched:
+                    continue
+                db.add(WatchHistory(
+                    media_id=media.id,
+                    watched_at=now,
+                    season=sn,
+                    episode=ep,
+                    source="manual",
+                ))
+                added += 1
 
     media.user_status = "completed"
     db.commit()

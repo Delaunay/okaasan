@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Button, Input } from '@chakra-ui/react';
-import { Film, Tv, Search } from 'lucide-react';
+import { Film, Tv, Search, Trash2 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import MediaCard from './MediaCard';
 import TMDBAttribution from './TMDBAttribution';
@@ -95,6 +95,16 @@ const ShowsHistory: React.FC = () => {
     }, 500);
   };
 
+  const handleDelete = async (watchHistoryId: number) => {
+    try {
+      await recipeAPI.request(`/shows/history/${watchHistoryId}`, { method: 'DELETE' });
+      setItems(prev => prev.filter(i => i.watch_history_id !== watchHistoryId));
+      setTotal(prev => prev - 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Infinite scroll
   useEffect(() => {
     if (observerRef.current) observerRef.current.disconnect();
@@ -155,7 +165,11 @@ const ShowsHistory: React.FC = () => {
           </Text>
           <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
             {items.map((item, idx) => (
-              <HistoryItem key={`${item.id || idx}-${idx}`} item={item} />
+              <HistoryItem
+                key={`${item.watch_history_id || item.id || idx}-${idx}`}
+                item={item}
+                onDelete={item.watch_history_id ? () => handleDelete(item.watch_history_id) : undefined}
+              />
             ))}
           </Grid>
           {hasMore && (
@@ -177,10 +191,31 @@ const ShowsHistory: React.FC = () => {
   );
 };
 
-const HistoryItem: React.FC<{ item: any }> = ({ item }) => {
+const HistoryItem: React.FC<{ item: any; onDelete?: () => void }> = ({ item, onDelete }) => {
   return (
     <Box>
-      <MediaCard item={item} />
+      <Box position="relative" overflow="hidden" borderRadius="lg">
+        {onDelete && (
+          <Box position="absolute" bottom={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={(e) => { e.preventDefault(); onDelete(); }}
+              title="Remove from history"
+              p={1}
+              minW="auto"
+              h="auto"
+              borderRadius="full"
+              bg="rgba(0,0,0,0.5)"
+              color="white"
+              _hover={{ bg: 'rgba(200,0,0,0.7)' }}
+            >
+              <Trash2 size={14} />
+            </Button>
+          </Box>
+        )}
+        <MediaCard item={item} />
+      </Box>
       {item.season != null && item.episode != null && (
         <Text fontSize="xs" color="var(--muted-text)" mt={1} px={1}>
           S{item.season}E{item.episode}

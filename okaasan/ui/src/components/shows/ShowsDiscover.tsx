@@ -149,6 +149,7 @@ const ShowsDiscover: React.FC = () => {
           media_type: mediaType,
           title: item.title || item.name,
           year: parseInt((item.release_date || item.first_air_date || '').slice(0, 4)) || undefined,
+          ...(mediaType === 'show' ? { season: 1, episode: 1 } : {}),
         }),
       });
       setWatchedIds(prev => ({ ...prev, [`${mediaType}-${item.id}`]: true }));

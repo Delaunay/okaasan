@@ -7,6 +7,13 @@ import TMDBAttribution from './TMDBAttribution';
 import GenreChart from './GenreChart';
 import CountryChart from './CountryChart';
 
+interface MediaTypeStats {
+  ratings_distribution: Record<number, number>;
+  top_genres: [string, number][];
+  top_countries: [string, number][];
+  total_ratings: number;
+}
+
 interface StatsData {
   user_stats: Record<string, any>;
   total_shows_watched: number;
@@ -15,11 +22,16 @@ interface StatsData {
   top_genres: [string, number][];
   top_countries: [string, number][];
   total_ratings: number;
+  shows: MediaTypeStats;
+  movies: MediaTypeStats;
 }
+
+type StatsTab = 'all' | 'shows' | 'movies';
 
 const ShowsStats: React.FC = () => {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<StatsTab>('all');
 
   useEffect(() => {
     recipeAPI.request<StatsData>('/shows/stats')
@@ -40,6 +52,10 @@ const ShowsStats: React.FC = () => {
     return <Text color="var(--muted-text)">Failed to load stats.</Text>;
   }
 
+  const current: MediaTypeStats = tab === 'shows' ? stats.shows
+    : tab === 'movies' ? stats.movies
+    : { ratings_distribution: stats.ratings_distribution, top_genres: stats.top_genres, top_countries: stats.top_countries, total_ratings: stats.total_ratings };
+
   return (
     <VStack gap={8} align="stretch" p={4}>
       <HStack>
@@ -55,10 +71,17 @@ const ShowsStats: React.FC = () => {
         <MetricCard icon={<Star size={20} />} label="Ratings" value={stats.total_ratings} />
       </Grid>
 
+      {/* Filter tabs */}
+      <HStack gap={2}>
+        <TabButton label="All" active={tab === 'all'} onClick={() => setTab('all')} />
+        <TabButton label="TV Shows" icon={<Tv size={14} />} active={tab === 'shows'} onClick={() => setTab('shows')} />
+        <TabButton label="Movies" icon={<Film size={14} />} active={tab === 'movies'} onClick={() => setTab('movies')} />
+      </HStack>
+
       {/* Ratings Distribution */}
       <Box>
         <Heading size="sm" mb={4} color="var(--heading-color)">Ratings Distribution</Heading>
-        <RatingsChart distribution={stats.ratings_distribution || {}} />
+        <RatingsChart distribution={current.ratings_distribution || {}} />
       </Box>
 
       {/* Top Genres & Countries */}
@@ -66,11 +89,11 @@ const ShowsStats: React.FC = () => {
         <Grid templateColumns={{ base: '1fr', lg: '1fr 1fr' }} gap={6}>
           <Box>
             <Heading size="sm" mb={4} color="var(--heading-color)">Top Genres</Heading>
-            <GenreChart genres={stats.top_genres} />
+            <GenreChart genres={current.top_genres} />
           </Box>
           <Box>
             <Heading size="sm" mb={4} color="var(--heading-color)">By Country</Heading>
-            <CountryChart countries={stats.top_countries} />
+            <CountryChart countries={current.top_countries} />
           </Box>
         </Grid>
       </VegaProvider>
@@ -90,6 +113,29 @@ const MetricCard: React.FC<{ icon: React.ReactNode; label: string; value: number
     <Flex justify="center" mb={2} color="var(--icon-color)">{icon}</Flex>
     <Text fontSize="2xl" fontWeight="bold">{value.toLocaleString()}</Text>
     <Text fontSize="xs" color="var(--muted-text)">{label}</Text>
+  </Box>
+);
+
+const TabButton: React.FC<{ label: string; icon?: React.ReactNode; active: boolean; onClick: () => void }> = ({
+  label, icon, active, onClick
+}) => (
+  <Box
+    px={3}
+    py={1.5}
+    borderRadius="md"
+    cursor="pointer"
+    fontWeight={active ? 'bold' : 'normal'}
+    bg={active ? 'var(--selected-bg)' : 'transparent'}
+    borderWidth="1px"
+    borderColor={active ? 'var(--panel-blue-border)' : 'var(--border-color)'}
+    onClick={onClick}
+    transition="all 0.2s"
+    _hover={{ borderColor: 'var(--panel-blue-border)' }}
+  >
+    <HStack gap={1}>
+      {icon}
+      <Text fontSize="sm">{label}</Text>
+    </HStack>
   </Box>
 );
 

@@ -17,10 +17,12 @@ class PosterStore:
     def __init__(self, base_dir: Path):
         self.posters_dir = base_dir / "uploads" / "data" / "shows" / "posters"
         self.posters_dir.mkdir(parents=True, exist_ok=True)
+        transport = httpx.HTTPTransport(local_address="0.0.0.0")
         self._http = httpx.Client(
             headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"},
             timeout=15.0,
             follow_redirects=True,
+            transport=transport,
         )
 
     def _filename(self, media_type: str, trakt_id: int | None, tmdb_id: int | None) -> str:

@@ -43,7 +43,8 @@ class TMDBClient:
         }
         if self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
-        self._http = httpx.Client(headers=headers, timeout=15.0)
+        transport = httpx.HTTPTransport(local_address="0.0.0.0")
+        self._http = httpx.Client(headers=headers, timeout=15.0, transport=transport)
 
     @property
     def available(self) -> bool:

@@ -204,7 +204,7 @@ def create_app() -> FastAPI:
     @app.post("/categories", status_code=201)
     async def create_category(request: Request, db: Session = Depends(get_db)):
         from .models import Category
-        try:
+        try: 
             data = await request.json()
             category = Category(**data)
             db.add(category)

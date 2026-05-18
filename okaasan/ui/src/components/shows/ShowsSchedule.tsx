@@ -61,10 +61,13 @@ function getDayLabel(dateStr: string): string {
 function getNext7Days(): string[] {
   const days: string[] = [];
   const today = new Date();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    days.push(d.toISOString().slice(0, 10));
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    days.push(`${yyyy}-${mm}-${dd}`);
   }
   return days;
 }
@@ -96,7 +99,13 @@ const ShowsSchedule: React.FC = () => {
           episode: item.episode.episode,
         }),
       });
-      fetchData();
+      // Remove from upcoming locally
+      setData(prev => prev ? {
+        ...prev,
+        upcoming: prev.upcoming.filter(u =>
+          !(u.tmdb_id === item.tmdb_id && u.episode.season === item.episode.season && u.episode.episode === item.episode.episode)
+        ),
+      } : prev);
     } catch (e) {
       console.error(e);
     }
@@ -114,7 +123,28 @@ const ShowsSchedule: React.FC = () => {
           episode: item.next_episode.episode,
         }),
       });
-      fetchData();
+      // Advance to next episode locally
+      setData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          continue_watching: prev.continue_watching.map(cw => {
+            if (cw.tmdb_id !== item.tmdb_id) return cw;
+            const nextEp = cw.next_episode.episode + 1;
+            const nextSeason = cw.next_episode.season;
+            // If we've caught up to latest aired, remove from list
+            if (nextSeason > cw.latest_aired.season ||
+                (nextSeason === cw.latest_aired.season && nextEp > cw.latest_aired.episode)) {
+              return null as any;
+            }
+            return {
+              ...cw,
+              last_watched: { season: cw.next_episode.season, episode: cw.next_episode.episode },
+              next_episode: { season: nextSeason, episode: nextEp },
+            };
+          }).filter(Boolean),
+        };
+      });
     } catch (e) {
       console.error(e);
     }
@@ -132,7 +162,11 @@ const ShowsSchedule: React.FC = () => {
           episode: item.latest_aired.episode,
         }),
       });
-      fetchData();
+      // Remove from continue watching locally
+      setData(prev => prev ? {
+        ...prev,
+        continue_watching: prev.continue_watching.filter(cw => cw.tmdb_id !== item.tmdb_id),
+      } : prev);
     } catch (e) {
       console.error(e);
     }
@@ -148,7 +182,11 @@ const ShowsSchedule: React.FC = () => {
           title: item.title,
         }),
       });
-      fetchData();
+      // Remove from continue watching locally
+      setData(prev => prev ? {
+        ...prev,
+        continue_watching: prev.continue_watching.filter(cw => cw.tmdb_id !== item.tmdb_id),
+      } : prev);
     } catch (e) {
       console.error(e);
     }
@@ -193,9 +231,9 @@ const ShowsSchedule: React.FC = () => {
           <Heading size="md" color="var(--heading-color)">Upcoming Episodes</Heading>
           <Badge colorPalette="blue" ml={2}>{data?.upcoming.length || 0} items</Badge>
         </HStack>
-        <Flex flexWrap="wrap" gap={3}>
+        <Grid templateColumns="repeat(8, 1fr)" gap={3} w="100%">
           {days.map(day => (
-            <Box key={day} minW="140px" flex="1 1 140px" maxW="200px">
+            <Box key={day}>
               <Text
                 fontSize="xs"
                 fontWeight="bold"
@@ -205,7 +243,7 @@ const ShowsSchedule: React.FC = () => {
               >
                 {getDayLabel(day)}
               </Text>
-              <VStack gap={3}>
+              <Flex flexWrap="wrap" gap={2} justifyContent="center">
                 {upcomingByDay[day].length > 0 ? (
                   upcomingByDay[day].map(item => (
                     <UpcomingCard
@@ -221,6 +259,7 @@ const ShowsSchedule: React.FC = () => {
                     border="1px dashed"
                     borderColor="var(--border-color)"
                     h="220px"
+                    w="100%"
                     display="flex"
                     alignItems="center"
                     justifyContent="center"
@@ -228,10 +267,10 @@ const ShowsSchedule: React.FC = () => {
                     <Text fontSize="xs" color="var(--muted-text)">—</Text>
                   </Box>
                 )}
-              </VStack>
+              </Flex>
             </Box>
           ))}
-        </Flex>
+        </Grid>
       </Box>
 
       {/* Continue Watching */}

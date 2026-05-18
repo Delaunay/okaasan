@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Text, Image, HStack, VStack, Badge, Spinner } from '@chakra-ui/react';
-import { ArrowLeft, Star, Calendar, Clock, Globe } from 'lucide-react';
+import { Box, Text, Image, HStack, VStack, Badge, Spinner, Button } from '@chakra-ui/react';
+import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 
@@ -65,6 +65,7 @@ const ShowsDetail: React.FC = () => {
   const seasons = tmdb?.number_of_seasons;
   const episodes = tmdb?.number_of_episodes;
   const country = tmdb?.origin_country?.[0] || tmdb?.production_countries?.[0]?.iso_3166_1 || source.country;
+  const imdbId = tmdb?.imdb_id || source?.ids?.imdb;
   const posterUrl = tmdb?.poster_path ? `${TMDB_IMAGE_BASE}/w500${tmdb.poster_path}` : null;
   const backdropUrl = tmdb?.backdrop_path ? `${TMDB_IMAGE_BASE}/w1280${tmdb.backdrop_path}` : null;
   const nextEpisode = tmdb?.next_episode_to_air;
@@ -170,6 +171,13 @@ const ShowsDetail: React.FC = () => {
                 <Globe size={14} />
                 <Text fontSize="sm">{country}</Text>
               </HStack>
+            )}
+            {imdbId && (
+              <a href={`https://www.imdb.com/title/${imdbId}/`} target="_blank" rel="noopener noreferrer">
+                <HStack gap={1} color="var(--link-color)" _hover={{ textDecoration: 'underline' }}>
+                  <Text fontSize="sm" fontWeight="semibold">IMDb</Text>
+                </HStack>
+              </a>
             )}
           </HStack>
 
@@ -294,6 +302,11 @@ const ShowsDetail: React.FC = () => {
             </Box>
           )}
 
+          {/* Seasons & Episodes */}
+          {data.media_type === 'show' && tmdb?.seasons && tmdb.seasons.length > 0 && (
+            <SeasonsBreakdown tmdbId={data.tmdb_id} seasons={tmdb.seasons} watchedSeasons={(data as any).watched_seasons || {}} />
+          )}
+
           {/* Trakt stats */}
           {trakt && (
             <Box
@@ -331,6 +344,224 @@ const ShowsDetail: React.FC = () => {
           )}
         </VStack>
       </Box>
+    </Box>
+  );
+};
+
+interface SeasonInfo {
+  season_number: number;
+  name: string;
+  episode_count: number;
+  air_date?: string;
+}
+
+interface EpisodeDetail {
+  episode_number: number;
+  name: string;
+  overview: string;
+  air_date: string | null;
+  runtime: number | null;
+  still_path: string | null;
+  vote_average: number | null;
+  watched?: boolean;
+}
+
+interface WatchedSeasonInfo {
+  watched: number;
+  total: number;
+  complete: boolean;
+}
+
+const SeasonsBreakdown: React.FC<{ tmdbId: number; seasons: SeasonInfo[]; watchedSeasons: Record<number, WatchedSeasonInfo> }> = ({ tmdbId, seasons, watchedSeasons }) => {
+  const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
+  const [episodes, setEpisodes] = useState<Record<number, EpisodeDetail[]>>({});
+  const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
+
+  const toggleSeason = useCallback(async (seasonNumber: number) => {
+    if (expandedSeason === seasonNumber) {
+      setExpandedSeason(null);
+      return;
+    }
+    setExpandedSeason(seasonNumber);
+
+    if (episodes[seasonNumber]) return;
+
+    setLoadingSeason(seasonNumber);
+    try {
+      const data = await recipeAPI.request<{ episodes: EpisodeDetail[] }>(
+        `/shows/detail/tv/${tmdbId}/season/${seasonNumber}`
+      );
+      setEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes }));
+    } catch {
+      setEpisodes(prev => ({ ...prev, [seasonNumber]: [] }));
+    } finally {
+      setLoadingSeason(null);
+    }
+  }, [expandedSeason, episodes, tmdbId]);
+
+  const regularSeasons = seasons.filter(s => s.season_number > 0);
+  const specials = seasons.find(s => s.season_number === 0);
+
+  return (
+    <Box w="100%">
+      <HStack mb={3} gap={2}>
+        <Tv size={16} />
+        <Text fontSize="sm" fontWeight="semibold">Seasons & Episodes</Text>
+        <Badge colorPalette="blue" fontSize="xs">{regularSeasons.length} seasons</Badge>
+      </HStack>
+      <VStack align="stretch" gap={1}>
+        {regularSeasons.map(season => (
+          <Box key={season.season_number}>
+            <Button
+              variant="ghost"
+              w="100%"
+              justifyContent="flex-start"
+              onClick={() => toggleSeason(season.season_number)}
+              size="sm"
+              px={3}
+              py={2}
+              h="auto"
+              borderRadius="md"
+              _hover={{ bg: 'var(--hover-bg)' }}
+            >
+              <HStack gap={2} w="100%">
+                {expandedSeason === season.season_number ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {watchedSeasons[season.season_number]?.complete ? (
+                  <CheckCircle size={16} color="green" />
+                ) : (
+                  <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
+                )}
+                <Text fontSize="sm" fontWeight="medium">{season.name || `Season ${season.season_number}`}</Text>
+                {watchedSeasons[season.season_number] && !watchedSeasons[season.season_number].complete && (
+                  <Text fontSize="xs" color="var(--muted-text)">
+                    ({watchedSeasons[season.season_number].watched}/{watchedSeasons[season.season_number].total})
+                  </Text>
+                )}
+                <Badge colorPalette="gray" fontSize="xs" ml="auto">{season.episode_count} eps</Badge>
+                {season.air_date && (
+                  <Text fontSize="xs" color="var(--muted-text)">{season.air_date.slice(0, 4)}</Text>
+                )}
+              </HStack>
+            </Button>
+
+            {expandedSeason === season.season_number && (
+              <Box pl={6} pr={2} py={2}>
+                {loadingSeason === season.season_number ? (
+                  <Spinner size="sm" />
+                ) : (episodes[season.season_number] || []).length > 0 ? (
+                  <VStack align="stretch" gap={2}>
+                    {episodes[season.season_number].map(ep => (
+                      <HStack
+                        key={ep.episode_number}
+                        gap={3}
+                        p={2}
+                        borderRadius="md"
+                        border="1px solid"
+                        borderColor="var(--border-color)"
+                        bg="var(--card-bg)"
+                        align="center"
+                      >
+                        {ep.watched ? (
+                          <CheckCircle size={16} color="green" />
+                        ) : (
+                          <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
+                        )}
+                        <Text fontSize="xs" fontWeight="bold" color="var(--muted-text)" minW="28px">
+                          E{String(ep.episode_number).padStart(2, '0')}
+                        </Text>
+                        <Box flex={1}>
+                          <Text fontSize="sm" fontWeight="medium">{ep.name || `Episode ${ep.episode_number}`}</Text>
+                          <HStack gap={3} mt={0.5}>
+                            {ep.air_date && (
+                              <Text fontSize="xs" color="var(--muted-text)">{new Date(ep.air_date).toLocaleDateString()}</Text>
+                            )}
+                            {ep.runtime && (
+                              <Text fontSize="xs" color="var(--muted-text)">{ep.runtime} min</Text>
+                            )}
+                            {ep.vote_average != null && ep.vote_average > 0 && (
+                              <HStack gap={0.5}>
+                                <Star size={10} />
+                                <Text fontSize="xs" color="var(--muted-text)">{ep.vote_average.toFixed(1)}</Text>
+                              </HStack>
+                            )}
+                          </HStack>
+                        </Box>
+                      </HStack>
+                    ))}
+                  </VStack>
+                ) : (
+                  <Text fontSize="xs" color="var(--muted-text)">No episode data available</Text>
+                )}
+              </Box>
+            )}
+          </Box>
+        ))}
+        {specials && (
+          <Box>
+            <Button
+              variant="ghost"
+              w="100%"
+              justifyContent="flex-start"
+              onClick={() => toggleSeason(0)}
+              size="sm"
+              px={3}
+              py={2}
+              h="auto"
+              borderRadius="md"
+              _hover={{ bg: 'var(--hover-bg)' }}
+            >
+              <HStack gap={2} w="100%">
+                {expandedSeason === 0 ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Text fontSize="sm" fontWeight="medium">Specials</Text>
+                <Badge colorPalette="gray" fontSize="xs" ml="auto">{specials.episode_count} eps</Badge>
+              </HStack>
+            </Button>
+
+            {expandedSeason === 0 && (
+              <Box pl={6} pr={2} py={2}>
+                {loadingSeason === 0 ? (
+                  <Spinner size="sm" />
+                ) : (episodes[0] || []).length > 0 ? (
+                  <VStack align="stretch" gap={2}>
+                    {episodes[0].map(ep => (
+                      <HStack
+                        key={ep.episode_number}
+                        gap={3}
+                        p={2}
+                        borderRadius="md"
+                        border="1px solid"
+                        borderColor="var(--border-color)"
+                        bg="var(--card-bg)"
+                        align="flex-start"
+                      >
+                        <Text fontSize="xs" fontWeight="bold" color="var(--muted-text)" minW="28px">
+                          E{String(ep.episode_number).padStart(2, '0')}
+                        </Text>
+                        <Box flex={1}>
+                          <Text fontSize="sm" fontWeight="medium">{ep.name || `Episode ${ep.episode_number}`}</Text>
+                          {ep.overview && (
+                            <Text fontSize="xs" color="var(--muted-text)" lineClamp={2} mt={0.5}>{ep.overview}</Text>
+                          )}
+                          <HStack gap={3} mt={1}>
+                            {ep.air_date && (
+                              <Text fontSize="xs" color="var(--muted-text)">{new Date(ep.air_date).toLocaleDateString()}</Text>
+                            )}
+                            {ep.runtime && (
+                              <Text fontSize="xs" color="var(--muted-text)">{ep.runtime} min</Text>
+                            )}
+                          </HStack>
+                        </Box>
+                      </HStack>
+                    ))}
+                  </VStack>
+                ) : (
+                  <Text fontSize="xs" color="var(--muted-text)">No episode data available</Text>
+                )}
+              </Box>
+            )}
+          </Box>
+        )}
+      </VStack>
     </Box>
   );
 };

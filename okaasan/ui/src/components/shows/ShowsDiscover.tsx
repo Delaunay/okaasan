@@ -258,23 +258,86 @@ const ShowsDiscover: React.FC = () => {
         </Flex>
       ) : filteredItems.length > 0 ? (
         <>
-          <Grid templateColumns="repeat(auto-fill, minmax(180px, 1fr))" gap={4}>
-            {filteredItems.map(item => {
-              const mt = item.media_type === 'tv' ? 'show' : (item.media_type || 'movie');
-              const isWatched = watchedIds[`${mt}-${item.id}`] || false;
-              const isOnWatchlist = watchlistIds[`${mt}-${item.id}`] || false;
-              return (
-                <DiscoverCard
-                  key={`${item.id}-${item.media_type}`}
-                  item={item}
-                  isWatched={isWatched}
-                  isOnWatchlist={isOnWatchlist}
-                  onAddToWatchlist={() => handleAddToWatchlist(item)}
-                  onMarkWatched={() => handleMarkWatched(item)}
-                />
-              );
-            })}
-          </Grid>
+          {mediaFilter === 'all' ? (
+            <Grid templateColumns="1fr 1fr" gap={6}>
+              {/* Movies column */}
+              <Box>
+                <HStack mb={3}>
+                  <Film size={16} />
+                  <Text fontWeight="bold" color="var(--heading-color)">Movies</Text>
+                  <Badge colorPalette="blue" fontSize="xs">
+                    {filteredItems.filter(i => (i.media_type || 'movie') === 'movie').length}
+                  </Badge>
+                </HStack>
+                <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
+                  {filteredItems
+                    .filter(item => (item.media_type || 'movie') === 'movie')
+                    .map(item => {
+                      const mt = 'movie';
+                      const isWatched = watchedIds[`${mt}-${item.id}`] || false;
+                      const isOnWatchlist = watchlistIds[`${mt}-${item.id}`] || false;
+                      return (
+                        <DiscoverCard
+                          key={`${item.id}-movie`}
+                          item={item}
+                          isWatched={isWatched}
+                          isOnWatchlist={isOnWatchlist}
+                          onAddToWatchlist={() => handleAddToWatchlist(item)}
+                          onMarkWatched={() => handleMarkWatched(item)}
+                        />
+                      );
+                    })}
+                </Grid>
+              </Box>
+              {/* Shows column */}
+              <Box>
+                <HStack mb={3}>
+                  <Tv size={16} />
+                  <Text fontWeight="bold" color="var(--heading-color)">Shows</Text>
+                  <Badge colorPalette="blue" fontSize="xs">
+                    {filteredItems.filter(i => i.media_type === 'tv').length}
+                  </Badge>
+                </HStack>
+                <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
+                  {filteredItems
+                    .filter(item => item.media_type === 'tv')
+                    .map(item => {
+                      const mt = 'show';
+                      const isWatched = watchedIds[`${mt}-${item.id}`] || false;
+                      const isOnWatchlist = watchlistIds[`${mt}-${item.id}`] || false;
+                      return (
+                        <DiscoverCard
+                          key={`${item.id}-tv`}
+                          item={item}
+                          isWatched={isWatched}
+                          isOnWatchlist={isOnWatchlist}
+                          onAddToWatchlist={() => handleAddToWatchlist(item)}
+                          onMarkWatched={() => handleMarkWatched(item)}
+                        />
+                      );
+                    })}
+                </Grid>
+              </Box>
+            </Grid>
+          ) : (
+            <Grid templateColumns="repeat(auto-fill, minmax(180px, 1fr))" gap={4}>
+              {filteredItems.map(item => {
+                const mt = item.media_type === 'tv' ? 'show' : (item.media_type || 'movie');
+                const isWatched = watchedIds[`${mt}-${item.id}`] || false;
+                const isOnWatchlist = watchlistIds[`${mt}-${item.id}`] || false;
+                return (
+                  <DiscoverCard
+                    key={`${item.id}-${item.media_type}`}
+                    item={item}
+                    isWatched={isWatched}
+                    isOnWatchlist={isOnWatchlist}
+                    onAddToWatchlist={() => handleAddToWatchlist(item)}
+                    onMarkWatched={() => handleMarkWatched(item)}
+                  />
+                );
+              })}
+            </Grid>
+          )}
           {hasMore && (
             <Box ref={sentinelRef} py={4}>
               {loadingMore && (

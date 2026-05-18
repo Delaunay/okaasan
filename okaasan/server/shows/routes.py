@@ -324,8 +324,10 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
     from datetime import datetime, timezone, timedelta
 
     tmdb = _get_tmdb(request)
-    today = datetime.now(timezone.utc).date()
-    week_ahead = today + timedelta(days=7)
+    today_utc = datetime.now(timezone.utc).date()
+    # Include 1 day before UTC today to cover all client timezones
+    start_date = today_utc - timedelta(days=1)
+    week_ahead = today_utc + timedelta(days=7)
 
     # Get all tracked shows that might still be airing (exclude dropped/completed)
     shows = (
@@ -357,30 +359,32 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
             "media_type": "show",
         }
 
-        next_ep = tmdb_data.get("next_episode_to_air")
-        if next_ep and next_ep.get("air_date"):
-            try:
-                air_date = datetime.strptime(next_ep["air_date"], "%Y-%m-%d").date()
-                if today <= air_date <= week_ahead:
-                    upcoming_episodes.append({
-                        **show_info,
-                        "episode": {
-                            "season": next_ep.get("season_number"),
-                            "episode": next_ep.get("episode_number"),
-                            "name": next_ep.get("name"),
-                            "air_date": next_ep["air_date"],
-                            "overview": next_ep.get("overview", ""),
-                        },
-                    })
-            except (ValueError, TypeError):
-                pass
+        # Check both next and last episode — TMDB moves today's ep to "last" once it airs
+        for ep_key in ("next_episode_to_air", "last_episode_to_air"):
+            ep = tmdb_data.get(ep_key)
+            if ep and ep.get("air_date"):
+                try:
+                    air_date = datetime.strptime(ep["air_date"], "%Y-%m-%d").date()
+                    if start_date <= air_date <= week_ahead:
+                        upcoming_episodes.append({
+                            **show_info,
+                            "episode": {
+                                "season": ep.get("season_number"),
+                                "episode": ep.get("episode_number"),
+                                "name": ep.get("name"),
+                                "air_date": ep["air_date"],
+                                "overview": ep.get("overview", ""),
+                            },
+                        })
+                except (ValueError, TypeError):
+                    pass
 
         # Continue watching: show has aired episodes beyond what user watched
         last_ep = tmdb_data.get("last_episode_to_air")
         if last_ep and last_ep.get("air_date"):
             try:
                 last_air = datetime.strptime(last_ep["air_date"], "%Y-%m-%d").date()
-                if last_air > today:
+                if last_air > today_utc:
                     continue
             except (ValueError, TypeError):
                 pass
@@ -434,12 +438,23 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
                         "season": tmdb_season,
                         "episode": tmdb_episode,
                     },
+                    "last_watched_at": last_watched.watched_at.isoformat() + "Z" if last_watched.watched_at else None,
                 })
 
-    upcoming_episodes.sort(key=lambda x: x["episode"]["air_date"])
+    # Deduplicate (same show+season+episode can appear from both next/last)
+    seen = set()
+    deduped = []
+    for ep in upcoming_episodes:
+        key = (ep["tmdb_id"], ep["episode"]["season"], ep["episode"]["episode"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(ep)
+    deduped.sort(key=lambda x: x["episode"]["air_date"])
+
+    continue_watching.sort(key=lambda x: x.get("last_watched_at") or "", reverse=True)
 
     return {
-        "upcoming": upcoming_episodes,
+        "upcoming": deduped,
         "continue_watching": continue_watching,
     }
 
@@ -502,7 +517,87 @@ def get_detail(request: Request, media_type: str, tmdb_id: int, db: Session = De
                     db_media.poster_path = poster_rel
                     db.commit()
 
+    # For shows, include per-season watched episode counts
+    if normalized_type == "show" and db_media and tmdb_data and tmdb_data.get("seasons"):
+        from sqlalchemy import func as sqla_func
+        season_watch_counts = dict(
+            db.query(WatchHistory.season, sqla_func.count(WatchHistory.id))
+            .filter(
+                WatchHistory.media_id == db_media.id,
+                WatchHistory.season.isnot(None),
+                WatchHistory.season > 0,
+                WatchHistory.episode.isnot(None),
+            )
+            .group_by(WatchHistory.season)
+            .all()
+        )
+        watched_seasons = {}
+        for s in tmdb_data["seasons"]:
+            sn = s.get("season_number", 0)
+            if sn == 0:
+                continue
+            ep_count = s.get("episode_count", 0)
+            watched_count = season_watch_counts.get(sn, 0)
+            watched_seasons[sn] = {
+                "watched": watched_count,
+                "total": ep_count,
+                "complete": ep_count > 0 and watched_count >= ep_count,
+            }
+        result["watched_seasons"] = watched_seasons
+
     return result
+
+
+@router.get("/detail/tv/{tmdb_id}/season/{season_number}")
+def get_season_detail(request: Request, tmdb_id: int, season_number: int, db: Session = Depends(_get_db)):
+    """Get episodes for a specific season of a TV show."""
+    tmdb = _get_tmdb(request)
+    if not tmdb.available:
+        raise HTTPException(status_code=503, detail="TMDB not available")
+
+    data = tmdb.get_season(tmdb_id, season_number)
+    if not data:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    # Get watched episodes for this show+season from DB
+    watched_eps: set[int] = set()
+    db_media = db.query(Media).filter_by(media_type="show", tmdb_id=tmdb_id).first()
+    if db_media:
+        history = (
+            db.query(WatchHistory.episode)
+            .filter(
+                WatchHistory.media_id == db_media.id,
+                WatchHistory.season == season_number,
+                WatchHistory.episode.isnot(None),
+            )
+            .all()
+        )
+        watched_eps = {row[0] for row in history}
+
+    episodes = []
+    for ep in data.get("episodes", []):
+        ep_num = ep.get("episode_number")
+        episodes.append({
+            "episode_number": ep_num,
+            "name": ep.get("name"),
+            "overview": ep.get("overview", ""),
+            "air_date": ep.get("air_date"),
+            "runtime": ep.get("runtime"),
+            "still_path": ep.get("still_path"),
+            "vote_average": ep.get("vote_average"),
+            "watched": ep_num in watched_eps,
+        })
+
+    all_watched = len(episodes) > 0 and all(ep["watched"] for ep in episodes)
+
+    return {
+        "season_number": season_number,
+        "name": data.get("name"),
+        "overview": data.get("overview"),
+        "air_date": data.get("air_date"),
+        "episodes": episodes,
+        "all_watched": all_watched,
+    }
 
 
 # ── TMDB Metadata ──────────────────────────────────────────────────

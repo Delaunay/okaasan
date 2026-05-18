@@ -130,8 +130,11 @@ class TMDBClient:
         if cached is not None:
             return cached
 
-        data = self._api_request(f"/tv/{tmdb_id}")
+        data = self._api_request(f"/tv/{tmdb_id}", params={"append_to_response": "external_ids"})
         if data:
+            ext = data.pop("external_ids", None)
+            if ext and ext.get("imdb_id"):
+                data["imdb_id"] = ext["imdb_id"]
             self._write_cache("tv", cache_key, data)
         return data
 
@@ -145,6 +148,18 @@ class TMDBClient:
         data = self._api_request(f"/movie/{tmdb_id}")
         if data:
             self._write_cache("movie", cache_key, data)
+        return data
+
+    def get_season(self, tmdb_id: int, season_number: int) -> dict | None:
+        """Get TV show season details (episodes list), using cache first."""
+        cache_key = f"tv-{tmdb_id}-season-{season_number}"
+        cached = self._read_cache("tv", cache_key)
+        if cached is not None:
+            return cached
+
+        data = self._api_request(f"/tv/{tmdb_id}/season/{season_number}")
+        if data:
+            self._write_cache("tv", cache_key, data)
         return data
 
     def get_poster_path(self, tmdb_id: int, media_type: str = "tv") -> str | None:

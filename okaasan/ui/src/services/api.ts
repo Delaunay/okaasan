@@ -99,7 +99,7 @@ class RecipeAPI {
     }
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     // Debug logging (only in development)
     if (import.meta.env.DEV) {
       console.log('API Request:', {

@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send,
-    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
 import { TelegramSettings } from '../common/TelegramSettings';
@@ -84,6 +84,22 @@ const Settings: React.FC = () => {
                 icon: <CalendarDays size={20} />,
                 badge: 'Integration',
                 onOpen: () => navigate('/settings/google-calendar'),
+            },
+            {
+                id: 'tmdb',
+                title: 'TMDB (Movies & Shows)',
+                description: 'Add your TMDB API key to enable poster images, metadata, and discovery',
+                icon: <Film size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/tmdb'),
+            },
+            {
+                id: 'trakt',
+                title: 'Trakt.tv',
+                description: 'Import and sync your Trakt.tv watch history, ratings, and collections',
+                icon: <Tv size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/trakt'),
             },
         ]),
         {

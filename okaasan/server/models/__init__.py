@@ -26,6 +26,8 @@ from ..articles.models import Article, ArticleBlock
 
 from ..health.models import HealthMetric, HealthActivity, HealthDailySummary, HealthConnector
 
+from ..shows.models import Media, WatchHistory, WatchlistItem, UserRating, Collection, CollectionItem
+
 from .common import Base
 
 

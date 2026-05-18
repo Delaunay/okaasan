@@ -136,6 +136,7 @@ def create_app() -> FastAPI:
     from .recipe import ingredient_router, units_router
     from .articles import router as article_router
     from .feed.routes import router as feed_router
+    from .shows import router as shows_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)
@@ -148,6 +149,21 @@ def create_app() -> FastAPI:
     app.include_router(jsonstore_router)
     app.include_router(graph_router)
     app.include_router(feed_router)
+    app.include_router(shows_router)
+
+    # Auto-import Trakt data if shows tables are empty
+    from .shows.models import Media as _ShowsMedia
+    _shows_db = SessionLocal()
+    try:
+        if _shows_db.query(_ShowsMedia).count() == 0:
+            shows_dir = os.path.join(STATIC_FOLDER, "shows")
+            if os.path.isdir(shows_dir):
+                from .shows.importer import import_trakt_data
+                import_trakt_data(_shows_db, Path(shows_dir), base_dir=Path(STATIC_FOLDER))
+    except Exception as e:
+        log.warning("Auto-import of Trakt data failed: %s", e)
+    finally:
+        _shows_db.close()
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
@@ -239,6 +255,7 @@ def create_app() -> FastAPI:
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
         {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
+        {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections"]},
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
@@ -448,7 +465,7 @@ def create_app() -> FastAPI:
                          "ingredient/", "sidebar", "version", "update",
                          "git/", "usda/", "subtasks",
                          "gcalendar/", "garmin/", "weather/",
-                         "health-data/")
+                         "health-data/", "shows/")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

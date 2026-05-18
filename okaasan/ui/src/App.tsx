@@ -31,6 +31,8 @@ import GitSettings from './components/settings/GitSettings';
 import UpdateSettings from './components/settings/UpdateSettings';
 import SidebarSettings from './components/settings/SidebarSettings';
 import GoogleCalendarSettings from './components/settings/GoogleCalendarSettings';
+import TMDBSettings from './components/settings/TMDBSettings';
+import TraktSettings from './components/settings/TraktSettings';
 import ApiTester from './components/ApiTester';
 import HealthDashboard from './components/health/HealthDashboard';
 import HealthSettings from './components/health/HealthSettings';
@@ -41,6 +43,13 @@ import ArticleView from './components/content/ArticleView';
 import FeedPage from './components/feed/FeedPage';
 import SectionView from './components/content/SectionView';
 import ContentView from './components/content/ContentView';
+import ShowsOverview from './components/shows/ShowsOverview';
+import ShowsHistory from './components/shows/ShowsHistory';
+import ShowsWatchlist from './components/shows/ShowsWatchlist';
+import ShowsStats from './components/shows/ShowsStats';
+import ShowsCollections from './components/shows/ShowsCollections';
+import ShowsDiscover from './components/shows/ShowsDiscover';
+import ShowsDetail from './components/shows/ShowsDetail';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
@@ -71,7 +80,6 @@ function App() {
 
                 {/* Section overview pages */}
                 {sidebarSections.map((section) => {
-                  // Use custom ContentView for the Content section
                   if (section.href === '/content') {
                     return (
                       <Route
@@ -81,7 +89,15 @@ function App() {
                       />
                     );
                   }
-                  // Use default SectionView for all other sections
+                  if (section.href === '/shows') {
+                    return (
+                      <Route
+                        key={section.href}
+                        path={section.href}
+                        element={<ShowsOverview />}
+                      />
+                    );
+                  }
                   return (
                     <Route
                       key={section.href}
@@ -117,6 +133,8 @@ function App() {
                 <Route path="/settings/updates" element={isStaticMode() ? <Navigate to="/settings" replace /> : <UpdateSettings />} />
                 <Route path="/settings/sidebar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <SidebarSettings />} />
                 <Route path="/settings/google-calendar" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GoogleCalendarSettings />} />
+                <Route path="/settings/tmdb" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TMDBSettings />} />
+                <Route path="/settings/trakt" element={isStaticMode() ? <Navigate to="/settings" replace /> : <TraktSettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
                 <Route path="/feed" element={<FeedPage />} />
@@ -129,6 +147,16 @@ function App() {
                 <Route path="/health-details" element={<HealthDetailView />} />
                 <Route path="/health-activities" element={<HealthActivities />} />
                 <Route path="/health-settings" element={<HealthSettings />} />
+
+                {/* Shows & Movies */}
+                <Route path="/shows-overview" element={<ShowsOverview />} />
+                <Route path="/shows-history" element={<ShowsHistory />} />
+                <Route path="/shows-watchlist" element={<ShowsWatchlist />} />
+                <Route path="/shows-stats" element={<ShowsStats />} />
+                <Route path="/shows-collections" element={<ShowsCollections />} />
+                <Route path="/shows-collections/:collectionId" element={<ShowsCollections />} />
+                <Route path="/shows-discover" element={<ShowsDiscover />} />
+                <Route path="/shows-detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />
                 <Route path="/scratch/filament-math" element={<FilamentMath />} />

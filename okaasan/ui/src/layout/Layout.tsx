@@ -130,6 +130,18 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
+    title: 'Shows & Movies',
+    href: '/shows',
+    isSelected: (location: Location) => location.pathname.startsWith('/shows'),
+    items: [
+      { name: 'Discover', href: '/shows-discover' },
+      { name: 'History', href: '/shows-history' },
+      { name: 'Watchlist', href: '/shows-watchlist' },
+      { name: 'Stats', href: '/shows-stats' },
+      { name: 'Collections', href: '/shows-collections' },
+    ]
+  },
+  {
     title: 'Notes',
     href: '/content',
     isSelected: function (location: Location) {

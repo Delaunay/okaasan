@@ -150,6 +150,7 @@ const getStaticSidebarSections = () => [
     isSelected: (location: Location) => location.pathname.startsWith('/audiobooks'),
     items: [
       { name: 'Library', href: '/audiobooks-library' },
+      { name: 'Stats', href: '/audiobooks-stats' },
     ]
   },
   {
@@ -170,6 +171,7 @@ const getStaticSidebarSections = () => [
     isSelected: (location: Location) => location.pathname.startsWith('/games'),
     items: [
       { name: 'Library', href: '/games-library' },
+      { name: 'Stats', href: '/games-stats' },
     ]
   },
   {
@@ -178,6 +180,7 @@ const getStaticSidebarSections = () => [
     isSelected: (location: Location) => location.pathname.startsWith('/podcasts'),
     items: [
       { name: 'Library', href: '/podcasts-library' },
+      { name: 'Stats', href: '/podcasts-stats' },
     ]
   },
   {
@@ -186,6 +189,7 @@ const getStaticSidebarSections = () => [
     isSelected: (location: Location) => location.pathname.startsWith('/books'),
     items: [
       { name: 'Library', href: '/books-library' },
+      { name: 'Stats', href: '/books-stats' },
     ]
   },
   {
@@ -194,6 +198,7 @@ const getStaticSidebarSections = () => [
     isSelected: (location: Location) => location.pathname.startsWith('/comics'),
     items: [
       { name: 'Library', href: '/comics-library' },
+      { name: 'Stats', href: '/comics-stats' },
     ]
   },
   {

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Boolean, Index
 from sqlalchemy.orm import relationship
 
 from ..models.common import Base
@@ -30,6 +30,7 @@ class Game(Base):
     igdb_id = Column(Integer, nullable=True)
     players = Column(Integer, nullable=True)
     rating = Column(Float, nullable=True)
+    favorite = Column(Boolean, nullable=False, server_default="0")
     created_at = Column(DateTime, default=_utcnow)
 
     save_states = relationship("GameSaveState", back_populates="game", cascade="all, delete-orphan")
@@ -54,6 +55,7 @@ class Game(Base):
             "igdb_id": self.igdb_id,
             "players": self.players,
             "rating": self.rating,
+            "favorite": bool(self.favorite),
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 

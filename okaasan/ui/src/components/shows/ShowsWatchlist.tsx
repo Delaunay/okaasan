@@ -58,27 +58,33 @@ const ShowsWatchlist: React.FC = () => {
         <TMDBAttribution />
       </HStack>
 
-      {shows.length > 0 && (
+      <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={6}>
         <Box>
           <Heading size="sm" mb={4} color="var(--heading-color)">Shows ({shows.length})</Heading>
-          <Grid templateColumns="repeat(auto-fill, minmax(180px, 1fr))" gap={4}>
-            {shows.map((item) => (
-              <WatchlistCard key={item.id} item={item} onMarkWatched={() => handleMarkWatched(item)} />
-            ))}
-          </Grid>
+          {shows.length > 0 ? (
+            <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
+              {shows.map((item) => (
+                <WatchlistCard key={item.id} item={item} onMarkWatched={() => handleMarkWatched(item)} />
+              ))}
+            </Grid>
+          ) : (
+            <Text fontSize="sm" color="var(--muted-text)">No shows in watchlist.</Text>
+          )}
         </Box>
-      )}
 
-      {movies.length > 0 && (
         <Box>
           <Heading size="sm" mb={4} color="var(--heading-color)">Movies ({movies.length})</Heading>
-          <Grid templateColumns="repeat(auto-fill, minmax(180px, 1fr))" gap={4}>
-            {movies.map((item) => (
-              <WatchlistCard key={item.id} item={item} onMarkWatched={() => handleMarkWatched(item)} />
-            ))}
-          </Grid>
+          {movies.length > 0 ? (
+            <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
+              {movies.map((item) => (
+                <WatchlistCard key={item.id} item={item} onMarkWatched={() => handleMarkWatched(item)} />
+              ))}
+            </Grid>
+          ) : (
+            <Text fontSize="sm" color="var(--muted-text)">No movies in watchlist.</Text>
+          )}
         </Box>
-      )}
+      </Grid>
 
       {items.length === 0 && (
         <Text color="var(--muted-text)">Your watchlist is empty.</Text>

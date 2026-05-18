@@ -107,7 +107,7 @@ def list_platforms(request: Request, db: Session = Depends(_get_db)):
         .order_by(func.count(Game.id).desc())
         .all()
     )
-    return [{"platform": p, "count": c} for p, c in rows]
+    return {"platforms": [p for p, _ in rows], "counts": [{"platform": p, "count": c} for p, c in rows]}
 
 
 @router.get("/search")
@@ -402,3 +402,241 @@ def download_save_state(request: Request, game_id: int, slot: int, db: Session =
         media_type="application/octet-stream",
         filename=f"game_{game_id}_slot_{slot}.sav",
     )
+
+
+@router.delete("/{game_id}/save-states/{save_id}")
+def delete_save_state(request: Request, game_id: int, save_id: int, db: Session = Depends(_get_db)):
+    """Delete a specific save state, removing files from disk."""
+    ss = db.query(GameSaveState).filter_by(id=save_id, game_id=game_id).first()
+    if not ss:
+        raise HTTPException(status_code=404, detail="Save state not found")
+
+    if ss.data_path and os.path.isfile(ss.data_path):
+        os.remove(ss.data_path)
+    if ss.screenshot_path and os.path.isfile(ss.screenshot_path):
+        os.remove(ss.screenshot_path)
+
+    db.delete(ss)
+    db.commit()
+    return {"message": "Save state deleted", "id": save_id}
+
+
+# ── Favorite ───────────────────────────────────────────────────────
+
+@router.post("/{game_id}/favorite")
+def toggle_favorite(request: Request, game_id: int, db: Session = Depends(_get_db)):
+    """Toggle the favorite status of a game."""
+    game = db.query(Game).filter_by(id=game_id).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    game.favorite = not game.favorite
+    db.commit()
+    db.refresh(game)
+    return game.to_json()
+
+
+# ── Overview & Stats ───────────────────────────────────────────────
+
+@router.get("/overview")
+def games_overview(request: Request, db: Session = Depends(_get_db), pdb: Session = Depends(_get_private_db)):
+    """Dashboard overview: stats, recently added games, platform breakdown."""
+    from .library_models import RomFile
+
+    total_games = db.query(Game).count()
+    total_platforms = db.query(Game.platform).filter(Game.platform.isnot(None)).distinct().count()
+    total_saves = db.query(GameSaveState).count()
+
+    recent_games = (
+        db.query(Game)
+        .order_by(Game.created_at.desc())
+        .limit(12)
+        .all()
+    )
+
+    game_ids = [g.id for g in recent_games]
+    file_map: dict[int, int | None] = {}
+    if game_ids:
+        rom_rows = pdb.query(RomFile.game_id, RomFile.id).filter(RomFile.game_id.in_(game_ids)).all()
+        for gid, fid in rom_rows:
+            file_map.setdefault(gid, fid)
+
+    recently_added = []
+    for g in recent_games:
+        data = g.to_json()
+        data["file_id"] = file_map.get(g.id)
+        recently_added.append(data)
+
+    platform_rows = (
+        db.query(Game.platform, func.count(Game.id))
+        .filter(Game.platform.isnot(None))
+        .group_by(Game.platform)
+        .order_by(func.count(Game.id).desc())
+        .all()
+    )
+    platforms = [{"name": p, "count": c} for p, c in platform_rows]
+
+    # Favorites
+    fav_games = (
+        db.query(Game)
+        .filter(Game.favorite == True)  # noqa: E712
+        .order_by(Game.title)
+        .limit(12)
+        .all()
+    )
+    fav_ids = [g.id for g in fav_games]
+    fav_file_map: dict[int, int | None] = {}
+    if fav_ids:
+        fav_rom_rows = pdb.query(RomFile.game_id, RomFile.id).filter(RomFile.game_id.in_(fav_ids)).all()
+        for gid, fid in fav_rom_rows:
+            fav_file_map.setdefault(gid, fid)
+
+    favorites = []
+    for g in fav_games:
+        data = g.to_json()
+        data["file_id"] = fav_file_map.get(g.id)
+        data["cover_url"] = f"/api/{g.cover_path}" if g.cover_path and not g.cover_path.startswith("/") else g.cover_path
+        favorites.append(data)
+
+    for item in recently_added:
+        cp = item.get("cover_path")
+        item["cover_url"] = f"/api/{cp}" if cp and not cp.startswith("/") else cp
+
+    return {
+        "stats": {
+            "total_games": total_games,
+            "total_platforms": total_platforms,
+            "total_play_time_minutes": total_saves * 5,
+        },
+        "recently_played": recently_added,
+        "favorites": favorites,
+        "platforms": platforms,
+    }
+
+
+@router.get("/library")
+def games_library(
+    request: Request,
+    q: str | None = Query(None),
+    platform: str | None = Query(None),
+    db: Session = Depends(_get_db),
+    pdb: Session = Depends(_get_private_db),
+):
+    """Full game library with search/filter, includes file_id from ROM DB."""
+    from .library_models import RomFile
+
+    query = db.query(Game)
+    if q:
+        query = query.filter(Game.title.ilike(f"%{q}%"))
+    if platform:
+        query = query.filter(Game.platform == platform)
+    games = query.order_by(Game.title).all()
+
+    game_ids = [g.id for g in games]
+    file_map: dict[int, int | None] = {}
+    if game_ids:
+        rom_rows = pdb.query(RomFile.game_id, RomFile.id).filter(RomFile.game_id.in_(game_ids)).all()
+        for gid, fid in rom_rows:
+            file_map.setdefault(gid, fid)
+
+    result = []
+    for g in games:
+        data = g.to_json()
+        data["file_id"] = file_map.get(g.id)
+        data["cover_url"] = f"/api/{g.cover_path}" if g.cover_path and not g.cover_path.startswith("/") else g.cover_path
+        result.append(data)
+
+    all_platforms = (
+        db.query(Game.platform)
+        .filter(Game.platform.isnot(None))
+        .distinct()
+        .order_by(Game.platform)
+        .all()
+    )
+
+    return {
+        "games": result,
+        "total": len(result),
+        "platforms": [p[0] for p in all_platforms],
+    }
+
+
+@router.get("/stats")
+def games_stats(request: Request, db: Session = Depends(_get_db)):
+    """Detailed statistics: platforms, genres, decades."""
+    total_games = db.query(Game).count()
+    total_platforms = db.query(Game.platform).filter(Game.platform.isnot(None)).distinct().count()
+    total_saves = db.query(GameSaveState).count()
+
+    top_platforms = (
+        db.query(Game.platform, func.count(Game.id))
+        .filter(Game.platform.isnot(None))
+        .group_by(Game.platform)
+        .order_by(func.count(Game.id).desc())
+        .all()
+    )
+
+    genre_rows = (
+        db.query(Game.genre, func.count(Game.id))
+        .filter(Game.genre.isnot(None))
+        .group_by(Game.genre)
+        .order_by(func.count(Game.id).desc())
+        .all()
+    )
+
+    decade_rows = (
+        db.query(
+            ((Game.year / 10) * 10).label("decade"),
+            func.count(Game.id),
+        )
+        .filter(Game.year.isnot(None))
+        .group_by("decade")
+        .order_by("decade")
+        .all()
+    )
+
+    return {
+        "summary": {
+            "total_games": total_games,
+            "platforms": total_platforms,
+            "total_saves": total_saves,
+        },
+        "top_platforms": [{"name": p, "game_count": c} for p, c in top_platforms],
+        "genres": [{"name": g, "count": c} for g, c in genre_rows],
+        "decades": [{"decade": f"{int(d)}s", "count": c} for d, c in decade_rows],
+    }
+
+
+# ── Settings Aliases ───────────────────────────────────────────────
+
+@router.get("/settings")
+def get_settings(request: Request):
+    """Combined IGDB + library status."""
+    igdb_data = igdb_status(request)
+    lib_data = library_status(request)
+    return {"igdb": igdb_data, "library": lib_data}
+
+
+@router.post("/settings/credentials")
+async def settings_credentials(request: Request):
+    """Alias for /igdb/configure."""
+    return await configure_igdb(request)
+
+
+@router.post("/settings/folders")
+async def settings_folders(request: Request):
+    """Alias for /library/configure."""
+    return await library_configure(request)
+
+
+# ── Scan Aliases ───────────────────────────────────────────────────
+
+@router.post("/scan")
+async def scan_library(request: Request):
+    """Alias for /library/scan."""
+    return await library_scan(request)
+
+
+@router.get("/scan/status")
+def scan_status(request: Request):
+    """Alias for /library/status."""
+    return library_status(request)

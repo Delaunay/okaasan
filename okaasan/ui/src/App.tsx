@@ -56,22 +56,27 @@ import ShowsLibrary from './components/shows/ShowsLibrary';
 import GamesOverview from './components/games/GamesOverview';
 import GamesLibrary from './components/games/GamesLibrary';
 import GamesDetail from './components/games/GamesDetail';
+import GamesStats from './components/games/GamesStats';
 import GamesSettings from './components/settings/GamesSettings';
 import BooksOverview from './components/books/BooksOverview';
 import BooksLibrary from './components/books/BooksLibrary';
 import BooksDetail from './components/books/BooksDetail';
+import BooksStats from './components/books/BooksStats';
 import BooksSettings from './components/settings/BooksSettings';
 import ComicsOverview from './components/comics/ComicsOverview';
 import ComicsLibrary from './components/comics/ComicsLibrary';
 import ComicsDetail from './components/comics/ComicsDetail';
+import ComicsStats from './components/comics/ComicsStats';
 import ComicsSettings from './components/settings/ComicsSettings';
 import PodcastsOverview from './components/podcasts/PodcastsOverview';
 import PodcastsLibrary from './components/podcasts/PodcastsLibrary';
 import PodcastsDetail from './components/podcasts/PodcastsDetail';
+import PodcastsStats from './components/podcasts/PodcastsStats';
 import PodcastsSettings from './components/settings/PodcastsSettings';
 import AudiobooksOverview from './components/audiobooks/AudiobooksOverview';
 import AudiobooksLibrary from './components/audiobooks/AudiobooksLibrary';
 import AudiobooksDetail from './components/audiobooks/AudiobooksDetail';
+import AudiobooksStats from './components/audiobooks/AudiobooksStats';
 import AudiobooksSettings from './components/settings/AudiobooksSettings';
 import MusicOverview from './components/music/MusicOverview';
 import MusicDiscover from './components/music/MusicDiscover';
@@ -251,26 +256,31 @@ function App() {
                 {/* Retro Games */}
                 <Route path="/games-library" element={<GamesLibrary />} />
                 <Route path="/games-detail/:id" element={<GamesDetail />} />
+                <Route path="/games-stats" element={<GamesStats />} />
                 <Route path="/settings/games" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GamesSettings />} />
 
                 {/* Comics & Manga */}
                 <Route path="/comics-library" element={<ComicsLibrary />} />
                 <Route path="/comics-detail/:id" element={<ComicsDetail />} />
+                <Route path="/comics-stats" element={<ComicsStats />} />
                 <Route path="/settings/comics" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ComicsSettings />} />
 
                 {/* Podcasts */}
                 <Route path="/podcasts-library" element={<PodcastsLibrary />} />
                 <Route path="/podcasts-detail/:id" element={<PodcastsDetail />} />
+                <Route path="/podcasts-stats" element={<PodcastsStats />} />
                 <Route path="/settings/podcasts" element={isStaticMode() ? <Navigate to="/settings" replace /> : <PodcastsSettings />} />
 
                 {/* Books */}
                 <Route path="/books-library" element={<BooksLibrary />} />
                 <Route path="/books-detail/:id" element={<BooksDetail />} />
+                <Route path="/books-stats" element={<BooksStats />} />
                 <Route path="/settings/books" element={isStaticMode() ? <Navigate to="/settings" replace /> : <BooksSettings />} />
 
                 {/* Audiobooks */}
                 <Route path="/audiobooks-library" element={<AudiobooksLibrary />} />
                 <Route path="/audiobooks-detail/:id" element={<AudiobooksDetail />} />
+                <Route path="/audiobooks-stats" element={<AudiobooksStats />} />
                 <Route path="/settings/audiobooks" element={isStaticMode() ? <Navigate to="/settings" replace /> : <AudiobooksSettings />} />
 
                 {/* Music */}

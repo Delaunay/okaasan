@@ -6,8 +6,11 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from urllib.parse import unquote
+
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from fastapi.responses import Response
+from sqlalchemy import func, distinct, or_
 from sqlalchemy.orm import Session
 
 from .models import Comic, ComicProgress
@@ -149,6 +152,301 @@ def library_all_files(request: Request):
         return {"files": [f.to_json() for f in files]}
     finally:
         pdb.close()
+
+
+# ── Aliases ────────────────────────────────────────────────────────
+
+@router.get("/status")
+def comics_status(request: Request):
+    """Alias for /library/status."""
+    return library_status(request)
+
+
+@router.post("/configure")
+async def comics_configure(request: Request):
+    """Alias for /library/configure."""
+    return await library_configure(request)
+
+
+@router.post("/scan")
+async def comics_scan(request: Request):
+    """Alias for /library/scan."""
+    return await library_scan(request)
+
+
+# ── Aggregate endpoints ───────────────────────────────────────────
+
+@router.get("/overview")
+def comics_overview(request: Request, db: Session = Depends(_get_db)):
+    """Dashboard overview with stats, continue-reading, and recently-added."""
+    total_series = db.query(func.count(distinct(Comic.series))).scalar() or 0
+    total_issues = db.query(func.count(Comic.id)).scalar() or 0
+    read = (
+        db.query(func.count(distinct(ComicProgress.comic_id)))
+        .filter(ComicProgress.percent >= 95)
+        .scalar() or 0
+    )
+    reading = (
+        db.query(func.count(distinct(ComicProgress.comic_id)))
+        .filter(ComicProgress.percent > 0, ComicProgress.percent < 95)
+        .scalar() or 0
+    )
+
+    active = (
+        db.query(Comic, ComicProgress)
+        .join(ComicProgress, Comic.id == ComicProgress.comic_id)
+        .filter(ComicProgress.percent > 0, ComicProgress.percent < 95)
+        .order_by(ComicProgress.last_read_at.desc())
+        .limit(12)
+        .all()
+    )
+    continue_reading = []
+    for comic, progress in active:
+        d = comic.to_json()
+        d["progress"] = progress.to_json()
+        d["read_progress"] = progress.percent
+        d["cover_url"] = f"/api/{comic.cover_path}" if comic.cover_path and not comic.cover_path.startswith("/") else comic.cover_path
+        d["comic_type"] = comic.media_type
+        d["issue_count"] = 1
+        continue_reading.append(d)
+
+    recent = db.query(Comic).order_by(Comic.created_at.desc()).limit(12).all()
+    recently_added = []
+    for c in recent:
+        d = c.to_json()
+        d["cover_url"] = f"/api/{c.cover_path}" if c.cover_path and not c.cover_path.startswith("/") else c.cover_path
+        d["comic_type"] = c.media_type
+        d["issue_count"] = 1
+        recently_added.append(d)
+
+    return {
+        "stats": {
+            "total_series": total_series,
+            "total_issues": total_issues,
+            "read": read,
+            "reading": reading,
+        },
+        "continue_reading": continue_reading,
+        "recently_added": recently_added,
+    }
+
+
+@router.get("/library")
+def comics_library_view(
+    request: Request,
+    db: Session = Depends(_get_db),
+    q: str = Query(None),
+    media_type: str = Query(None, alias="type"),
+):
+    """Grouped series listing with optional search and type filter."""
+    query = db.query(Comic)
+    if q:
+        query = query.filter(or_(
+            Comic.series.ilike(f"%{q}%"),
+            Comic.title.ilike(f"%{q}%"),
+        ))
+    if media_type:
+        query = query.filter(Comic.media_type == media_type)
+
+    comics = query.all()
+    comic_ids = [c.id for c in comics]
+
+    read_comic_ids: set[int] = set()
+    if comic_ids:
+        rows = (
+            db.query(ComicProgress.comic_id)
+            .filter(
+                ComicProgress.comic_id.in_(comic_ids),
+                ComicProgress.percent >= 95,
+            )
+            .all()
+        )
+        read_comic_ids = {r[0] for r in rows}
+
+    series_map: dict[str, dict] = {}
+    for c in comics:
+        sname = c.series or c.title
+        if sname not in series_map:
+            cover = c.cover_path
+            cover_url = f"/api/{cover}" if cover and not cover.startswith("/") else cover
+            series_map[sname] = {
+                "id": c.id,
+                "name": sname,
+                "title": sname,
+                "media_type": c.media_type,
+                "comic_type": c.media_type,
+                "issue_count": 0,
+                "read_count": 0,
+                "cover_path": cover,
+                "cover_url": cover_url,
+                "author": c.author,
+                "publisher": c.publisher,
+                "year": c.year,
+            }
+        series_map[sname]["issue_count"] += 1
+        if c.id in read_comic_ids:
+            series_map[sname]["read_count"] += 1
+        if not series_map[sname]["cover_path"] and c.cover_path:
+            series_map[sname]["cover_path"] = c.cover_path
+            series_map[sname]["cover_url"] = f"/api/{c.cover_path}" if c.cover_path and not c.cover_path.startswith("/") else c.cover_path
+
+    series_list = sorted(series_map.values(), key=lambda s: s["name"] or "")
+    return {
+        "series": series_list,
+        "total_series": len(series_list),
+        "total_issues": sum(s["issue_count"] for s in series_list),
+    }
+
+
+@router.get("/series/{series_name:path}")
+def comics_series_detail(
+    request: Request,
+    series_name: str,
+    db: Session = Depends(_get_db),
+):
+    """All issues in a series with progress and file_id for the reader."""
+    series_name = unquote(series_name)
+    comics = (
+        db.query(Comic)
+        .filter(Comic.series == series_name)
+        .order_by(Comic.issue_number)
+        .all()
+    )
+    if not comics:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    comic_ids = [c.id for c in comics]
+
+    progress_map: dict[int, ComicProgress] = {}
+    if comic_ids:
+        plist = (
+            db.query(ComicProgress)
+            .filter(ComicProgress.comic_id.in_(comic_ids))
+            .all()
+        )
+        for p in plist:
+            prev = progress_map.get(p.comic_id)
+            if prev is None or (
+                p.last_read_at
+                and (not prev.last_read_at or p.last_read_at > prev.last_read_at)
+            ):
+                progress_map[p.comic_id] = p
+
+    from .library_models import ComicFile
+    from sqlalchemy.orm import sessionmaker
+    PrivateSession = sessionmaker(bind=request.app.state.private_engine)
+    pdb = PrivateSession()
+    try:
+        file_map: dict[int, int] = {}
+        if comic_ids:
+            rows = (
+                pdb.query(ComicFile.comic_id, ComicFile.id)
+                .filter(ComicFile.comic_id.in_(comic_ids))
+                .all()
+            )
+            for cid, fid in rows:
+                file_map[cid] = fid
+    finally:
+        pdb.close()
+
+    issues = []
+    for c in comics:
+        d = c.to_json()
+        p = progress_map.get(c.id)
+        d["progress"] = p.to_json() if p else None
+        d["file_id"] = file_map.get(c.id)
+        issues.append(d)
+
+    return {
+        "series": series_name,
+        "media_type": comics[0].media_type,
+        "issues": issues,
+    }
+
+
+@router.get("/stats")
+def comics_stats(request: Request, db: Session = Depends(_get_db)):
+    """Detailed reading statistics."""
+    total_issues = db.query(func.count(Comic.id)).scalar() or 0
+    total_read = (
+        db.query(func.count(distinct(ComicProgress.comic_id)))
+        .filter(ComicProgress.percent >= 95)
+        .scalar() or 0
+    )
+    total_pages_read = db.query(func.sum(ComicProgress.current_page)).scalar() or 0
+    series_count = db.query(func.count(distinct(Comic.series))).scalar() or 0
+
+    top_series_rows = (
+        db.query(Comic.series, func.count(Comic.id).label("cnt"))
+        .filter(Comic.series.isnot(None))
+        .group_by(Comic.series)
+        .order_by(func.count(Comic.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    read_ids = {
+        r[0] for r in
+        db.query(ComicProgress.comic_id).filter(ComicProgress.percent >= 95).all()
+    }
+    all_comics = db.query(Comic.id, Comic.series).all()
+    sr_map: dict[str, int] = {}
+    for cid, series in all_comics:
+        if series:
+            sr_map.setdefault(series, 0)
+            if cid in read_ids:
+                sr_map[series] += 1
+
+    top_series = [
+        {"name": name, "issue_count": cnt, "read_count": sr_map.get(name, 0)}
+        for name, cnt in top_series_rows
+    ]
+
+    publishers = [
+        {"name": name, "count": cnt}
+        for name, cnt in (
+            db.query(Comic.publisher, func.count(Comic.id))
+            .filter(Comic.publisher.isnot(None))
+            .group_by(Comic.publisher)
+            .order_by(func.count(Comic.id).desc())
+            .all()
+        )
+    ]
+
+    media_types = [
+        {"type": mt, "count": cnt}
+        for mt, cnt in (
+            db.query(Comic.media_type, func.count(Comic.id))
+            .group_by(Comic.media_type)
+            .all()
+        )
+    ]
+
+    history = (
+        db.query(Comic, ComicProgress)
+        .join(ComicProgress, Comic.id == ComicProgress.comic_id)
+        .order_by(ComicProgress.last_read_at.desc())
+        .limit(20)
+        .all()
+    )
+    reading_history = []
+    for comic, prog in history:
+        d = comic.to_json()
+        d["last_read_at"] = prog.last_read_at.isoformat() + "Z" if prog.last_read_at else None
+        reading_history.append(d)
+
+    return {
+        "summary": {
+            "total_issues": total_issues,
+            "total_read": total_read,
+            "total_pages_read": total_pages_read,
+            "series_count": series_count,
+        },
+        "top_series": top_series,
+        "publishers": publishers,
+        "media_types": media_types,
+        "reading_history": reading_history,
+    }
 
 
 # ── Comic CRUD ─────────────────────────────────────────────────────
@@ -293,8 +591,8 @@ async def save_progress(request: Request, comic_id: int, db: Session = Depends(_
         raise HTTPException(status_code=404, detail="Comic not found")
 
     data = await request.json()
-    current_page = data.get("current_page", 0)
-    total_pages = data.get("total_pages", 0)
+    current_page = data.get("current_page", data.get("page", 0))
+    total_pages = data.get("total_pages", data.get("total", 0))
     percent = (current_page / total_pages * 100) if total_pages > 0 else 0.0
 
     existing = (

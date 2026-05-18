@@ -1516,3 +1516,12 @@ async def library_stream(request: Request, file_id: int):
     range_header = request.headers.get("range")
     streamer = get_streamer(file_path)
     return streamer.stream(file_path, range_header)
+
+
+@router.post("/library/stream/stop")
+async def library_stream_stop():
+    """Kill all active VLC streaming processes."""
+    from ..vlc_streamer import kill_all
+    killed = kill_all()
+    log.info("Stream stop requested — killed %d VLC processes", killed)
+    return {"killed": killed}

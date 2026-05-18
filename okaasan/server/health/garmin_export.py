@@ -156,8 +156,7 @@ def _extract_fit_files(extract_dir: Path, dest_dir: Path) -> list[Path]:
 def import_garmin_export(
     db: Session,
     zip_path: str | Path,
-    upload_folder: str | Path,
-    *,
+    *_args,
     on_progress=None,
 ) -> dict[str, Any]:
     """Import all data from a Garmin account data export ZIP.
@@ -165,7 +164,6 @@ def import_garmin_export(
     Returns a summary dict with counts for each data type imported.
     """
     zip_path = Path(zip_path)
-    upload_folder = Path(upload_folder)
     results: dict[str, Any] = {}
 
     def _emit(msg: str):

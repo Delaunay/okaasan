@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from . import gcalendar
 from ..calendar.models import Event
+from ..paths import public_folder
 
 router = APIRouter(prefix="/gcalendar", tags=["google-calendar"])
 
 
 def _init_config(request: Request):
     """Lazily point gcalendar at the data config dir on first request."""
-    cfg_dir = Path(request.app.state.upload_folder) / "data" / "_config"
-    gcalendar.set_config_dir(cfg_dir)
+    gcalendar.set_config_dir(public_folder() / "data" / "_config")
 
 
 def get_db(request: Request):

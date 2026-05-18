@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 
 from ..tools.images import centercrop_resize_image
+from .paths import public_folder
 
 router = APIRouter()
 
@@ -41,7 +42,6 @@ async def upload_file(
         if not namespace:
             raise HTTPException(status_code=400, detail="missing namespace")
 
-        upload_folder = request.app.state.upload_folder
         originals_folder = request.app.state.originals_folder
         file_extension = file.filename.rsplit('.', 1)[1].lower()
         filename = f"{namespace}.{file_extension}"
@@ -58,7 +58,7 @@ async def upload_file(
             await file.seek(0)
 
         image = Image.open(file.file)
-        result_filename = centercrop_resize_image(upload_folder, image, namespace, file_extension)
+        result_filename = centercrop_resize_image(str(public_folder()), image, namespace, file_extension)
         file_url = f"/uploads/{result_filename}"
 
         return {"url": file_url, "filename": result_filename, "folder": ""}
@@ -83,13 +83,12 @@ async def download_image(
         if not path:
             raise HTTPException(status_code=400, detail="Missing article path")
 
-        upload_folder = request.app.state.upload_folder
         safe_parts = [_secure_filename(p) for p in path.split('/') if p.strip()]
         if not safe_parts:
             raise HTTPException(status_code=400, detail="Invalid article path")
 
         filename = _secure_filename(file.filename)
-        dest_dir = os.path.join(upload_folder, *safe_parts)
+        dest_dir = os.path.join(str(public_folder()), *safe_parts)
         os.makedirs(dest_dir, exist_ok=True)
 
         dest_path = os.path.join(dest_dir, filename)
@@ -114,8 +113,7 @@ async def download_image(
 
 @router.get("/uploads/{filepath:path}")
 def uploaded_file(filepath: str, request: Request):
-    upload_folder = request.app.state.upload_folder
-    full_path = os.path.join(upload_folder, filepath)
-    if not os.path.isfile(full_path):
+    full_path = public_folder() / filepath
+    if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(full_path)
+    return FileResponse(str(full_path))

@@ -11,7 +11,6 @@ STATIC_FOLDER_DEFAULT = os.path.join(ROOT, 'static')
 STATIC_FOLDER = os.path.abspath(
     os.getenv("OKAASAN_DATA") or os.getenv("FLASK_STATIC", STATIC_FOLDER_DEFAULT)
 )
-STATIC_UPLOAD_FOLDER = os.path.join(STATIC_FOLDER, 'uploads')
 ORIGINALS_FOLDER = '/mnt/xshare/projects/recipes/originals'
 
 

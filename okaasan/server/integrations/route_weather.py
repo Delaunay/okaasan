@@ -11,6 +11,8 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from ..paths import public_folder
+
 router = APIRouter(prefix="/weather", tags=["weather"])
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -22,7 +24,7 @@ def _error_detail(exc: Exception) -> str:
 
 
 def _config_path(request: Request) -> Path:
-    cfg_dir = Path(request.app.state.upload_folder) / "data" / "_config"
+    cfg_dir = public_folder() / "data" / "_config"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     return cfg_dir / "_weather.json"
 

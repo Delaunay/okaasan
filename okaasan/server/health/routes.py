@@ -16,7 +16,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from .models import HealthMetric, HealthActivity, HealthDailySummary, HealthConnector
-from ..paths import private_folder
+from ..paths import private_folder, public_folder
 
 log = logging.getLogger("okaasan.health.routes")
 
@@ -493,8 +493,8 @@ def create_health_router(engine) -> APIRouter:
     # Import / sync endpoints
     # ------------------------------------------------------------------
 
-    def _upload_folder(request: Request) -> str:
-        return request.app.state.upload_folder
+    def _config_dir() -> Path:
+        return public_folder() / "data" / "_config"
 
     @router.post("/sync/garmin")
     async def sync_garmin(request: Request):
@@ -513,7 +513,7 @@ def create_health_router(engine) -> APIRouter:
         from .garmin_connect import sync_day, _get_client
         from datetime import date as date_cls
 
-        config_dir = Path(_upload_folder(request)) / "data" / "_config"
+        config_dir = _config_dir()
 
         if not end_date:
             end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -670,7 +670,6 @@ def create_health_router(engine) -> APIRouter:
         if not zip_path or not Path(zip_path).is_file():
             raise HTTPException(status_code=400, detail="path must point to an existing ZIP file")
 
-        upload_dir = Path(_upload_folder(request))
         SL = sessionmaker(bind=engine)
         q: queue.Queue = queue.Queue()
 
@@ -681,7 +680,7 @@ def create_health_router(engine) -> APIRouter:
                 result = import_garmin_export(
                     db_w,
                     zip_path,
-                    upload_dir,
+                    str(public_folder()),
                     on_progress=lambda msg: q.put({"progress": msg}),
                 )
                 q.put({"done": True, "result": result})
@@ -719,7 +718,7 @@ def create_health_router(engine) -> APIRouter:
         from .fit_reader import save_uploaded_fit, import_fit_file
 
         contents = await file.read()
-        dest = save_uploaded_fit(contents, file.filename or "upload.fit", _upload_folder(request))
+        dest = save_uploaded_fit(contents, file.filename or "upload.fit", str(public_folder()))
         result = import_fit_file(db, dest)
         return result
 
@@ -732,7 +731,7 @@ def create_health_router(engine) -> APIRouter:
 
         from .fit_reader import copy_fit_files, import_fit_file
 
-        new_files = copy_fit_files(source_dir, _upload_folder(request))
+        new_files = copy_fit_files(source_dir, str(public_folder()))
         results: list[dict] = []
         for f in new_files:
             try:
@@ -746,7 +745,7 @@ def create_health_router(engine) -> APIRouter:
     async def import_fit_reprocess(request: Request, db: Session = Depends(get_db)):
         from .fit_reader import import_all_local
 
-        results = import_all_local(db, _upload_folder(request))
+        results = import_all_local(db, str(public_folder()))
         return {"results": results}
 
     # ------------------------------------------------------------------
@@ -793,9 +792,8 @@ def create_health_router(engine) -> APIRouter:
 
         from .garmin_connect import garmin_login
 
-        config_dir = Path(_upload_folder(request)) / "data" / "_config"
         try:
-            result = garmin_login(config_dir, email, password)
+            result = garmin_login(_config_dir(), email, password)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -830,7 +828,6 @@ def create_health_router(engine) -> APIRouter:
         if not garmin_dir.is_dir():
             raise HTTPException(status_code=400, detail=f"GARMIN directory not found at {garmin_dir}")
 
-        upload_dir = Path(_upload_folder(request))
         SL = sessionmaker(bind=engine)
 
         def _worker():
@@ -840,7 +837,7 @@ def create_health_router(engine) -> APIRouter:
             try:
                 _hub.publish({"type": "usb_import", "status": "started"})
 
-                new_files = copy_fit_files(str(garmin_dir), upload_dir)
+                new_files = copy_fit_files(str(garmin_dir), str(public_folder()))
                 log.info("USB import: copied %d new FIT files from %s", len(new_files), garmin_dir)
                 _hub.publish({"type": "usb_import", "status": "copying", "files_found": len(new_files)})
 
@@ -932,10 +929,9 @@ def create_health_router(engine) -> APIRouter:
         db.commit()
 
         tz = config.get("sync_timezone", "UTC")
-        config_dir = Path(_upload_folder(request)) / "data" / "_config"
         if enabled:
             stop_scheduler()
-            start_scheduler(engine, config_dir, tz_name=tz)
+            start_scheduler(engine, _config_dir(), tz_name=tz)
         else:
             stop_scheduler()
 
@@ -949,7 +945,7 @@ def create_health_router(engine) -> APIRouter:
         if _conn and (_conn.config or {}).get("auto_sync"):
             from .scheduler import start_scheduler
             _tz = (_conn.config or {}).get("sync_timezone", "UTC")
-            start_scheduler(engine, Path("uploads") / "data" / "_config", tz_name=_tz)
+            start_scheduler(engine, _config_dir(), tz_name=_tz)
         _sess.close()
     except Exception as exc:
         log.warning("Could not auto-start health scheduler: %s", exc)

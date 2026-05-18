@@ -1,15 +1,21 @@
 """Base library scanner with filesystem change detection and daily scheduling."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from .paths import private_folder
+
 log = logging.getLogger("okaasan.scanner")
+
+_SCAN_STATE_FILE = "_last_scans.json"
+_MIN_SCAN_GAP_SECONDS = 3600  # skip startup scan if one happened within the last hour
 
 
 class FolderFingerprint:
@@ -113,17 +119,62 @@ class BaseLibraryScanner:
             self._thread.join(timeout=5)
 
     def scan_now(self) -> dict:
-        """Trigger an immediate scan (synchronous), bypassing change detection."""
+        """Trigger an immediate scan (synchronous), bypassing change detection and recency check."""
         result = self._do_scan()
         self.last_scan = datetime.now(timezone.utc)
         self.last_result = result
-        # Update fingerprint after successful scan
+        self._save_last_scan_time()
         config = self._load_config()
         folders = self._get_folders(config)
         extensions = self._get_extensions(config)
         if folders:
             self._last_fingerprint = compute_fingerprint(folders, extensions)
         return result
+
+    # ── Scan state persistence ──────────────────────────────────────────
+
+    def _scan_state_path(self) -> Path:
+        return private_folder() / _SCAN_STATE_FILE
+
+    def _load_last_scan_time(self) -> datetime | None:
+        """Load the last scan timestamp for this scanner from disk."""
+        p = self._scan_state_path()
+        if not p.is_file():
+            return None
+        try:
+            with open(p) as f:
+                data = json.load(f)
+            ts = data.get(self._log_name)
+            if ts:
+                return datetime.fromisoformat(ts)
+        except (ValueError, OSError, KeyError):
+            pass
+        return None
+
+    def _save_last_scan_time(self):
+        """Persist the current scan timestamp to disk."""
+        p = self._scan_state_path()
+        data: dict[str, str] = {}
+        if p.is_file():
+            try:
+                with open(p) as f:
+                    data = json.load(f)
+            except (ValueError, OSError):
+                data = {}
+        data[self._log_name] = datetime.now(timezone.utc).isoformat()
+        try:
+            with open(p, "w") as f:
+                json.dump(data, f, indent=2)
+        except OSError as e:
+            log.warning("Could not save scan state for %s: %s", self._log_name, e)
+
+    def _was_scanned_recently(self) -> bool:
+        """Return True if this scanner ran within _MIN_SCAN_GAP_SECONDS."""
+        last = self._load_last_scan_time()
+        if last is None:
+            return False
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+        return elapsed < _MIN_SCAN_GAP_SECONDS
 
     # ── Internal scheduling ────────────────────────────────────────────
 
@@ -166,11 +217,13 @@ class BaseLibraryScanner:
         return (target - now_local).total_seconds()
 
     def _run(self):
-        # Initial scan on startup (always)
-        try:
-            self.scan_now()
-        except Exception as e:
-            log.warning("Initial %s scan failed: %s", self._log_name, e)
+        if self._was_scanned_recently():
+            log.info("%s: skipping startup scan (last scan was recent)", self._log_name)
+        else:
+            try:
+                self.scan_now()
+            except Exception as e:
+                log.warning("Initial %s scan failed: %s", self._log_name, e)
 
         while not self._stop_event.is_set():
             config = self._load_config()

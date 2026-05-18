@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from .decorators import expose
+from .paths import public_folder
 from . import gitsync
 
 router = APIRouter()
@@ -16,7 +17,7 @@ def safe_name(name: str) -> str:
 
 
 def _store_dir(request: Request) -> str:
-    return os.path.join(request.app.state.upload_folder, 'data')
+    return str(public_folder() / "data")
 
 
 @router.get("/store/{collection}")

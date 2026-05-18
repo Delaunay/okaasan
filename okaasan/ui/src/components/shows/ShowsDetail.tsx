@@ -23,13 +23,12 @@ interface LibraryFile {
   episode: number | null;
   title: string | null;
   container: string | null;
+  file_path?: string;
 }
 
 interface PlayerState {
-  fileId: number;
   title: string;
-  episodeLabel?: string;
-  fileIndex: number;
+  files: LibraryFile[];
 }
 
 const ShowsDetail: React.FC = () => {
@@ -55,21 +54,9 @@ const ShowsDetail: React.FC = () => {
       .catch(() => setLibraryFiles([]));
   }, [mediaType, tmdbId]);
 
-  const playFile = useCallback((file: LibraryFile, index: number, showTitle: string) => {
-    const epLabel = file.season != null && file.episode != null
-      ? `S${String(file.season).padStart(2, '0')}E${String(file.episode).padStart(2, '0')}`
-      : undefined;
-    setPlayer({ fileId: file.id, title: showTitle, episodeLabel: epLabel, fileIndex: index });
-  }, []);
-
-  const playNext = useCallback(() => {
-    if (!player) return;
-    const nextIdx = player.fileIndex + 1;
-    if (nextIdx < libraryFiles.length) {
-      const next = libraryFiles[nextIdx];
-      playFile(next, nextIdx, player.title);
-    }
-  }, [player, libraryFiles, playFile]);
+  const openPlayer = useCallback((showTitle: string) => {
+    setPlayer({ title: showTitle, files: libraryFiles });
+  }, [libraryFiles]);
 
   if (loading) {
     return (
@@ -125,12 +112,9 @@ const ShowsDetail: React.FC = () => {
       {/* Video Player Modal */}
       {player && (
         <VideoPlayerModal
-          streamUrl={`/api/shows/library/stream/${player.fileId}`}
           title={player.title}
-          episodeLabel={player.episodeLabel}
+          files={player.files}
           onClose={() => setPlayer(null)}
-          onNext={player.fileIndex < libraryFiles.length - 1 ? playNext : undefined}
-          hasNext={player.fileIndex < libraryFiles.length - 1}
         />
       )}
 
@@ -251,7 +235,7 @@ const ShowsDetail: React.FC = () => {
             <Button
               colorPalette="blue"
               size="sm"
-              onClick={() => playFile(movieFile, 0, title)}
+              onClick={() => openPlayer(title)}
             >
               <Play size={16} />
               <Text ml={1}>Play</Text>
@@ -377,7 +361,7 @@ const ShowsDetail: React.FC = () => {
               seasons={tmdb.seasons}
               watchedSeasons={(data as any).watched_seasons || {}}
               libraryFiles={libraryFiles}
-              onPlay={(file, idx) => playFile(file, idx, title)}
+              onPlay={() => openPlayer(title)}
             />
           )}
 
@@ -451,7 +435,7 @@ const SeasonsBreakdown: React.FC<{
   seasons: SeasonInfo[];
   watchedSeasons: Record<number, WatchedSeasonInfo>;
   libraryFiles: LibraryFile[];
-  onPlay: (file: LibraryFile, index: number) => void;
+  onPlay: () => void;
 }> = ({ tmdbId, seasons, watchedSeasons, libraryFiles, onPlay }) => {
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<Record<number, EpisodeDetail[]>>({});
@@ -566,16 +550,11 @@ const SeasonsBreakdown: React.FC<{
                             )}
                           </HStack>
                         </Box>
-                        {(() => {
-                          const file = libraryFiles.find(f => f.season === season.season_number && f.episode === ep.episode_number);
-                          if (!file) return null;
-                          const idx = libraryFiles.indexOf(file);
-                          return (
-                            <Button size="xs" variant="ghost" onClick={() => onPlay(file, idx)} title="Play" p={1} minW="auto" h="auto">
-                              <Play size={14} />
-                            </Button>
-                          );
-                        })()}
+                        {libraryFiles.some(f => f.season === season.season_number && f.episode === ep.episode_number) && (
+                          <Button size="xs" variant="ghost" onClick={() => onPlay()} title="Play" p={1} minW="auto" h="auto">
+                            <Play size={14} />
+                          </Button>
+                        )}
                       </HStack>
                     ))}
                   </VStack>

@@ -24,7 +24,7 @@ from . import gitsync, updater
 log = logging.getLogger("okaasan")
 
 from .paths import (
-    STATIC_FOLDER, STATIC_UPLOAD_FOLDER, ORIGINALS_FOLDER,
+    STATIC_FOLDER, ORIGINALS_FOLDER,
     private_folder, public_folder, cache_folder,
 )
 
@@ -138,7 +138,7 @@ def create_app() -> FastAPI:
                             f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default}"
                         ))
 
-    os.makedirs(STATIC_UPLOAD_FOLDER, exist_ok=True)
+    public_folder()  # ensure uploads/ directory exists
 
     def get_db():
         db = SessionLocal()
@@ -149,7 +149,7 @@ def create_app() -> FastAPI:
 
     app.state.get_db = get_db
     app.state.static_folder = STATIC_FOLDER
-    app.state.upload_folder = STATIC_UPLOAD_FOLDER
+    app.state.upload_folder = str(public_folder())
     app.state.originals_folder = ORIGINALS_FOLDER
     app.state.private_engine = private_engine
 
@@ -311,7 +311,7 @@ def create_app() -> FastAPI:
     async def _startup():
         gitsync.start_sync(store_root)
 
-        settings_path = Path(STATIC_UPLOAD_FOLDER) / "data" / "_config" / "_settings.json"
+        settings_path = public_folder() / "data" / "_config" / "_settings.json"
         if settings_path.is_file():
             import json as _json
             with open(settings_path) as f:
@@ -360,7 +360,7 @@ def create_app() -> FastAPI:
     ]
 
     def _sidebar_config_path():
-        return Path(STATIC_UPLOAD_FOLDER) / "data" / "_config" / "_sidebar.json"
+        return public_folder() / "data" / "_config" / "_sidebar.json"
 
     def _load_sidebar_config() -> dict:
         p = _sidebar_config_path()
@@ -489,7 +489,7 @@ def create_app() -> FastAPI:
             cfg["hidden"] = body["hidden"]
         if "static_hidden" in body:
             cfg["static_hidden"] = body["static_hidden"]
-        folder = Path(STATIC_UPLOAD_FOLDER) / "data" / "_config"
+        folder = public_folder() / "data" / "_config"
         folder.mkdir(parents=True, exist_ok=True)
         with open(folder / "_sidebar.json", "w") as f:
             json.dump(cfg, f, indent=2)

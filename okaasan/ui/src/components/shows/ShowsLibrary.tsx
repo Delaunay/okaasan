@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Input, Button } from '@chakra-ui/react';
-import { HardDrive, Film, Tv, Play, Filter } from 'lucide-react';
+import { HardDrive, Film, Tv, Play } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import VideoPlayerModal from './VideoPlayerModal';
 
@@ -62,11 +62,8 @@ const ShowsLibrary: React.FC = () => {
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [player, setPlayer] = useState<{
-    fileId: number;
     title: string;
-    episodeLabel?: string;
-    allFiles: LibraryFile[];
-    fileIndex: number;
+    files: LibraryFile[];
   } | null>(null);
 
   useEffect(() => {
@@ -156,25 +153,9 @@ const ShowsLibrary: React.FC = () => {
     return next || group.files[0];
   }, [watchedMap]);
 
-  const playFile = useCallback((file: LibraryFile, groupFiles: LibraryFile[], title: string) => {
-    const idx = groupFiles.indexOf(file);
-    const epLabel = file.season != null && file.episode != null
-      ? `S${String(file.season).padStart(2, '0')}E${String(file.episode).padStart(2, '0')}`
-      : undefined;
-    setPlayer({ fileId: file.id, title, episodeLabel: epLabel, allFiles: groupFiles, fileIndex: idx });
+  const openPlayer = useCallback((groupFiles: LibraryFile[], title: string) => {
+    setPlayer({ title, files: groupFiles });
   }, []);
-
-  const playNext = useCallback(() => {
-    if (!player) return;
-    const nextIdx = player.fileIndex + 1;
-    if (nextIdx < player.allFiles.length) {
-      const next = player.allFiles[nextIdx];
-      const epLabel = next.season != null && next.episode != null
-        ? `S${String(next.season).padStart(2, '0')}E${String(next.episode).padStart(2, '0')}`
-        : undefined;
-      setPlayer({ ...player, fileId: next.id, episodeLabel: epLabel, fileIndex: nextIdx });
-    }
-  }, [player]);
 
   if (loading) {
     return (
@@ -188,12 +169,9 @@ const ShowsLibrary: React.FC = () => {
     <VStack gap={6} align="stretch" p={4}>
       {player && (
         <VideoPlayerModal
-          streamUrl={`/api/shows/library/stream/${player.fileId}`}
           title={player.title}
-          episodeLabel={player.episodeLabel}
+          files={player.files}
           onClose={() => setPlayer(null)}
-          onNext={player.fileIndex < player.allFiles.length - 1 ? playNext : undefined}
-          hasNext={player.fileIndex < player.allFiles.length - 1}
         />
       )}
 
@@ -238,7 +216,7 @@ const ShowsLibrary: React.FC = () => {
                 key={g.key}
                 group={g}
                 watchedSet={g.media_id ? watchedMap[g.media_id] : undefined}
-                onPlay={(file) => playFile(file, g.files, g.title)}
+                onPlay={() => openPlayer(g.files, g.title)}
                 getNextUnwatched={() => getNextUnwatched(g)}
               />
             ))}
@@ -261,7 +239,7 @@ const ShowsLibrary: React.FC = () => {
               <LibraryCard
                 key={g.key}
                 group={g}
-                onPlay={(file) => playFile(file, g.files, g.title)}
+                onPlay={() => openPlayer(g.files, g.title)}
                 getNextUnwatched={() => g.files[0]}
               />
             ))}
@@ -309,7 +287,7 @@ const FilterChip: React.FC<{ label: string; count: number; active: boolean; onCl
 const LibraryCard: React.FC<{
   group: GroupedMedia;
   watchedSet?: Set<string>;
-  onPlay: (file: LibraryFile) => void;
+  onPlay: () => void;
   getNextUnwatched: () => LibraryFile;
 }> = ({ group, watchedSet, onPlay, getNextUnwatched }) => {
   const episodeCount = group.files.length;
@@ -328,8 +306,7 @@ const LibraryCard: React.FC<{
   const handlePlay = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const file = isShow ? getNextUnwatched() : group.files[0];
-    onPlay(file);
+    onPlay();
   };
 
   const nextFile = isShow ? getNextUnwatched() : null;
@@ -349,29 +326,26 @@ const LibraryCard: React.FC<{
       position="relative"
     >
       {/* Play button — top right */}
-      <Box
+      <Button
         position="absolute"
         top={1}
         right={1}
-        zIndex={2}
+        zIndex={10}
+        size="xs"
+        variant="ghost"
+        p={1}
+        minW="auto"
+        h="auto"
+        borderRadius="full"
+        bg="rgba(0,0,0,0.6)"
+        color="white"
+        _hover={{ bg: 'blue.500' }}
+        title={nextLabel ? `Play ${nextLabel}` : 'Play'}
         onClick={handlePlay}
-        onMouseDown={(e) => e.stopPropagation()}
+        style={{ pointerEvents: 'auto' }}
       >
-        <Button
-          size="xs"
-          variant="ghost"
-          p={1}
-          minW="auto"
-          h="auto"
-          borderRadius="full"
-          bg="rgba(0,0,0,0.6)"
-          color="white"
-          _hover={{ bg: 'blue.500' }}
-          title={nextLabel ? `Play ${nextLabel}` : 'Play'}
-        >
-          <Play size={14} />
-        </Button>
-      </Box>
+        <Play size={14} />
+      </Button>
 
       {/* Unmatched badge — top left */}
       {!group.matched && (

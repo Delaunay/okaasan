@@ -31,7 +31,7 @@ log = logging.getLogger("okaasan.health.fit")
 SOURCE = "fit_file"
 
 
-def _fit_archive_dir(upload_folder: str | Path) -> Path:
+def _fit_archive_dir() -> Path:
     d = private_folder() / "fit"
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -41,13 +41,13 @@ def _fit_archive_dir(upload_folder: str | Path) -> Path:
 # Copy helpers
 # ---------------------------------------------------------------------------
 
-def copy_fit_files(source_dir: str | Path, upload_folder: str | Path) -> list[Path]:
+def copy_fit_files(source_dir: str | Path, *_args) -> list[Path]:
     """Copy .fit files from *source_dir* into the local archive.
 
     Skips files whose name already exists in the archive.
     Returns paths of newly copied files.
     """
-    archive = _fit_archive_dir(upload_folder)
+    archive = _fit_archive_dir()
     source = Path(source_dir)
     if not source.is_dir():
         log.warning("FIT source directory does not exist: %s", source)
@@ -65,9 +65,9 @@ def copy_fit_files(source_dir: str | Path, upload_folder: str | Path) -> list[Pa
     return new_files
 
 
-def save_uploaded_fit(file_bytes: bytes, filename: str, upload_folder: str | Path) -> Path:
+def save_uploaded_fit(file_bytes: bytes, filename: str, *_args) -> Path:
     """Save an uploaded FIT file into the local archive."""
-    archive = _fit_archive_dir(upload_folder)
+    archive = _fit_archive_dir()
     dest = archive / filename
     dest.write_bytes(file_bytes)
     return dest
@@ -231,9 +231,9 @@ def import_fit_file(db: Session, file_path: str | Path) -> dict[str, Any]:
     return results
 
 
-def import_all_local(db: Session, upload_folder: str | Path) -> list[dict]:
+def import_all_local(db: Session, *_args) -> list[dict]:
     """Import all FIT files from the local archive."""
-    archive = _fit_archive_dir(upload_folder)
+    archive = _fit_archive_dir()
     results: list[dict] = []
 
     for f in sorted(archive.glob("*.fit")):

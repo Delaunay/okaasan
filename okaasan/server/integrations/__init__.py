@@ -33,6 +33,15 @@ def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "
         from .route_gcalendar import router as gcalendar_router
 
         app.include_router(gcalendar_router)
+
+        from .gcalendar import GCalSyncScheduler
+
+        _gcal_scheduler = GCalSyncScheduler(app.state.SessionLocal)
+
+        @app.on_event("startup")
+        async def _start_gcal_sync():
+            _gcal_scheduler.start()
+
     except Exception as exc:
         log.warning("Google Calendar routes not available: %s", exc)
 

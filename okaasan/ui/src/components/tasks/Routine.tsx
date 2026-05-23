@@ -46,14 +46,14 @@ const Routine: React.FC<RoutineProps> = ({
         return targetDate;
     }, []);
 
-    const getEventsForDay = useCallback((dayName: string): Event[] => {
-        const dayIndex = DAYS.indexOf(dayName as typeof DAYS[number]);
-        if (dayIndex === -1) return [];
+    const getEventsForDay = useCallback((dayName: string, _dayIndex?: number): Event[] => {
+        const idx = DAYS.indexOf(dayName as typeof DAYS[number]);
+        if (idx === -1) return [];
 
         return events.filter(event => {
             const eventDate = fromDateServer(event.datetime_start);
             const eventDayOfWeek = (eventDate.getDay() + 6) % 7;
-            return eventDayOfWeek === dayIndex;
+            return eventDayOfWeek === idx;
         });
     }, [events]);
 

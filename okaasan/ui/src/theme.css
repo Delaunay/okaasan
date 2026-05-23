@@ -93,6 +93,17 @@
   --dropdown-hover: #f7fafc;
   --dropdown-divider: #edf2f7;
 
+  /* Calendar */
+  --cal-grid-border: #edf2f7;
+  --cal-time-text: #a0aec0;
+  --cal-header-bg: #f8f9fa;
+  --cal-hover-bg: #f7fafc;
+  --cal-today-bg: #fffaf0;
+  --cal-event-opacity: 0.85;
+  --cal-drag-badge-bg: #fff;
+  --cal-drag-badge-border: #e2e8f0;
+  --cal-drag-badge-text: #2d3748;
+
   /* Nutrition Facts */
   --nf-border: #1a202c;
   --nf-border-medium: #cbd5e0;
@@ -208,6 +219,17 @@
   --dropdown-hover: #2d3748;
   --dropdown-divider: #2d3748;
 
+  /* Calendar */
+  --cal-grid-border: #2d3748;
+  --cal-time-text: #4a5568;
+  --cal-header-bg: #1a202c;
+  --cal-hover-bg: #1e2430;
+  --cal-today-bg: #2d2215;
+  --cal-event-opacity: 0.9;
+  --cal-drag-badge-bg: #1a202c;
+  --cal-drag-badge-border: #2d3748;
+  --cal-drag-badge-text: #e2e8f0;
+
   /* Nutrition Facts */
   --nf-border: #e2e8f0;
   --nf-border-medium: #4a5568;
@@ -228,4 +250,15 @@
   --nf-success-bg: #1c4532;
   --nf-success-border: #38a169;
   --nf-success-text: #68d391;
+}
+
+/* ─── Utility animations ──────────────────────────────────── */
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }

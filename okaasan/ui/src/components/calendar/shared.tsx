@@ -248,8 +248,9 @@ export class DragOperation {
         const snappedMinutes = Math.round(newMinutes / 5) * 5;
 
         const timeString = `${newHour.toString().padStart(2, '0')}:${snappedMinutes.toString().padStart(2, '0')}`;
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        const dayString = days[dayIndex] ? ` - ${days[dayIndex]}` : "";
+        const resolvedDate = this.resolveDateForDay(dayIndex);
+        const dayName = resolvedDate.toLocaleDateString('en-US', { weekday: 'long' });
+        const dayString = ` - ${dayName}`;
 
         return { time: timeString + dayString, dayIndex };
     }
@@ -288,8 +289,8 @@ export const CursorBadge: React.FC<{
             position="fixed"
             left={`${position.x + 10}px`}
             top={`${position.y - 40}px`}
-            bg="var(--card-bg)"
-            color="var(--heading-color)"
+            bg="var(--cal-drag-badge-bg)"
+            color="var(--cal-drag-badge-text)"
             px={2}
             py={1}
             borderRadius="md"
@@ -298,7 +299,7 @@ export const CursorBadge: React.FC<{
             zIndex={10000}
             pointerEvents="none"
             border="1px solid"
-            borderColor="var(--border-color)"
+            borderColor="var(--cal-drag-badge-border)"
         >
             {time}
         </Box>
@@ -441,42 +442,43 @@ export const GridEvent: React.FC<GridEventProps> = ({
                 ref={eventRef}
                 position="absolute"
                 top={`${position.top}px`}
-                left="0"
-                right="0"
+                left="2px"
+                right="2px"
                 height={`${position.height}px`}
                 bg={event.color || "blue.500"}
                 color="white"
-                p={2}
+                px={2}
                 py={1}
-                borderRadius="md"
-                fontSize="sm"
-                fontWeight="bold"
+                borderRadius="sm"
+                fontSize="xs"
                 zIndex={isDraggingState ? 1000 : 1}
                 cursor={isDraggingState ? "grabbing" : "grab"}
-                border="1px solid"
-                borderColor={event.color || "blue.600"}
+                borderLeft="3px solid"
+                borderLeftColor={event.color || "blue.600"}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onMouseUp={handleEventMouseUp}
                 display="flex"
                 flexDirection="column"
-                justifyContent="space-between"
+                justifyContent="flex-start"
                 onMouseDown={handleMouseDown}
-                opacity={isDraggingState ? 0.8 : 1}
+                style={{
+                    visibility: shouldHide ? 'hidden' : 'visible',
+                    opacity: isDraggingState ? 0.7 : 'var(--cal-event-opacity)',
+                } as React.CSSProperties}
                 userSelect="none"
-                transition={isDraggingState ? "none" : "all 0.2s"}
+                transition={isDraggingState ? "none" : "opacity 0.15s, transform 0.15s"}
                 _hover={{
-                    opacity: isDraggingState ? 0.8 : 0.9,
-                    transform: isDraggingState ? "scale(1.05)" : "scale(1.02)"
+                    opacity: isDraggingState ? 0.7 : 0.95,
+                    transform: isDraggingState ? "scale(1.03)" : "none"
                 }}
-                style={{ visibility: shouldHide ? 'hidden' : 'visible' }}
             >
                 <Box flex="1" overflow="hidden">
-                    <Text fontWeight="bold" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                    <Text fontWeight="semibold" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
                         {event.title}
                     </Text>
                     {event.description && position.height > 30 && (
-                        <Text overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" fontSize="xs" opacity={0.9}>
+                        <Text overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" fontSize="xs" opacity={0.8}>
                             {event.description}
                         </Text>
                     )}
@@ -492,17 +494,18 @@ export const GridEvent: React.FC<GridEventProps> = ({
 
 export interface WeeklyGridProps {
     events: Event[];
-    getEventsForDay: (dayName: string) => Event[];
+    days?: readonly string[];
+    getEventsForDay: (dayLabel: string, dayIndex: number) => Event[];
     resolveDateForDay: DateResolver;
-    onTimeSlotClick: (dayName: string, dayIndex: number, hour: number, minutes: number) => void;
+    onTimeSlotClick: (dayLabel: string, dayIndex: number, hour: number, minutes: number) => void;
     onEventClick?: (event: Event) => void;
     onEventDoubleClick: (event: Event) => void;
     onEventTimeChange: (event: Event, newStartTime: Date, newEndTime: Date) => void;
     onEventCreated: (event: Event) => void;
     onEventUpdated: (event: Event) => void;
     onEventDeleted: (eventId: number) => void;
-    renderDayHeader: (day: string, dayIndex: number) => React.ReactNode;
-    getDayBg?: (dayIndex: number) => { bg?: string; _dark?: { bg?: string } } | undefined;
+    renderDayHeader: (dayLabel: string, dayIndex: number) => React.ReactNode;
+    getDayBg?: (dayIndex: number) => { bg?: string } | undefined;
     className?: string;
 
     isModalOpen: boolean;
@@ -513,6 +516,7 @@ export interface WeeklyGridProps {
 }
 
 export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
+    days: dayLabels = DAYS,
     getEventsForDay,
     resolveDateForDay,
     onTimeSlotClick,
@@ -569,13 +573,14 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
         setDayAxis(new GridWeek(6, 23, totalCalendarHeight, timeSlotHeight, weekWidth));
     }, [totalCalendarHeight, timeSlotHeight, weekWidth]);
 
+    const gridBorder = "1px solid var(--cal-grid-border)";
+
     return (
         <HStack ref={containerRef} h="100%" w="100%" maxH="100%" maxW="100%" overflow="hidden">
             <Grid
                 templateColumns="80px repeat(7, 1fr)"
                 templateRows="50px 1fr"
-                gap={0.5}
-                borderColor="var(--border-color)"
+                gap={0}
                 borderRadius="md"
                 bg="bg"
                 className={`class-grid ${className || ''}`}
@@ -584,15 +589,15 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
                 height="100%"
             >
                 {/* Empty top-left corner */}
-                <GridItem border="1px solid" borderColor="var(--border-color)" bg="bg" />
+                <GridItem borderBottom={gridBorder} bg="var(--cal-header-bg)" />
 
                 {/* Day headers (custom per page) */}
-                {DAYS.map((day, index) => (
+                {dayLabels.map((day, index) => (
                     <GridItem
-                        key={day}
-                        border="1px solid"
-                        borderColor="gray.200"
-                        bg="bg"
+                        key={`${index}-${day}`}
+                        borderBottom={gridBorder}
+                        borderLeft={gridBorder}
+                        bg="var(--cal-header-bg)"
                         display="flex"
                         alignItems="center"
                         justifyContent="center"
@@ -607,11 +612,7 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
 
                 {/* Time labels */}
                 <GridItem
-                    borderTop="1px solid"
-                    borderLeft="1px solid"
-                    borderRight="1px solid"
-                    borderColor="var(--border-color)"
-                    bg="bg"
+                    bg="var(--card-bg)"
                     display="flex"
                     flexDirection="column"
                     height={`${timeSlotHeight * HOURS.length}px`}
@@ -623,10 +624,9 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
                             display="flex"
                             alignItems="center"
                             justifyContent="center"
-                            borderBottom="1px solid"
-                            borderColor="gray.200"
-                            fontSize="sm"
-                            fontWeight="medium"
+                            borderBottom={gridBorder}
+                            fontSize="xs"
+                            color="var(--cal-time-text)"
                         >
                             <Text>{hour}:00</Text>
                         </Box>
@@ -684,19 +684,15 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
                     </Box>
 
                     {/* Day columns */}
-                    <Grid templateColumns="repeat(7, 1fr)" gap={0.5} flex="1" minH="0">
-                        {DAYS.map((day, dayIndex) => {
+                    <Grid templateColumns="repeat(7, 1fr)" gap={0} flex="1" minH="0">
+                        {dayLabels.map((day, dayIndex) => {
                             const dayBg = getDayBg?.(dayIndex);
                             return (
                                 <GridItem
-                                    key={day}
-                                    borderTop="1px solid"
-                                    borderLeft="1px solid"
-                                    borderRight="1px solid"
-                                    borderColor="gray.200"
-                                    bg={dayBg?.bg || "bg"}
-                                    _dark={dayBg?._dark || {}}
-                                    _hover={{ bg: "gray.200", _dark: { bg: "gray.700" } }}
+                                    key={`${dayIndex}-${day}`}
+                                    borderLeft={gridBorder}
+                                    bg={dayBg?.bg || "var(--card-bg)"}
+                                    _hover={{ bg: "var(--cal-hover-bg)" }}
                                     minH="200px"
                                     position="relative"
                                     height="100%"
@@ -710,14 +706,11 @@ export const WeeklyGrid: React.FC<WeeklyGridProps> = ({
                                             display="flex"
                                             alignItems="center"
                                             justifyContent="center"
-                                            borderBottom="1px solid"
-                                            borderColor="gray.200"
-                                            fontSize="sm"
-                                            fontWeight="medium"
+                                            borderBottom={gridBorder}
                                         />
                                     ))}
 
-                                    {dayAxis && getEventsForDay(day).map((event) => {
+                                    {dayAxis && getEventsForDay(day, dayIndex).map((event) => {
                                         const position = dayAxis.getEventPosition(event);
                                         return (
                                             <GridEvent

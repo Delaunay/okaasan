@@ -366,12 +366,12 @@ const RecipeList = () => {
                       left="0"
                       width="100%"
                       height="100%"
-                      bg="gray.100"
+                      bg="var(--surface-muted)"
                       display="flex"
                       alignItems="center"
                       justifyContent="center"
                     >
-                      <Text color="gray.500" fontSize="sm" textAlign="center">
+                      <Text color="var(--empty-text)" fontSize="sm" textAlign="center">
                         No image
                       </Text>
                     </Box>

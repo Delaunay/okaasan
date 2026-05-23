@@ -280,3 +280,146 @@ def list_calendars() -> list[dict]:
         }
         for cal in result.get("items", [])
     ]
+
+
+# ── Sync into local DB ───────────────────────────────────────
+
+def _parse_gcal_datetime(dt_str: str | None) -> "datetime | None":
+    """Parse a Google Calendar datetime string and normalize to naive UTC."""
+    if not dt_str:
+        return None
+    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def sync_events_to_db(session_factory, time_min: datetime, time_max: datetime) -> dict:
+    """Fetch Google Calendar events and upsert into the local Event table.
+
+    Returns ``{"created": int, "updated": int, "unchanged": int}``.
+    """
+    from ..calendar.models import Event
+
+    gcal_events = fetch_events(time_min, time_max)
+    if not gcal_events:
+        return {"created": 0, "updated": 0, "unchanged": 0}
+
+    db = session_factory()
+    try:
+        gcal_ids = [e["id"] for e in gcal_events if e.get("id")]
+        existing = db.query(Event).filter(Event.google_event_id.in_(gcal_ids)).all()
+        existing_map = {e.google_event_id: e for e in existing}
+
+        created = updated = unchanged = 0
+
+        for ge in gcal_events:
+            gid = ge.get("id")
+            if not gid:
+                continue
+
+            dt_start = _parse_gcal_datetime(ge.get("datetime_start"))
+            dt_end = _parse_gcal_datetime(ge.get("datetime_end"))
+            if not dt_start or not dt_end:
+                continue
+
+            local = existing_map.get(gid)
+            if local:
+                changed = False
+                for attr, val in [
+                    ("title", ge.get("title")),
+                    ("datetime_start", dt_start),
+                    ("datetime_end", dt_end),
+                    ("location", ge.get("location")),
+                    ("description", ge.get("description")),
+                ]:
+                    if getattr(local, attr) != val:
+                        setattr(local, attr, val if val is not None else getattr(local, attr))
+                        changed = True
+                if changed:
+                    updated += 1
+                else:
+                    unchanged += 1
+            else:
+                db.add(Event(
+                    title=ge.get("title", "(no title)"),
+                    description=ge.get("description"),
+                    datetime_start=dt_start,
+                    datetime_end=dt_end,
+                    location=ge.get("location"),
+                    color=ge.get("color", "#4285F4"),
+                    kind=0,
+                    done=False,
+                    source="google",
+                    google_event_id=gid,
+                    active=True,
+                ))
+                created += 1
+
+        db.commit()
+        return {"created": created, "updated": updated, "unchanged": unchanged}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+# ── Background periodic sync ─────────────────────────────────
+
+import threading
+import time as _time
+
+
+class GCalSyncScheduler:
+    """Daemon thread that periodically syncs Google Calendar into the local DB."""
+
+    def __init__(self, session_factory, interval_minutes: int = 15):
+        self._session_factory = session_factory
+        self._interval = interval_minutes * 60
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+
+        status = get_status()
+        if not status["setup_complete"]:
+            log.info("Google Calendar not configured — periodic sync disabled")
+            return
+
+        from ..task_registry import registry
+        self._stop_event.clear()
+        registry.register("gcal_sync", "Google Calendar Sync")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="gcal-sync")
+        self._thread.start()
+        log.info("Google Calendar sync started (interval=%dm)", self._interval // 60)
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+        log.info("Google Calendar sync stopped")
+
+    def _run(self):
+        from ..task_registry import registry
+
+        _time.sleep(15)
+        while not self._stop_event.is_set():
+            now = datetime.now(timezone.utc)
+            time_min = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            time_max = time_min + timedelta(days=14)
+
+            registry.update("gcal_sync", status="running", detail="Syncing...")
+            try:
+                result = sync_events_to_db(self._session_factory, time_min, time_max)
+                detail = f"+{result['created']} new, {result['updated']} updated"
+                registry.update("gcal_sync", status="idle", detail=detail)
+                log.debug("GCal sync: %s", detail)
+            except Exception as e:
+                log.error("GCal sync error: %s", e)
+                registry.update("gcal_sync", status="error", error=str(e))
+
+            self._stop_event.wait(self._interval)

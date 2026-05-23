@@ -2218,15 +2218,15 @@ const InstructionStep: FC<InstructionStepProps> = ({
                 <Box
                   width="200px"
                   height="150px"
-                  bg="bg"
+                  bg="var(--surface-muted)"
                   borderRadius="md"
                   border="2px dashed"
-                  borderColor="gray.300"
+                  borderColor="var(--border-color)"
                   display="flex"
                   alignItems="center"
                   justifyContent="center"
                 >
-                  <Text color="gray.500" fontSize="sm" textAlign="center">
+                  <Text color="var(--empty-text)" fontSize="sm" textAlign="center">
                     No image
                   </Text>
                 </Box>

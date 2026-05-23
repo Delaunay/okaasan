@@ -59,6 +59,7 @@ setup(
         "pythontorrentdht",
         "yfinance",
         "alpaca-py",
+        "psutil",
     ],
     entry_points={
         "console_scripts": [

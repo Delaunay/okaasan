@@ -458,11 +458,36 @@ export function getDigestSlotsForDay(digest: WeeklyDigest | null, dayDate: Date)
 const STATIC_SKIP = new Set(['Home', 'Settings']);
 
 function StaticHome() {
-  const sections = getRouteSections().filter(s => !STATIC_SKIP.has(s.title) && s.items.length > 0);
-  const items = sections.map(s => ({
-    name: s.title,
-    href: s.items[0]?.href || s.href,
-  }));
+  const [items, setItems] = useState<{ name: string; href: string }[]>([]);
+
+  useEffect(() => {
+    recipeAPI.getSidebar().then(data => {
+      const configuredMedia = new Set(data.configured_media || []);
+      const MEDIA_SECTIONS = new Set([
+        'Shows & Movies', 'Music', 'Audiobooks', 'Podcasts', 'Books', 'Comics & Manga', 'Retro Games',
+      ]);
+      const unconfigured = [...MEDIA_SECTIONS].filter(s => !configuredMedia.has(s));
+      const hidden = new Set([
+        ...(data.hidden || []),
+        ...unconfigured,
+        ...(data.static_hidden || []),
+      ]);
+
+      const visible = getRouteSections()
+        .filter(s => !STATIC_SKIP.has(s.title) && !hidden.has(s.title) && s.items.length > 0);
+      setItems(visible.map(s => ({
+        name: s.title,
+        href: s.items[0]?.href || s.href,
+      })));
+    }).catch(() => {
+      const fallback = getRouteSections()
+        .filter(s => !STATIC_SKIP.has(s.title) && s.items.length > 0);
+      setItems(fallback.map(s => ({
+        name: s.title,
+        href: s.items[0]?.href || s.href,
+      })));
+    });
+  }, []);
 
   return <SectionView title="(O)KaaSan" items={items} />;
 }

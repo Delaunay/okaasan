@@ -596,11 +596,18 @@ def create_app() -> FastAPI:
                     pass
         return configured
 
+    _DEFAULT_STATIC_HIDDEN = [
+        "Downloads", "Feed", "World News",
+        "Planning", "Inventory & Shopping", "Home Management",
+        "Health", "Investing", "Expense Tracker",
+    ]
+
     @app.get("/sidebar")
+    @expose()
     def get_sidebar():
         cfg = _load_sidebar_config()
         hidden = set(cfg.get("hidden", []))
-        static_hidden = set(cfg.get("static_hidden", []))
+        static_hidden = set(cfg.get("static_hidden", _DEFAULT_STATIC_HIDDEN))
         configured_media = _get_configured_media()
         # Auto-hide media sections that aren't configured yet
         unconfigured = set(_MEDIA_CONFIG_FILES.keys()) - configured_media

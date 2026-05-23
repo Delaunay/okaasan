@@ -279,7 +279,7 @@ const getStaticSidebarSections = () => [
 // Export static version for use in App.tsx
 export const sidebarSections = getStaticSidebarSections();
 
-const STATIC_HIDDEN_SECTIONS = new Set(['Settings', 'Downloads']);
+const STATIC_HIDDEN_SECTIONS = new Set(['Settings']);
 const STATIC_HIDDEN_HREFS = new Set([
   '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
   '/shows-discover', '/shows-schedule', '/music-discover', '/music-schedule',

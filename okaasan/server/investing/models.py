@@ -1,7 +1,7 @@
 """SQLAlchemy models for investing data — stored in a separate investing.db."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, Float, String, DateTime, Date, Index,
@@ -72,6 +72,7 @@ class OptionChainSnapshot(InvestingBase):
     id = Column(Integer, primary_key=True)
     symbol = Column(String(20), nullable=False, index=True)
     snapshot_date = Column(Date, nullable=False, index=True)
+    underlying_price = Column(Float, nullable=True)
     expiration = Column(Date, nullable=False)
     strike = Column(Float, nullable=False)
     option_type = Column(String(4), nullable=False)  # call / put
@@ -100,7 +101,9 @@ class OptionChainSnapshot(InvestingBase):
             "id": self.id,
             "symbol": self.symbol,
             "snapshot_date": self.snapshot_date.isoformat() if self.snapshot_date else None,
+            "underlying_price": self.underlying_price,
             "expiration": self.expiration.isoformat() if self.expiration else None,
+            "days_to_expiration": (self.expiration - date.today()).days if self.expiration else None,
             "strike": self.strike,
             "option_type": self.option_type,
             "bid": self.bid,

@@ -94,7 +94,7 @@ def fetch_stock_prices(
 # ── Option Chain Snapshots (yfinance) ────────────────────────────────
 
 
-def fetch_option_chain(db: Session, symbol: str) -> dict:
+def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) -> dict:
     """Snapshot the current option chain via yfinance and store."""
     import yfinance as yf
 
@@ -106,7 +106,19 @@ def fetch_option_chain(db: Session, symbol: str) -> dict:
     today = date.today()
     added = 0
 
-    for exp_str in expirations[:6]:
+    spot = None
+    try:
+        info = ticker.info or {}
+        spot = _safe_float(
+            info.get("regularMarketPrice")
+            or info.get("currentPrice")
+            or info.get("previousClose")
+        )
+    except Exception:
+        pass
+
+    selected = expirations if max_expirations <= 0 else expirations[:max_expirations]
+    for exp_str in selected:
         try:
             chain = ticker.option_chain(exp_str)
         except Exception as exc:
@@ -134,6 +146,7 @@ def fetch_option_chain(db: Session, symbol: str) -> dict:
                 db.add(OptionChainSnapshot(
                     symbol=symbol,
                     snapshot_date=today,
+                    underlying_price=spot,
                     expiration=exp_date,
                     strike=strike,
                     option_type=opt_type,
@@ -231,6 +244,7 @@ def refresh_all(db: Session, config: dict) -> dict:
     """Fetch prices for all watchlist symbols + option chains for configured symbols."""
     symbols = [w.symbol for w in db.query(WatchlistItem).all()]
     option_symbols = config.get("option_symbols", ["SPY"])
+    max_exp = config.get("max_expirations", 0)
 
     results = {"prices": [], "options": [], "alpaca_options": []}
 
@@ -244,7 +258,7 @@ def refresh_all(db: Session, config: dict) -> dict:
 
     for sym in option_symbols:
         try:
-            r = fetch_option_chain(db, sym)
+            r = fetch_option_chain(db, sym, max_expirations=max_exp)
             results["options"].append(r)
         except Exception as exc:
             log.error("Option chain fetch failed for %s: %s", sym, exc)

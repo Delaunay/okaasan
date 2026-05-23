@@ -8,6 +8,7 @@ interface InvestingStatus {
   has_alpaca_key: boolean;
   refresh_interval_minutes: number;
   option_symbols: string[];
+  max_expirations: number;
   last_refresh: string | null;
   last_error: string | null;
   total_price_rows: number;
@@ -36,6 +37,7 @@ const InvestingSettings: React.FC = () => {
   const [alpacaSecret, setAlpacaSecret] = useState('');
   const [optionSymbols, setOptionSymbols] = useState('SPY');
   const [refreshInterval, setRefreshInterval] = useState(60);
+  const [maxExpirations, setMaxExpirations] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const fetchStatus = () => {
@@ -49,6 +51,7 @@ const InvestingSettings: React.FC = () => {
     if (status) {
       setOptionSymbols(status.option_symbols.join(', '));
       setRefreshInterval(status.refresh_interval_minutes);
+      setMaxExpirations(status.max_expirations);
     }
   }, [status]);
 
@@ -89,6 +92,7 @@ const InvestingSettings: React.FC = () => {
           alpaca_secret_key: alpacaSecret || undefined,
           option_symbols: optionSymbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
           refresh_interval_minutes: refreshInterval,
+          max_expirations: maxExpirations,
         }),
       });
       fetchStatus();
@@ -256,6 +260,16 @@ const InvestingSettings: React.FC = () => {
               type="number"
               value={refreshInterval}
               onChange={e => setRefreshInterval(Number(e.target.value))}
+              size="sm"
+              maxW="120px"
+            />
+          </Box>
+          <Box>
+            <Text fontSize="xs" fontWeight="bold" mb={1}>Max expirations per symbol (0 = all)</Text>
+            <Input
+              type="number"
+              value={maxExpirations}
+              onChange={e => setMaxExpirations(Number(e.target.value))}
               size="sm"
               maxW="120px"
             />

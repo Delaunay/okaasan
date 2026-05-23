@@ -375,6 +375,11 @@ def create_app() -> FastAPI:
     )
     event.listen(investing_engine, "connect", _set_sqlite_pragmas)
     InvestingBase.metadata.create_all(bind=investing_engine)
+    with investing_engine.connect() as conn:
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(option_chain_snapshots)"))]
+        if "underlying_price" not in cols:
+            conn.execute(text("ALTER TABLE option_chain_snapshots ADD COLUMN underlying_price FLOAT"))
+            conn.commit()
     InvestingSessionLocal = sessionmaker(bind=investing_engine)
     app.state.InvestingSessionLocal = InvestingSessionLocal
 

@@ -103,14 +103,14 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
-    title: 'Home Management', 
+    title: 'Home Management',
     href: '/home-management',
     items: [
       { name: 'Computers', href: '/computers' },
       { name: 'Home', href: '/home' },
-      { name: 'Sensors', href: "/sensors"},
-      { name: 'Switches', href: "/switches"},
-      { name: 'AI', href: "/ai"}
+      { name: 'Sensors', href: "/sensors" },
+      { name: 'Switches', href: "/switches" },
+      { name: 'AI', href: "/ai" }
     ]
   },
   {
@@ -221,7 +221,7 @@ const getStaticSidebarSections = () => [
     title: 'Notes',
     href: '/content',
     isSelected: function (location: Location) {
-      return location.pathname.startsWith("/content") || location.pathname.startsWith("/article") 
+      return location.pathname.startsWith("/content") || location.pathname.startsWith("/article")
     },
     items: [],
     fetch: getArticles

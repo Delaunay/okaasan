@@ -25,6 +25,167 @@ def _get_inv_db(request: Request):
         db.close()
 
 
+def _compute_max_pain(contracts) -> dict | None:
+    """Find the strike where total option exercise payout is minimized."""
+    by_strike: dict[float, dict] = {}
+    for c in contracts:
+        oi = c.open_interest or 0
+        if oi <= 0:
+            continue
+        s = c.strike
+        by_strike.setdefault(s, {"call_oi": 0, "put_oi": 0})
+        if c.option_type == "call":
+            by_strike[s]["call_oi"] += oi
+        else:
+            by_strike[s]["put_oi"] += oi
+
+    if not by_strike:
+        return None
+
+    strikes = sorted(by_strike.keys())
+    min_pain = float("inf")
+    max_pain_strike = strikes[0]
+    pain_by_strike = []
+
+    for settle in strikes:
+        total = 0.0
+        for s in strikes:
+            info = by_strike[s]
+            total += info["call_oi"] * max(0.0, settle - s) * 100
+            total += info["put_oi"] * max(0.0, s - settle) * 100
+        pain_by_strike.append({"strike": s, "pain": round(total, 2)})
+        if total < min_pain:
+            min_pain = total
+            max_pain_strike = settle
+
+    return {"strike": max_pain_strike, "value": round(min_pain, 2)}
+
+
+def _compute_analytics(contracts, underlying_price) -> dict:
+    """Compute OI walls, volume/OI flags, IV skew, and IV term structure."""
+    from datetime import date as _date
+
+    today = _date.today()
+
+    oi_by_strike: list[dict] = []
+    vol_oi_flags: list[dict] = []
+    strike_map: dict[float, dict] = {}
+
+    for c in contracts:
+        s = c.strike
+        oi = c.open_interest or 0
+        vol = c.volume or 0
+        iv = c.implied_volatility
+
+        if s not in strike_map:
+            strike_map[s] = {"strike": s, "call_oi": 0, "put_oi": 0, "call_vol": 0, "put_vol": 0}
+        if c.option_type == "call":
+            strike_map[s]["call_oi"] += oi
+            strike_map[s]["call_vol"] += vol
+        else:
+            strike_map[s]["put_oi"] += oi
+            strike_map[s]["put_vol"] += vol
+
+        if oi > 0 and vol > 0:
+            ratio = round(vol / oi, 2)
+            vol_oi_flags.append({
+                "strike": s,
+                "option_type": c.option_type,
+                "volume": vol,
+                "open_interest": oi,
+                "vol_oi_ratio": ratio,
+                "expiration": c.expiration.isoformat() if c.expiration else None,
+                "dte": (c.expiration - today).days if c.expiration else None,
+            })
+
+    oi_by_strike = sorted(strike_map.values(), key=lambda x: x["strike"])
+
+    iv_term: list[dict] = []
+    iv_skew_by_exp: dict[str, dict] = {}
+
+    by_exp: dict[str, list] = {}
+    for c in contracts:
+        key = c.expiration.isoformat() if c.expiration else ""
+        by_exp.setdefault(key, []).append(c)
+
+    for exp, clist in sorted(by_exp.items()):
+        exp_date = clist[0].expiration if clist else None
+        dte = (exp_date - today).days if exp_date else None
+
+        calls_with_iv = [(c.strike, c.implied_volatility) for c in clist
+                         if c.option_type == "call" and c.implied_volatility and c.implied_volatility > 0.001]
+        puts_with_iv = [(c.strike, c.implied_volatility) for c in clist
+                        if c.option_type == "put" and c.implied_volatility and c.implied_volatility > 0.001]
+
+        if not calls_with_iv and not puts_with_iv:
+            continue
+
+        atm_ref = underlying_price or 0
+        if atm_ref and calls_with_iv:
+            atm_call = min(calls_with_iv, key=lambda x: abs(x[0] - atm_ref))
+            iv_term.append({
+                "expiration": exp, "dte": dte,
+                "atm_iv": round(atm_call[1] * 100, 2), "type": "call",
+            })
+        if atm_ref and puts_with_iv:
+            atm_put = min(puts_with_iv, key=lambda x: abs(x[0] - atm_ref))
+            iv_term.append({
+                "expiration": exp, "dte": dte,
+                "atm_iv": round(atm_put[1] * 100, 2), "type": "put",
+            })
+
+        if atm_ref and calls_with_iv and puts_with_iv:
+            otm_puts = [(s, iv) for s, iv in puts_with_iv if s < atm_ref]
+            otm_calls = [(s, iv) for s, iv in calls_with_iv if s > atm_ref]
+            if otm_puts and otm_calls:
+                target_dist = atm_ref * 0.05
+                best_put = min(otm_puts, key=lambda x: abs((atm_ref - x[0]) - target_dist))
+                best_call = min(otm_calls, key=lambda x: abs((x[0] - atm_ref) - target_dist))
+                skew = round((best_put[1] - best_call[1]) * 100, 2)
+                iv_skew_by_exp[exp] = {
+                    "expiration": exp, "dte": dte, "skew": skew,
+                    "otm_put_strike": best_put[0], "otm_put_iv": round(best_put[1] * 100, 2),
+                    "otm_call_strike": best_call[0], "otm_call_iv": round(best_call[1] * 100, 2),
+                }
+
+    return {
+        "oi_by_strike": oi_by_strike,
+        "vol_oi_flags": sorted(vol_oi_flags, key=lambda x: -x["vol_oi_ratio"])[:50],
+        "iv_term_structure": iv_term,
+        "iv_skew_by_expiration": list(iv_skew_by_exp.values()),
+    }
+
+
+def _compute_sentiment(contracts) -> dict:
+    call_oi = put_oi = 0.0
+    call_vol = put_vol = 0.0
+    call_dollar = put_dollar = 0.0
+    for c in contracts:
+        oi = c.open_interest or 0
+        vol = c.volume or 0
+        price = c.last or 0
+        notional = oi * price * 100
+        if c.option_type == "call":
+            call_oi += oi
+            call_vol += vol
+            call_dollar += notional
+        else:
+            put_oi += oi
+            put_vol += vol
+            put_dollar += notional
+    return {
+        "pcr_oi": round(put_oi / call_oi, 4) if call_oi else None,
+        "pcr_volume": round(put_vol / call_vol, 4) if call_vol else None,
+        "pcr_dollar": round(put_dollar / call_dollar, 4) if call_dollar else None,
+        "total_call_oi": call_oi,
+        "total_put_oi": put_oi,
+        "total_call_volume": call_vol,
+        "total_put_volume": put_vol,
+        "total_call_dollar": round(call_dollar, 2),
+        "total_put_dollar": round(put_dollar, 2),
+    }
+
+
 # ── Watchlist ─────────────────────────────────────────────────────────
 
 
@@ -138,11 +299,37 @@ def get_option_chain(
 
     expirations = sorted(set(c.expiration.isoformat() for c in contracts if c.expiration))
 
+    underlying_price = None
+    for c in contracts:
+        if c.underlying_price is not None:
+            underlying_price = c.underlying_price
+            break
+
+    sentiment = _compute_sentiment(contracts)
+
+    by_exp: dict[str, list] = {}
+    for c in contracts:
+        key = c.expiration.isoformat() if c.expiration else ""
+        by_exp.setdefault(key, []).append(c)
+    sentiment_by_expiration = {
+        exp: _compute_sentiment(clist) for exp, clist in sorted(by_exp.items())
+    }
+
+    max_pain_by_expiration = {
+        exp: _compute_max_pain(clist) for exp, clist in sorted(by_exp.items())
+    }
+    analytics = _compute_analytics(contracts, underlying_price)
+
     return {
         "symbol": symbol,
         "snapshot_date": snap_date.isoformat() if snap_date else None,
+        "underlying_price": underlying_price,
         "expirations": expirations,
         "total_contracts": len(contracts),
+        "sentiment": sentiment,
+        "sentiment_by_expiration": sentiment_by_expiration,
+        "max_pain_by_expiration": max_pain_by_expiration,
+        "analytics": analytics,
         "contracts": [c.to_json() for c in contracts],
     }
 
@@ -238,11 +425,17 @@ def investing_overview(db: Session = Depends(_get_inv_db)):
             OptionChainSnapshot.symbol == sym,
             OptionChainSnapshot.snapshot_date == latest_snap,
         ).scalar()
+        spot = db.query(OptionChainSnapshot.underlying_price).filter(
+            OptionChainSnapshot.symbol == sym,
+            OptionChainSnapshot.snapshot_date == latest_snap,
+            OptionChainSnapshot.underlying_price.isnot(None),
+        ).limit(1).scalar()
         option_summary.append({
             "symbol": sym,
             "snapshot_date": latest_snap.isoformat(),
             "total_contracts": count,
             "expirations": exps,
+            "underlying_price": spot,
         })
 
     return {
@@ -312,6 +505,7 @@ def investing_status(request: Request, db: Session = Depends(_get_inv_db)):
         "has_alpaca_key": has_alpaca,
         "refresh_interval_minutes": config.get("refresh_interval_minutes", 60),
         "option_symbols": config.get("option_symbols", ["SPY"]),
+        "max_expirations": config.get("max_expirations", 0),
         "last_refresh": last_refresh,
         "last_error": last_error,
         "total_price_rows": total_prices,
@@ -329,7 +523,7 @@ async def configure(request: Request):
     static_folder = request.app.state.static_folder
     config = load_config(static_folder)
 
-    for key in ("alpaca_api_key", "alpaca_secret_key", "refresh_interval_minutes", "option_symbols"):
+    for key in ("alpaca_api_key", "alpaca_secret_key", "refresh_interval_minutes", "option_symbols", "max_expirations"):
         if key in data:
             config[key] = data[key]
 

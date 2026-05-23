@@ -92,8 +92,7 @@ media/
 static_build/
 website/
 static/
-scratch/
-
+okaasan/server/scratch
 
 okaasan/data/usda
 okaasan/data/cnf

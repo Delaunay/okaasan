@@ -119,9 +119,9 @@ const MusicOverview: React.FC = () => {
                 border="1px solid"
                 borderColor="var(--border-color)"
                 borderRadius="md"
-                _hover={{ borderColor: 'var(--icon-color)', bg: 'var(--hover-bg)' }}
-                cursor="pointer"
-                onClick={() => play(track)}
+                _hover={track.has_local_file !== false ? { borderColor: 'var(--icon-color)', bg: 'var(--hover-bg)' } : undefined}
+                cursor={track.has_local_file !== false ? 'pointer' : 'default'}
+                onClick={() => track.has_local_file !== false && play(track)}
                 gap={2}
               >
                 {track.cover_path ? (
@@ -135,14 +135,16 @@ const MusicOverview: React.FC = () => {
                   <Text fontSize="xs" fontWeight="semibold" lineClamp={1}>{track.title}</Text>
                   <Text fontSize="2xs" color="var(--muted-text)" lineClamp={1}>{track.artist}</Text>
                 </Box>
-                <HStack gap={0}>
-                  <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={(e) => { e.stopPropagation(); play(track); }}>
-                    <Play size={12} />
-                  </Button>
-                  <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={(e) => { e.stopPropagation(); addToQueue(track); }}>
-                    <Plus size={12} />
-                  </Button>
-                </HStack>
+                {track.has_local_file !== false && (
+                  <HStack gap={0}>
+                    <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={(e) => { e.stopPropagation(); play(track); }}>
+                      <Play size={12} />
+                    </Button>
+                    <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={(e) => { e.stopPropagation(); addToQueue(track); }}>
+                      <Plus size={12} />
+                    </Button>
+                  </HStack>
+                )}
               </HStack>
             ))}
           </Grid>

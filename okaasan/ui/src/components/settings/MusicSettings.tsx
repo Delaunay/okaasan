@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, VStack, HStack, Text, Heading, Input, Button, Badge, Spinner } from '@chakra-ui/react';
-import { Music, ArrowLeft, FolderOpen, Trash2, RefreshCw, Globe, Image, Upload } from 'lucide-react';
+import { Music, ArrowLeft, FolderOpen, Trash2, RefreshCw, Globe, Image, Upload, Database, ArrowRightLeft } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
 interface MusicLibraryStatus {
@@ -30,6 +30,10 @@ const MusicSettings: React.FC = () => {
   const [spotifyImporting, setSpotifyImporting] = useState(false);
   const [spotifyResult, setSpotifyResult] = useState<any>(null);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
+  const [historyStats, setHistoryStats] = useState<any>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<any>(null);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
 
   useEffect(() => {
     recipeAPI.request<MusicLibraryStatus>('/music/library/status')
@@ -87,6 +91,51 @@ const MusicSettings: React.FC = () => {
     setFolders(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const fetchHistoryStats = useCallback(() => {
+    fetch('/api/music/import/history-stats')
+      .then(r => r.json())
+      .then(setHistoryStats)
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => { fetchHistoryStats(); }, [fetchHistoryStats]);
+
+  const handleMigrate = async () => {
+    setMigrating(true);
+    setMigrationResult(null);
+    setMigrationError(null);
+    try {
+      const resp = await fetch('/api/music/import/migrate-history', { method: 'POST' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error(err.detail || resp.statusText);
+      }
+      const reader = resp.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error('No response stream');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        for (const line of text.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.error) throw new Error(evt.error);
+            if (evt.progress) setMigrationResult({ ...evt.progress });
+            if (evt.done) { setMigrationResult(evt); fetchHistoryStats(); }
+          } catch (e: any) {
+            if (e.message && e.message !== 'Unexpected end of JSON input') throw e;
+          }
+        }
+      }
+    } catch (e: any) {
+      setMigrationError(e.message || 'Migration failed');
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   const handleSpotifyImport = async () => {
     setSpotifyImporting(true);
     setSpotifyResult(null);
@@ -127,7 +176,7 @@ const MusicSettings: React.FC = () => {
           }
         }
       }
-      if (lastResult?.done) setSpotifyResult(lastResult);
+      if (lastResult?.done) { setSpotifyResult(lastResult); fetchHistoryStats(); }
     } catch (e: any) {
       setSpotifyError(e.message || 'Import failed');
     } finally {
@@ -345,6 +394,83 @@ const MusicSettings: React.FC = () => {
             )}
           </VStack>
         </Box>
+
+        {historyStats && (
+          <Box p={4} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+            <HStack mb={3}>
+              <Database size={16} />
+              <Text fontWeight="semibold">Listening History</Text>
+              {historyStats.years?.length > 0 && (
+                <Badge colorPalette="blue" fontSize="xs">
+                  {historyStats.years.length} year DBs
+                </Badge>
+              )}
+            </HStack>
+
+            {historyStats.needs_migration && (
+              <Box p={3} mb={3} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="md">
+                <Text fontSize="sm" fontWeight="semibold" color="orange.700" mb={1}>Migration Available</Text>
+                <Text fontSize="sm" color="orange.600" mb={2}>
+                  {historyStats.main_db_music_rows.toLocaleString()} music + {historyStats.main_db_podcast_rows.toLocaleString()} podcast rows are still in the main database.
+                  Migrate them to per-year databases to reduce main DB size.
+                </Text>
+                <Button
+                  size="sm"
+                  colorPalette="orange"
+                  onClick={handleMigrate}
+                  disabled={migrating}
+                >
+                  {migrating ? <Spinner size="xs" /> : <ArrowRightLeft size={14} />}
+                  <Text ml={1}>{migrating ? 'Migrating...' : 'Migrate Now'}</Text>
+                </Button>
+                {migrationError && (
+                  <Box mt={2} p={2} bg="red.50" border="1px solid" borderColor="red.200" borderRadius="md">
+                    <Text fontSize="sm" color="red.600">{migrationError}</Text>
+                  </Box>
+                )}
+                {migrationResult && (
+                  <Box mt={2} p={2} bg="var(--surface-muted)" borderRadius="md">
+                    <Text fontSize="sm">
+                      {migrationResult.phase === 'done' ? 'Migration complete: ' : `${migrationResult.phase}: `}
+                      {migrationResult.music_rows_migrated?.toLocaleString()} music
+                      {migrationResult.podcast_rows_migrated != null && ` + ${migrationResult.podcast_rows_migrated.toLocaleString()} podcast`} rows
+                    </Text>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            {historyStats.years?.length > 0 ? (
+              <VStack align="stretch" gap={1}>
+                {historyStats.years.map((y: any) => (
+                  <HStack key={y.year} p={2} bg="var(--surface-muted)" borderRadius="md" justify="space-between">
+                    <Text fontSize="sm" fontWeight="semibold" fontFamily="mono">{y.year}</Text>
+                    <HStack gap={4}>
+                      <Box textAlign="right">
+                        <Text fontSize="xs" color="var(--muted-text)">Music</Text>
+                        <Text fontSize="sm">{y.music_plays.toLocaleString()}</Text>
+                      </Box>
+                      <Box textAlign="right">
+                        <Text fontSize="xs" color="var(--muted-text)">Podcasts</Text>
+                        <Text fontSize="sm">{y.podcast_plays.toLocaleString()}</Text>
+                      </Box>
+                      <Box textAlign="right">
+                        <Text fontSize="xs" color="var(--muted-text)">Size</Text>
+                        <Text fontSize="sm">{y.size_mb} MB</Text>
+                      </Box>
+                    </HStack>
+                  </HStack>
+                ))}
+              </VStack>
+            ) : (
+              !historyStats.needs_migration && (
+                <Text fontSize="sm" color="var(--muted-text)">
+                  No listening history data yet. Import Spotify streaming history above.
+                </Text>
+              )
+            )}
+          </Box>
+        )}
 
         <Button onClick={handleSave} disabled={saving} colorPalette="blue">
           {saving ? 'Saving...' : 'Save Configuration'}

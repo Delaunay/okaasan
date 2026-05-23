@@ -197,7 +197,7 @@ def _normalize_cover(cover_path: str | None, static_folder: str) -> str | None:
 _static_folder_cache: str = ""
 
 
-def _track_to_frontend(t, static_folder: str = "") -> dict:
+def _track_to_frontend(t, static_folder: str = "", *, has_local_file: bool | None = None) -> dict:
     """Convert a MusicTrack ORM object to the frontend MusicTrack shape."""
     d = t.to_json()
     d["duration"] = (d.pop("duration_ms", 0) or 0) / 1000.0
@@ -205,7 +205,33 @@ def _track_to_frontend(t, static_folder: str = "") -> dict:
     sf = static_folder or _static_folder_cache
     if sf:
         d["cover_path"] = _normalize_cover(d.get("cover_path"), sf)
+    if has_local_file is not None:
+        d["has_local_file"] = has_local_file
     return d
+
+
+def _get_local_file_track_ids(private_engine) -> set[int]:
+    """Return the set of MusicTrack IDs that have a linked MusicFile."""
+    from .library_models import MusicFile
+    from sqlalchemy.orm import sessionmaker
+
+    PrivateSession = sessionmaker(bind=private_engine)
+    db = PrivateSession()
+    try:
+        rows = db.query(MusicFile.track_id).filter(
+            MusicFile.track_id.isnot(None),
+            MusicFile.matched == True,  # noqa: E712
+        ).all()
+        return {r[0] for r in rows}
+    finally:
+        db.close()
+
+
+def _enrich_tracks_with_local_flag(tracks: list[dict], local_ids: set[int]) -> list[dict]:
+    """Add ``has_local_file`` bool to each track dict in-place."""
+    for t in tracks:
+        t["has_local_file"] = t.get("id") in local_ids
+    return tracks
 
 
 @router.get("/overview")
@@ -214,6 +240,7 @@ def music_overview(request: Request, db: Session = Depends(_get_db)):
     import random
 
     sf = request.app.state.static_folder
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
     total_tracks = db.query(func.count(MusicTrack.id)).scalar() or 0
     total_albums = db.query(func.count(func.distinct(MusicTrack.album))).filter(
         MusicTrack.album.isnot(None), MusicTrack.album != ""
@@ -252,7 +279,9 @@ def music_overview(request: Request, db: Session = Depends(_get_db)):
         all_ids = [r[0] for r in db.query(MusicTrack.id).all()]
         pick_ids = random.sample(all_ids, min(20, len(all_ids)))
         picks = db.query(MusicTrack).filter(MusicTrack.id.in_(pick_ids)).all()
-        random_tracks = [_track_to_frontend(t, sf) for t in picks]
+        random_tracks = _enrich_tracks_with_local_flag(
+            [_track_to_frontend(t, sf) for t in picks], local_ids
+        )
 
     # Recent albums
     recent_albums_q = db.query(
@@ -295,6 +324,7 @@ def music_library(
 ):
     """Paginated library grouped by artist or album."""
     sf = request.app.state.static_folder
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
     base_q = db.query(MusicTrack)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -331,7 +361,9 @@ def music_library(
                 "subtitle": f"{row.album_artist or 'Various'} · {row.track_count} tracks",
                 "cover_path": _normalize_cover(row.cover_path, sf),
                 "track_count": row.track_count,
-                "tracks": [_track_to_frontend(t, sf) for t in tracks],
+                "tracks": _enrich_tracks_with_local_flag(
+                    [_track_to_frontend(t, sf) for t in tracks], local_ids
+                ),
             })
     else:
         groups_q = base_q.with_entities(
@@ -358,7 +390,9 @@ def music_library(
                 "subtitle": f"{row.album_count} albums · {row.track_count} tracks",
                 "cover_path": _normalize_cover(row.cover_path, sf),
                 "track_count": row.track_count,
-                "tracks": [_track_to_frontend(t, sf) for t in tracks],
+                "tracks": _enrich_tracks_with_local_flag(
+                    [_track_to_frontend(t, sf) for t in tracks], local_ids
+                ),
             })
 
     return {
@@ -386,6 +420,7 @@ def list_tracks(
 ):
     """List all tracks with pagination, search, and filters."""
     sf = request.app.state.static_folder
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
     q = db.query(MusicTrack)
 
     if search and search.strip():
@@ -411,7 +446,9 @@ def list_tracks(
     )
 
     return {
-        "items": [_track_to_frontend(t, sf) for t in items],
+        "items": _enrich_tracks_with_local_flag(
+            [_track_to_frontend(t, sf) for t in items], local_ids
+        ),
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -423,10 +460,13 @@ def list_tracks(
 def get_track(request: Request, track_id: int, db: Session = Depends(_get_db)):
     """Get a single track by ID."""
     sf = request.app.state.static_folder
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
     track = db.query(MusicTrack).filter_by(id=track_id).first()
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
-    return _track_to_frontend(track, sf)
+    d = _track_to_frontend(track, sf)
+    d["has_local_file"] = track.id in local_ids
+    return d
 
 
 @router.post("/tracks/{track_id}/play")
@@ -448,6 +488,7 @@ def record_play(request: Request, track_id: int, db: Session = Depends(_get_db))
 def music_stats(request: Request, db: Session = Depends(_get_db)):
     """Music listening statistics and metadata breakdown."""
     sf = request.app.state.static_folder
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
 
     total_tracks = db.query(func.count(MusicTrack.id)).scalar() or 0
     total_plays = db.query(func.sum(MusicTrack.play_count)).scalar() or 0
@@ -521,8 +562,12 @@ def music_stats(request: Request, db: Session = Depends(_get_db)):
             "total_listening_ms": total_listening_ms,
             "unplayed_count": unplayed_count,
         },
-        "most_played": [_track_to_frontend(t, sf) for t in most_played],
-        "recently_played": [_track_to_frontend(t, sf) for t in recently_played],
+        "most_played": _enrich_tracks_with_local_flag(
+            [_track_to_frontend(t, sf) for t in most_played], local_ids
+        ),
+        "recently_played": _enrich_tracks_with_local_flag(
+            [_track_to_frontend(t, sf) for t in recently_played], local_ids
+        ),
         "top_artists": [
             {"name": a.artist, "total_plays": a.total_plays, "track_count": a.track_count, "cover_path": _normalize_cover(a.cover_path, sf)}
             for a in top_artists_plays
@@ -657,7 +702,12 @@ def get_playlist(request: Request, playlist_id: int, db: Session = Depends(_get_
     playlist = db.query(MusicPlaylist).filter_by(id=playlist_id).first()
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    return playlist.to_json(include_items=True)
+    local_ids = _get_local_file_track_ids(request.app.state.private_engine)
+    result = playlist.to_json(include_items=True)
+    for item in result.get("items", []):
+        track = item.get("track", {})
+        track["has_local_file"] = track.get("id") in local_ids
+    return result
 
 
 @router.post("/playlists")
@@ -1029,7 +1079,11 @@ async def import_spotify(request: Request):
                 )
                 q.put({"progress": stats.copy()})
 
-            result = import_spotify_data(db, dump_dir, on_progress=_on_progress)
+            result = import_spotify_data(
+                db, dump_dir,
+                static_folder=static_folder,
+                on_progress=_on_progress,
+            )
             q.put({"done": True, **result})
             registry.update("spotify_import", status="idle", detail=f"{result['music_plays_imported']} plays imported")
         except Exception as exc:
@@ -1050,6 +1104,182 @@ async def import_spotify(request: Request):
                 evt = q.get(timeout=300)
             except queue.Empty:
                 yield f"data: {_json.dumps({'error': 'Import timed out'})}\n\n"
+                return
+            yield f"data: {_json.dumps(evt)}\n\n"
+            if "done" in evt or "error" in evt:
+                return
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Spotify playlist / library import ─────────────────────────────
+
+@router.post("/import/spotify-library")
+async def import_spotify_library(request: Request):
+    """Import playlists and liked songs from Spotify Account Data.
+
+    Looks for Playlist1.json and YourLibrary.json in the dump directory.
+    """
+    import json as _json
+    import queue
+    import threading
+    from starlette.responses import StreamingResponse
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    static_folder = request.app.state.static_folder
+    dump_dir = body.get("dump_dir") or os.path.join(static_folder, "dumps", "spotify")
+
+    if not Path(dump_dir).is_dir():
+        raise HTTPException(status_code=404, detail=f"Dump directory not found: {dump_dir}")
+
+    SL = request.app.state.SessionLocal
+    q: queue.Queue = queue.Queue()
+
+    def _worker():
+        from .spotify_importer import import_spotify_playlists
+        from ..task_registry import registry
+
+        registry.register("spotify_library_import", "Spotify Library Import", status="running")
+        db = SL()
+        try:
+            def _on_progress(stats):
+                registry.update(
+                    "spotify_library_import",
+                    detail=f"{stats['playlists_created']} playlists, {stats['playlist_items_added']} items",
+                )
+                q.put({"progress": stats.copy()})
+
+            result = import_spotify_playlists(db, dump_dir, on_progress=_on_progress)
+            q.put({"done": True, **result})
+            registry.update(
+                "spotify_library_import", status="idle",
+                detail=f"{result['playlists_created']} playlists, {result['liked_tracks_imported']} liked",
+            )
+        except Exception as exc:
+            log.error("Spotify library import failed: %s", exc, exc_info=True)
+            db.rollback()
+            q.put({"error": str(exc)})
+            registry.update("spotify_library_import", status="error", error=str(exc))
+        finally:
+            db.close()
+            registry.unregister("spotify_library_import")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _stream():
+        while True:
+            try:
+                evt = q.get(timeout=300)
+            except queue.Empty:
+                yield f"data: {_json.dumps({'error': 'Import timed out'})}\n\n"
+                return
+            yield f"data: {_json.dumps(evt)}\n\n"
+            if "done" in evt or "error" in evt:
+                return
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Listening history stats & migration ──────────────────────────────
+
+@router.get("/import/history-stats")
+def listening_history_stats(request: Request):
+    """Per-year listening history database sizes and row counts."""
+    from .listening_db import get_history_stats
+    from sqlalchemy import inspect as sa_inspect, text
+
+    static_folder = request.app.state.static_folder
+    years = get_history_stats(static_folder)
+
+    engine = request.app.state.SessionLocal().get_bind()
+    insp = sa_inspect(engine)
+    needs_migration = (
+        insp.has_table("music_listening_history")
+        or insp.has_table("podcast_listening_history")
+    )
+
+    main_music_count = 0
+    main_podcast_count = 0
+    if insp.has_table("music_listening_history"):
+        with engine.connect() as conn:
+            main_music_count = conn.execute(
+                text("SELECT COUNT(*) FROM music_listening_history")
+            ).scalar() or 0
+    if insp.has_table("podcast_listening_history"):
+        with engine.connect() as conn:
+            main_podcast_count = conn.execute(
+                text("SELECT COUNT(*) FROM podcast_listening_history")
+            ).scalar() or 0
+
+    return {
+        "years": years,
+        "needs_migration": needs_migration,
+        "main_db_music_rows": main_music_count,
+        "main_db_podcast_rows": main_podcast_count,
+    }
+
+
+@router.post("/import/migrate-history")
+async def migrate_listening_history(request: Request):
+    """Migrate listening history from main DB to per-year databases."""
+    import json as _json
+    import queue
+    import threading
+    from starlette.responses import StreamingResponse
+
+    SL = request.app.state.SessionLocal
+    static_folder = request.app.state.static_folder
+    q: queue.Queue = queue.Queue()
+
+    def _worker():
+        from .migrate_listening_history import migrate
+        from ..task_registry import registry
+
+        registry.register("history_migration", "History Migration", status="running")
+        try:
+            def _on_progress(stats):
+                registry.update(
+                    "history_migration",
+                    detail=f"{stats['phase']}: {stats['music_rows_migrated']}m + {stats['podcast_rows_migrated']}p rows",
+                )
+                q.put({"progress": stats.copy()})
+
+            result = migrate(SL, static_folder, on_progress=_on_progress)
+            q.put({"done": True, **result})
+            registry.update(
+                "history_migration", status="idle",
+                detail=f"Migrated {result['music_rows_migrated']} + {result['podcast_rows_migrated']} rows",
+            )
+        except Exception as exc:
+            log.error("History migration failed: %s", exc, exc_info=True)
+            q.put({"error": str(exc)})
+            registry.update("history_migration", status="error", error=str(exc))
+        finally:
+            registry.unregister("history_migration")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _stream():
+        while True:
+            try:
+                evt = q.get(timeout=600)
+            except queue.Empty:
+                yield f"data: {_json.dumps({'error': 'Migration timed out'})}\n\n"
                 return
             yield f"data: {_json.dumps(evt)}\n\n"
             if "done" in evt or "error" in evt:

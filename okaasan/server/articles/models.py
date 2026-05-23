@@ -74,6 +74,11 @@ class Article(Base):
                     obj = node.to_json()
                     parent.setdefault("children", []).append(obj)
                     parents[node._id] = obj
+                else:
+                    missed.append(node)
+
+            if len(missed) == len(children):
+                break
 
             children = missed
 
@@ -115,12 +120,10 @@ class Article(Base):
             else:
                 children.append(node)
 
-        # If the query order by task_id, it should do this loop in a single pass
-        # because parent need to be created first so their _id will be smaller
-        # than the children
+        # Blocks may appear before their parents due to sequence number resets
+        # on nested subblocks, so multiple passes may be needed.
         while len(children) > 0:
             missed = []
-            missed_hierachy = {}
             for block in children:
                 parent = parents.get(block.parent)
 
@@ -131,27 +134,20 @@ class Article(Base):
                 else:
                     missed.append(block)
 
+            if len(missed) == len(children):
+                for block in missed:
                     obj = block.to_json()
-                    parent = missed_hierachy.setdefault(block.parent, {})
-                    parent.setdefault("children", []).append(obj)
-                    # parents[block._id] = obj
+                    parents[block._id] = obj
+                    for a in articles:
+                        if a["id"] == block.page_id:
+                            a.setdefault("orphans", []).append(obj)
+                    print(
+                        f"Orphaned block {block._id} (parent={block.parent}) "
+                        f"in article {block.page_id}"
+                    )
+                break
 
             children = missed
-
-            # The sequence number resets on nested subblocks
-            # So they appear before their parents
-            # causing this to run twice instead of once if it was correctly ordered
-            if len(missed_hierachy):
-                print(children)
-                for k, v in missed_hierachy.items():
-                    if k in parents:
-                        print("Block is defined now")
-
-                    missed_children = v["children"]
-                    ids = ", ".join([str(child["id"]) for child in missed_children])
-                    print(
-                        f"Block {k} not found, requested by {len(missed_children)} ids={ids}"
-                    )
 
         return articles
 

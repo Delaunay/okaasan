@@ -24,6 +24,7 @@ interface PlaylistItem {
     duration_ms: number;
     cover_path: string | null;
     track_number: number | null;
+    has_local_file?: boolean;
   };
 }
 
@@ -121,16 +122,19 @@ const MusicPlaylists: React.FC = () => {
 
   const playAll = () => {
     if (!selectedPlaylist || selectedPlaylist.items.length === 0) return;
-    const tracks: MusicTrack[] = selectedPlaylist.items.map(item => ({
-      id: item.track.id,
-      title: item.track.title,
-      artist: item.track.artist,
-      album: item.track.album,
-      album_id: null,
-      duration: (item.track.duration_ms || 0) / 1000,
-      track_number: item.track.track_number,
-      cover_path: item.track.cover_path,
-    }));
+    const tracks: MusicTrack[] = selectedPlaylist.items
+      .filter(item => item.track.has_local_file !== false)
+      .map(item => ({
+        id: item.track.id,
+        title: item.track.title,
+        artist: item.track.artist,
+        album: item.track.album,
+        album_id: null,
+        duration: (item.track.duration_ms || 0) / 1000,
+        track_number: item.track.track_number,
+        cover_path: item.track.cover_path,
+        has_local_file: item.track.has_local_file,
+      }));
     playAlbum(tracks);
   };
 
@@ -183,21 +187,26 @@ const MusicPlaylists: React.FC = () => {
                 gap={3}
               >
                 <Text fontSize="xs" color="var(--muted-text)" w="24px" textAlign="right">{idx + 1}</Text>
-                <Button
-                  size="xs" variant="ghost" p={0} minW="auto" h="auto"
-                  onClick={() => play({
-                    id: item.track.id,
-                    title: item.track.title,
-                    artist: item.track.artist,
-                    album: item.track.album,
-                    album_id: null,
-                    duration: (item.track.duration_ms || 0) / 1000,
-                    track_number: item.track.track_number,
-                    cover_path: item.track.cover_path,
-                  })}
-                >
-                  <Play size={12} />
-                </Button>
+                {item.track.has_local_file !== false ? (
+                  <Button
+                    size="xs" variant="ghost" p={0} minW="auto" h="auto"
+                    onClick={() => play({
+                      id: item.track.id,
+                      title: item.track.title,
+                      artist: item.track.artist,
+                      album: item.track.album,
+                      album_id: null,
+                      duration: (item.track.duration_ms || 0) / 1000,
+                      track_number: item.track.track_number,
+                      cover_path: item.track.cover_path,
+                      has_local_file: item.track.has_local_file,
+                    })}
+                  >
+                    <Play size={12} />
+                  </Button>
+                ) : (
+                  <Box w="24px" />
+                )}
                 {item.track.cover_path ? (
                   <Box as="img" src={resolveCover(item.track.cover_path)} w="32px" h="32px" borderRadius="sm" objectFit="cover" flexShrink={0} />
                 ) : (

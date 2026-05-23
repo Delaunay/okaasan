@@ -4,8 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, ForeignKey, Index,
-    UniqueConstraint,
+    Column, Integer, String, DateTime, ForeignKey, Index,
 )
 from sqlalchemy.orm import relationship
 
@@ -166,52 +165,3 @@ class MusicEvent(Base):
         }
 
 
-class MusicListeningHistory(Base):
-    """A single play event from streaming history (Spotify, etc.)."""
-
-    __tablename__ = "music_listening_history"
-
-    id = Column(Integer, primary_key=True)
-    track_id = Column(Integer, ForeignKey("music_tracks.id", ondelete="SET NULL"), nullable=True)
-    played_at = Column(DateTime, nullable=False)
-    ms_played = Column(Integer, nullable=True)
-    spotify_track_uri = Column(String(200), nullable=True)
-    track_name = Column(String(500), nullable=True)
-    artist_name = Column(String(500), nullable=True)
-    album_name = Column(String(500), nullable=True)
-    platform = Column(String(200), nullable=True)
-    skipped = Column(Boolean, nullable=True)
-    shuffle = Column(Boolean, nullable=True)
-    offline = Column(Boolean, nullable=True)
-    reason_start = Column(String(50), nullable=True)
-    reason_end = Column(String(50), nullable=True)
-    source = Column(String(50), nullable=False, default="spotify_import")
-
-    track = relationship("MusicTrack")
-
-    __table_args__ = (
-        UniqueConstraint("spotify_track_uri", "played_at", "source", name="uq_music_listen_dedup"),
-        Index("idx_mlh_track", "track_id"),
-        Index("idx_mlh_played", "played_at"),
-        Index("idx_mlh_artist", "artist_name"),
-        Index("idx_mlh_source", "source"),
-    )
-
-    def to_json(self) -> dict:
-        return {
-            "id": self.id,
-            "track_id": self.track_id,
-            "played_at": self.played_at.isoformat() + "Z" if self.played_at else None,
-            "ms_played": self.ms_played,
-            "spotify_track_uri": self.spotify_track_uri,
-            "track_name": self.track_name,
-            "artist_name": self.artist_name,
-            "album_name": self.album_name,
-            "platform": self.platform,
-            "skipped": self.skipped,
-            "shuffle": self.shuffle,
-            "offline": self.offline,
-            "reason_start": self.reason_start,
-            "reason_end": self.reason_end,
-            "source": self.source,
-        }

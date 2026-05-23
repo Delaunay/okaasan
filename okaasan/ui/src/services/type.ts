@@ -379,6 +379,7 @@ export interface Article {
     public?: boolean;
     article_kind?: string;
     blocks?: ArticleBlock[]; // Root blocks of the article
+    orphans?: ArticleBlock[]; // Blocks whose parent was deleted
     children?: Article[]; // Child articles (sub-pages)
 }
 

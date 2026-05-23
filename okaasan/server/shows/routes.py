@@ -77,13 +77,7 @@ def get_overview(request: Request, db: Session = Depends(_get_db)):
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy import func as sa_func
 
-    # Get IDs of fully-watched media:
-    # 1. user_status explicitly set to "completed"
-    # 2. Movies with watch history (season IS NULL)
-    # 3. Shows with any episode watch history (from Trakt/Kitsu imports)
-    completed_ids = set(
-        mid for (mid,) in db.query(Media.id).filter(Media.user_status == "completed").all()
-    )
+    # Get IDs of media with any watch history (movies or shows with episodes logged)
     watched_movie_ids = set(
         mid for (mid,) in db.query(WatchHistory.media_id)
         .filter(WatchHistory.season.is_(None))
@@ -96,7 +90,7 @@ def get_overview(request: Request, db: Session = Depends(_get_db)):
         .distinct()
         .all()
     )
-    fully_watched_ids = completed_ids | watched_movie_ids | watched_show_ids
+    fully_watched_ids = watched_movie_ids | watched_show_ids
 
     # Recently added library files — split into shows and movies
     PrivateSession = sessionmaker(bind=request.app.state.private_engine)
@@ -465,19 +459,21 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
     start_date = today_utc - timedelta(days=1)
     week_ahead = today_utc + timedelta(days=7)
 
-    # Get all tracked shows that might still be airing (exclude dropped/completed)
+    # Get all tracked shows that might still be airing (exclude dropped only)
+    from sqlalchemy import or_
     shows = (
         db.query(Media)
         .filter(
             Media.media_type == "show",
             Media.tmdb_id.isnot(None),
-            Media.user_status.is_(None),
+            or_(Media.user_status.is_(None), Media.user_status != "dropped"),
         )
         .all()
     )
 
     upcoming_episodes = []
     continue_watching = []
+    suggestions = []
 
     for show in shows:
         if not tmdb.available:
@@ -516,15 +512,38 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
                     pass
 
         # Continue watching: show has aired episodes beyond what user watched
+        # Use last_episode_to_air as baseline, but also consider
+        # next_episode_to_air if it has already aired (TMDB can lag
+        # in moving an episode from "next" to "last").
         last_ep = tmdb_data.get("last_episode_to_air")
+        next_ep_data = tmdb_data.get("next_episode_to_air")
+
+        # Pick the most recent actually-aired episode
+        effective_ep = None
         if last_ep and last_ep.get("air_date"):
             try:
                 last_air = datetime.strptime(last_ep["air_date"], "%Y-%m-%d").date()
-                if last_air > today_utc:
-                    continue
+                if last_air <= today_utc:
+                    effective_ep = last_ep
+            except (ValueError, TypeError):
+                pass
+        if next_ep_data and next_ep_data.get("air_date"):
+            try:
+                next_air = datetime.strptime(next_ep_data["air_date"], "%Y-%m-%d").date()
+                if next_air <= today_utc:
+                    ns = next_ep_data.get("season_number", 0)
+                    ne = next_ep_data.get("episode_number", 0)
+                    if effective_ep is None:
+                        effective_ep = next_ep_data
+                    else:
+                        es = effective_ep.get("season_number", 0)
+                        ee = effective_ep.get("episode_number", 0)
+                        if (ns, ne) > (es, ee):
+                            effective_ep = next_ep_data
             except (ValueError, TypeError):
                 pass
 
+        if effective_ep:
             # Get the user's most recent watched entry that has episode info
             last_watched = (
                 db.query(WatchHistory)
@@ -537,29 +556,23 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
                 .first()
             )
 
-            tmdb_season = last_ep.get("season_number", 0)
-            tmdb_episode = last_ep.get("episode_number", 0)
+            tmdb_season = effective_ep.get("season_number", 0)
+            tmdb_episode = effective_ep.get("episode_number", 0)
 
             if not last_watched:
-                # No episode-level tracking — user added show but hasn't
-                # logged specific episodes yet.  Suggest starting from S01E01.
+                # No episode-level tracking — show is in library/watchlist
+                # but user hasn't started watching yet.
                 first_regular = next(
                     (s for s in tmdb_data.get("seasons", []) if s.get("season_number", 0) >= 1),
                     None,
                 )
                 if not first_regular:
                     continue
-                any_history = (
-                    db.query(WatchHistory)
-                    .filter(WatchHistory.media_id == show.id)
-                    .first()
-                )
-                continue_watching.append({
+                suggestions.append({
                     **show_info,
                     "last_watched": {"season": 0, "episode": 0},
                     "next_episode": {"season": first_regular.get("season_number", 1), "episode": 1},
                     "latest_aired": {"season": tmdb_season, "episode": tmdb_episode},
-                    "last_watched_at": any_history.watched_at.isoformat() + "Z" if any_history and any_history.watched_at else None,
                 })
                 continue
 
@@ -613,6 +626,7 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
     return {
         "upcoming": deduped,
         "continue_watching": continue_watching,
+        "suggestions": suggestions,
     }
 
 
@@ -1183,7 +1197,7 @@ async def add_watch_history(request: Request, db: Session = Depends(_get_db)):
     data = await request.json()
 
     media = _resolve_media(db, data)
-    if media.user_status is not None:
+    if media.user_status == "dropped":
         media.user_status = None
 
     season = data.get("season")
@@ -1230,7 +1244,7 @@ def delete_watch_history(request: Request, history_id: int, db: Session = Depend
     remaining = db.query(WatchHistory).filter_by(media_id=media_id).count()
     if remaining == 0:
         media = db.query(Media).filter_by(id=media_id).first()
-        if media and media.user_status is not None:
+        if media and media.user_status == "dropped":
             media.user_status = None
 
     db.commit()
@@ -1279,7 +1293,8 @@ async def mark_show_completed(request: Request, db: Session = Depends(_get_db)):
 
     Backfills watch-history for every episode from the user's last
     watched position up to the latest aired episode using TMDB season
-    data, then sets user_status = "completed".
+    data.  Does NOT set user_status — completion is determined
+    dynamically from watch history vs aired episodes.
     """
     from datetime import datetime, timezone
     data = await request.json()
@@ -1341,9 +1356,8 @@ async def mark_show_completed(request: Request, db: Session = Depends(_get_db)):
                 ))
                 added += 1
 
-    media.user_status = "completed"
     db.commit()
-    return {"message": "Marked as completed", "media": media.to_json()}
+    return {"message": "Marked all episodes as watched", "media": media.to_json()}
 
 
 @router.post("/mark-dropped")

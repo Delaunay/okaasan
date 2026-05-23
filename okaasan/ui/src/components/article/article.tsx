@@ -11,7 +11,7 @@ import {
     IconButton,
     Portal,
 } from '@chakra-ui/react';
-import { Settings } from 'lucide-react';
+import { Settings, AlertTriangle, ArrowUp, Trash2 } from 'lucide-react';
 
 
 import { BlockBase, newBlock, ArticleDef, BlockDef, PendingAction, InsertBlockGap, BlockPickerDialog } from './base'
@@ -300,6 +300,7 @@ export class ArticleInstance implements ArticleBlock {
     kind = "article"
     def: ArticleDef;
     children: Array<BlockBase>;
+    orphans: Array<BlockBase>;
     listeners = new Set<() => void>();
     pendingChange: PendingAction[] = []
     article: ArticleInstance
@@ -333,15 +334,9 @@ export class ArticleInstance implements ArticleBlock {
         this.options = { ...defaultArticleOptions, ...options }
         this.def = article
         this.children = this.def.blocks.map(child => newBlock(this, child, this))
+        this.orphans = (this.def.orphans || []).map(child => newBlock(this, child, this))
         this.article = this
         this.inputBlock = newBlock(this, { kind: "input", data: { text: "" }, sequence: this.children.length }, this)
-
-        // Extra block used for direct insertion
-        //  This COULD be not correct because this block does not exist on the DB
-        //  but as soon as something is written to it it should be inserted
-        // this.children.push()
-
-        // if pendingChange exist reapply them
     }
 
     public pushAction(pendingAction: PendingAction) {
@@ -777,6 +772,60 @@ export class ArticleInstance implements ArticleBlock {
         // savePendingChange(this.pendingChange)
     }
 
+    public promoteOrphan(orphanBlock: BlockBase) {
+        const idx = this.orphans.indexOf(orphanBlock);
+        if (idx === -1) return;
+
+        const doAction = () => {
+            this.orphans.splice(idx, 1);
+            orphanBlock.def.parent_id = undefined;
+            this.children.push(orphanBlock);
+            this.def.blocks.push(orphanBlock.def);
+            this.notify();
+        };
+
+        const undoAction = () => {
+            const childIdx = this.children.indexOf(orphanBlock);
+            if (childIdx !== -1) {
+                this.children.splice(childIdx, 1);
+                this.def.blocks.splice(childIdx, 1);
+            }
+            this.orphans.splice(idx, 0, orphanBlock);
+            this.notify();
+        };
+
+        const remoteAction: ActionUpdateBlock = {
+            op: "update",
+            id: orphanBlock.def.id,
+            block_def: { ...orphanBlock.def, parent: null },
+        };
+
+        this.pushAction({ action: remoteAction, doAction, undoAction });
+    }
+
+    public deleteOrphan(orphanBlock: BlockBase) {
+        const idx = this.orphans.indexOf(orphanBlock);
+        if (idx === -1) return;
+
+        const doAction = () => {
+            this.orphans.splice(idx, 1);
+            this.notify();
+        };
+
+        const undoAction = () => {
+            this.orphans.splice(idx, 0, orphanBlock);
+            this.notify();
+        };
+
+        const remoteAction: ActionDeleteBlock = {
+            op: "delete",
+            index: idx,
+            block_id: orphanBlock.def.id,
+        };
+
+        this.pushAction({ action: remoteAction, doAction, undoAction });
+    }
+
     public fetchReferenceByID(blockID: string | number): BlockBase {
         for (const block of this.children) {
             if (block.def.id === blockID) {
@@ -1103,6 +1152,72 @@ function renderSortedBySequence(items: BlockBase[]): any {
 
 
 
+const OrphanPanel: React.FC<{ article: ArticleInstance }> = ({ article }) => (
+    <Box
+        mt={6}
+        p={4}
+        border="1px solid"
+        borderColor="var(--panel-orange-border)"
+        bg="var(--panel-orange-bg)"
+        borderRadius="md"
+    >
+        <Flex align="center" gap={2} mb={3}>
+            <AlertTriangle size={16} color="var(--panel-orange-text)" />
+            <Text fontWeight="600" fontSize="sm" color="var(--panel-orange-text)">
+                Orphaned blocks ({article.orphans.length})
+            </Text>
+        </Flex>
+        <Text fontSize="xs" color="var(--muted-text)" mb={3}>
+            These blocks reference a parent that no longer exists.
+            You can move them to the article root or delete them.
+        </Text>
+        {article.orphans.map((block) => (
+            <Box
+                key={block.key}
+                mb={2}
+                p={3}
+                bg="var(--card-bg)"
+                border="1px solid"
+                borderColor="var(--border-color)"
+                borderRadius="md"
+            >
+                <Flex justify="space-between" align="center" mb={2}>
+                    <Flex align="center" gap={2}>
+                        <Badge fontSize="xs" colorPalette="orange">{block.def.kind}</Badge>
+                        <Text fontSize="xs" color="var(--muted-text)">
+                            id={block.def.id}, missing parent={block.def.parent_id}
+                        </Text>
+                    </Flex>
+                    <Flex gap={1}>
+                        <IconButton
+                            size="xs"
+                            variant="outline"
+                            aria-label="Move to root"
+                            onClick={() => article.promoteOrphan(block)}
+                            title="Move to article root"
+                        >
+                            <ArrowUp size={14} />
+                        </IconButton>
+                        <IconButton
+                            size="xs"
+                            variant="outline"
+                            colorPalette="red"
+                            aria-label="Delete orphan"
+                            onClick={() => article.deleteOrphan(block)}
+                            title="Delete this block"
+                        >
+                            <Trash2 size={14} />
+                        </IconButton>
+                    </Flex>
+                </Flex>
+                <Box opacity={0.8} pointerEvents="none">
+                    {block.component("view")}
+                </Box>
+            </Box>
+        ))}
+    </Box>
+);
+
 const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
     const [, setTick] = useState(0);
     const [selectedCategory, setSelectedCategory] = useState("Text");
@@ -1136,6 +1251,10 @@ const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
                     </React.Fragment>
                 ))}
                 {article.inputBlock.react()}
+
+                {article.orphans.length > 0 && (
+                    <OrphanPanel article={article} />
+                )}
             </Box>
 
             <Box width="300px" flexShrink={0} pl={4} borderLeft="1px solid" borderColor="gray.100">

@@ -55,6 +55,10 @@ setup(
         "argklass",
         "usda_fdc",
         "qbittorrent-api",
+        "pyackett",
+        "pythontorrentdht",
+        "yfinance",
+        "alpaca-py",
     ],
     entry_points={
         "console_scripts": [

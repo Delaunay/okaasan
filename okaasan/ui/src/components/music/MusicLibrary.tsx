@@ -237,9 +237,11 @@ const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, 
           <Text fontSize="sm" fontWeight="bold" lineClamp={1}>{group.name}</Text>
           <Text fontSize="xs" color="var(--muted-text)">{group.subtitle}</Text>
         </Box>
-        <Button size="xs" variant="ghost" onClick={(e) => { e.stopPropagation(); onPlayAll(); }} title="Play all">
-          <Play size={14} />
-        </Button>
+        {group.tracks.some(t => t.has_local_file !== false) && (
+          <Button size="xs" variant="ghost" onClick={(e) => { e.stopPropagation(); onPlayAll(); }} title="Play all">
+            <Play size={14} />
+          </Button>
+        )}
         <Text fontSize="xs" color="var(--muted-text)">{expanded ? '▲' : '▼'}</Text>
       </HStack>
 
@@ -257,11 +259,15 @@ const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, 
               <Text fontSize="2xs" color="var(--muted-text)" w="20px" textAlign="right" flexShrink={0}>
                 {track.track_number || idx + 1}
               </Text>
-              <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onPlay(track)}>
-                <Play size={12} />
-              </Button>
+              {track.has_local_file !== false ? (
+                <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onPlay(track)}>
+                  <Play size={12} />
+                </Button>
+              ) : (
+                <Box w="24px" />
+              )}
               <Box flex={1} minW={0}>
-                <Text fontSize="sm" lineClamp={1}>{track.title}</Text>
+                <Text fontSize="sm" lineClamp={1} color={track.has_local_file === false ? 'var(--muted-text)' : undefined}>{track.title}</Text>
                 {groupBy === 'artist' && track.album && (
                   <Text fontSize="2xs" color="var(--muted-text)" lineClamp={1}>{track.album}</Text>
                 )}
@@ -270,9 +276,11 @@ const GroupCard: React.FC<GroupCardProps> = ({ group, groupBy, onPlay, onQueue, 
                 )}
               </Box>
               <Text fontSize="2xs" color="var(--muted-text)">{formatDuration(track.duration)}</Text>
-              <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onQueue(track)} title="Add to queue">
-                <Plus size={12} />
-              </Button>
+              {track.has_local_file !== false && (
+                <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onQueue(track)} title="Add to queue">
+                  <Plus size={12} />
+                </Button>
+              )}
               <Button size="xs" variant="ghost" p={0} minW="auto" h="auto" onClick={() => onAddToPlaylist(track.id)} title="Add to playlist">
                 <ListPlus size={12} />
               </Button>

@@ -45,7 +45,7 @@ class Media(Base):
 
     poster_path = Column(String(500), nullable=True)
     backdrop_path = Column(String(500), nullable=True)
-    user_status = Column(String(20), nullable=True)  # "dropped", "completed", etc.
+    user_status = Column(String(20), nullable=True)  # "dropped", "watching"; completion is inferred from watch history
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -216,7 +216,7 @@ class CollectionItem(Base):
     __table_args__ = (
         UniqueConstraint("collection_id", "media_id", name="uq_collection_media"),
         Index("idx_ci_collection", "collection_id"),
-    )
+    )  
 
     def to_json(self):
         result = self.media.to_json() if self.media else {}

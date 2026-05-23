@@ -81,6 +81,15 @@ export function healthDataUrl(endpoint: string, params: Record<string, string | 
   return `${API_BASE_URL}/health-data/data/${endpoint}${query ? `?${query}` : ''}`;
 }
 
+function formatApiError(data: any, status: number): string {
+  const d = data?.detail;
+  if (typeof d === 'string') return d;
+  if (typeof data?.error === 'string') return data.error;
+  if (Array.isArray(d)) return d.map((e: any) => e.msg || JSON.stringify(e)).join('; ');
+  if (d != null) return JSON.stringify(d);
+  return `HTTP error! status: ${status}`;
+}
+
 class RecipeAPI {
   private async requestStatic<T>(endpoint: string): Promise<T> {
     // Convert endpoint to static JSON file path
@@ -147,7 +156,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(formatApiError(errorData, response.status));
       }
 
       return await response.json();
@@ -171,7 +180,7 @@ class RecipeAPI {
     const response = await fetch(url, config);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+      throw new Error(formatApiError(errorData, response.status));
     }
 
     const reader = response.body?.getReader();
@@ -202,7 +211,7 @@ class RecipeAPI {
     const response = await fetch(url, options);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+      throw new Error(formatApiError(errorData, response.status));
     }
     return await response.json();
   }
@@ -444,7 +453,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(formatApiError(errorData, response.status));
       }
 
       return await response.json();
@@ -475,7 +484,7 @@ class RecipeAPI {
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || `OCR failed: ${response.status}`);
+      throw new Error(formatApiError(err, response.status));
     }
 
     return response.json();
@@ -501,7 +510,7 @@ class RecipeAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(formatApiError(errorData, response.status));
       }
 
       return await response.json();
@@ -1236,6 +1245,45 @@ class RecipeAPI {
 
   async getUsbGarminStatus(): Promise<{ rule_installed: boolean; last_import: any }> {
     return this.request('/health-data/usb-garmin/status');
+  }
+
+  // ==========================================================================
+  // Computers
+  // ==========================================================================
+
+  async getComputers(): Promise<any[]> {
+    return this.request('/computers');
+  }
+
+  async getComputer(id: string): Promise<any> {
+    return this.request(`/computers/${id}`);
+  }
+
+  async shutdownComputer(id: string): Promise<any> {
+    return this.request(`/computers/${id}/shutdown`, { method: 'POST' });
+  }
+
+  async restartComputer(id: string): Promise<any> {
+    return this.request(`/computers/${id}/restart`, { method: 'POST' });
+  }
+
+  async getComputerTasks(id: string): Promise<any[]> {
+    return this.request(`/computers/${id}/tasks`);
+  }
+
+  async startAv1Task(id: string, config: { folder: string; recursive?: boolean; preset?: number; crf?: number; threads?: number | null; max_files?: number | null }): Promise<any> {
+    return this.request(`/computers/${id}/tasks/av1`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async getComputerTask(computerId: string, taskId: number): Promise<any> {
+    return this.request(`/computers/${computerId}/tasks/${taskId}`);
+  }
+
+  async cancelComputerTask(computerId: string, taskId: number): Promise<any> {
+    return this.request(`/computers/${computerId}/tasks/${taskId}`, { method: 'DELETE' });
   }
 
 }

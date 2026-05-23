@@ -114,17 +114,26 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
+    title: 'World News',
+    href: '/news',
+    isSelected: (location: Location) => location.pathname.startsWith('/news'),
+    items: [],
+  },
+  {
     title: 'Downloads',
     href: '/torrents',
     isSelected: (location: Location) => location.pathname.startsWith('/torrents'),
-    items: [],
+    items: [
+      { name: 'Discover', href: '/torrents/discover' },
+      { name: 'DHT Crawler', href: '/torrents/crawler' },
+    ],
   },
   {
     title: 'Investing',
     href: '/investing',
+    isSelected: (location: Location) => location.pathname.startsWith('/investing'),
     items: [
-      { name: 'Taxes', href: '/tax' },
-      { name: 'Retirement', href: '/retirement' }
+      { name: 'Overview', href: '/investing' },
     ]
   },
   {
@@ -241,6 +250,7 @@ const getStaticSidebarSections = () => [
       { name: 'Wood Planner', href: '/scratch/wood-planner' },
       { name: 'Brainstorm', href: '/scratch/brainstorm' },
       { name: 'Print Cost', href: '/scratch/print-cost' },
+      { name: 'PyTorch Wheels', href: '/scratch/pytorch-wheels' },
     ]
   },
   {

@@ -42,6 +42,7 @@ export interface ArticleDef {
   public?: boolean;
   article_kind?: string;
   blocks: Array<BlockDef>;
+  orphans?: Array<BlockDef>;
   children?: Array<ArticleDef>;
   top_level_article?: { id: number; title: string };
 }

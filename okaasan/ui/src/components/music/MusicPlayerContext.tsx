@@ -10,6 +10,7 @@ export interface MusicTrack {
   duration: number;
   track_number: number | null;
   cover_path: string | null;
+  has_local_file?: boolean;
 }
 
 interface MusicPlayerState {
@@ -143,6 +144,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const addToQueue = useCallback((track: MusicTrack) => {
+    if (track.has_local_file === false) return;
     setQueue(prev => [...prev, track]);
   }, []);
 
@@ -155,9 +157,11 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const playAlbum = useCallback((tracks: MusicTrack[], startIndex = 0) => {
-    if (tracks.length === 0) return;
-    playTrack(tracks[startIndex]);
-    setQueue(tracks.slice(startIndex + 1));
+    const localTracks = tracks.filter(t => t.has_local_file !== false);
+    if (localTracks.length === 0) return;
+    const adjustedStart = Math.min(startIndex, localTracks.length - 1);
+    playTrack(localTracks[adjustedStart]);
+    setQueue(localTracks.slice(adjustedStart + 1));
   }, [playTrack]);
 
   const setVolume = useCallback((vol: number) => {
@@ -178,7 +182,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const shuffleAll = useCallback(async () => {
     try {
       const data = await recipeAPI.request<{ groups: { tracks: MusicTrack[] }[] }>('/music/library?per_page=200');
-      const allTracks = (data.groups || []).flatMap(g => g.tracks);
+      const allTracks = (data.groups || []).flatMap(g => g.tracks).filter(t => t.has_local_file !== false);
       if (allTracks.length === 0) return;
       const shuffled = shuffleArray(allTracks);
       setShuffle(true);

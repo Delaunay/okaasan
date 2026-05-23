@@ -88,12 +88,20 @@ import MusicSchedule from './components/music/MusicSchedule';
 import MusicDetail from './components/music/MusicDetail';
 import { MusicPlayerProvider } from './components/music/MusicPlayerContext';
 import MusicSettings from './components/settings/MusicSettings';
+import NewsOverview from './components/news/NewsOverview';
+import InvestingOverview from './components/investing/InvestingOverview';
+import InvestingSettings from './components/settings/InvestingSettings';
 import TorrentsPage from './components/torrents/TorrentsPage';
+import DiscoverPage from './components/torrents/DiscoverPage';
+import CrawlerPage from './components/torrents/CrawlerPage';
+import ComputersOverview from './components/computers/ComputersOverview';
+import ComputerDetail from './components/computers/ComputerDetail';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
 import Brainstorm from './components/scratch/Brainstorm';
 import PrintCostEstimator from './components/scratch/PrintCostEstimator';
+import PyTorchWheels from './components/scratch/PyTorchWheels';
 import { BudgetProvider } from './services/BudgetContext';
 import { Toaster } from './components/ui/toaster';
 import './App.css';
@@ -105,6 +113,21 @@ function ExpenseTrackerRedirect() {
 }
 
 const system = createSystem(defaultConfig);
+
+const sectionOverrides: Record<string, React.ReactNode> = {
+  '/content': <ContentView />,
+  '/shows': <ShowsOverview />,
+  '/games': <GamesOverview />,
+  '/books': <BooksOverview />,
+  '/comics': <ComicsOverview />,
+  '/podcasts': <PodcastsOverview />,
+  '/audiobooks': <AudiobooksOverview />,
+  '/music': <MusicOverview />,
+  '/feed': <FeedPage />,
+  '/news': <NewsOverview />,
+  '/investing': <InvestingOverview />,
+  '/torrents': <TorrentsPage />,
+};
 
 function App() {
   return (
@@ -119,96 +142,13 @@ function App() {
                 <Route path="/" element={<Home />} />
 
                 {/* Section overview pages */}
-                {sidebarSections.map((section) => {
-                  if (section.href === '/content') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<ContentView />}
-                      />
-                    );
-                  }
-                  if (section.href === '/shows') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<ShowsOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/games') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<GamesOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/books') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<BooksOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/comics') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<ComicsOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/podcasts') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<PodcastsOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/audiobooks') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<AudiobooksOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/music') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<MusicOverview />}
-                      />
-                    );
-                  }
-                  if (section.href === '/torrents') {
-                    return (
-                      <Route
-                        key={section.href}
-                        path={section.href}
-                        element={<TorrentsPage />}
-                      />
-                    );
-                  }
-                  return (
-                    <Route
-                      key={section.href}
-                      path={section.href}
-                      element={<SectionView title={section.title} items={section.items} />}
-                    />
-                  );
-                })}
+                {sidebarSections.map((section) => (
+                  <Route
+                    key={section.href}
+                    path={section.href}
+                    element={sectionOverrides[section.href] ?? <SectionView title={section.title} items={section.items} />}
+                  />
+                ))}
 
                 {/* Individual pages */}
                 <Route path="/day/:date" element={<DayDetail />} />
@@ -242,7 +182,6 @@ function App() {
                 <Route path="/settings/library" element={isStaticMode() ? <Navigate to="/settings" replace /> : <LibrarySettings />} />
                 <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
                 <Route path="/article" element={<ArticleView />} />
-                <Route path="/feed" element={<FeedPage />} />
                 {/* Expense Tracker */}
                 <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />
                 <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />
@@ -303,6 +242,15 @@ function App() {
                 <Route path="/music-schedule" element={<MusicSchedule />} />
                 <Route path="/music-detail/:albumId" element={<MusicDetail />} />
                 <Route path="/settings/music" element={isStaticMode() ? <Navigate to="/settings" replace /> : <MusicSettings />} />
+                <Route path="/settings/investing" element={isStaticMode() ? <Navigate to="/settings" replace /> : <InvestingSettings />} />
+
+                {/* Downloads */}
+                <Route path="/torrents/discover" element={<DiscoverPage />} />
+                <Route path="/torrents/crawler" element={<CrawlerPage />} />
+
+                {/* Computers */}
+                <Route path="/computers" element={<ComputersOverview />} />
+                <Route path="/computers/:id" element={<ComputerDetail />} />
 
                 <Route path="/scratch/code-viz" element={<CodeVisualization />} />
                 <Route path="/scratch/filament-math" element={<FilamentMath />} />
@@ -312,6 +260,7 @@ function App() {
                 <Route path="/scratch/brainstorm/:project" element={<Brainstorm />} />
                 <Route path="/scratch/print-cost" element={<PrintCostEstimator />} />
                 <Route path="/scratch/print-cost/:project" element={<PrintCostEstimator />} />
+                <Route path="/scratch/pytorch-wheels" element={<PyTorchWheels />} />
   
                 {/* Test pages */}
                 <Route path="/scratch/article-blocks" element={<ArticleTestPage />} />

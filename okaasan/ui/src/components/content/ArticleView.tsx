@@ -59,6 +59,7 @@ const ArticleView: React.FC = () => {
                     article_kind: fetchedArticle.article_kind ?? '',
                     sequence: 0,
                     blocks: convertBlocks(fetchedArticle.blocks || []),
+                    orphans: convertBlocks(fetchedArticle.orphans || []),
                     children: childrenSource.children?.map(child => ({
                         id: child.id || 0,
                         root_id: child.root_id || 0,

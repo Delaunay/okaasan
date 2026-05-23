@@ -161,6 +161,8 @@ def create_app() -> FastAPI:
                         ))
 
     public_folder()  # ensure uploads/ directory exists
+    from .music.listening_db import _listening_dir
+    _listening_dir()  # ensure listening_history/ directory exists
 
     def get_db():
         db = SessionLocal()
@@ -194,6 +196,9 @@ def create_app() -> FastAPI:
     from .podcasts import router as podcasts_router
     from .games import router as games_router
     from .comics import router as comics_router
+    from .news import router as news_router
+    from .computers import router as computers_router
+    from .investing import router as investing_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)
@@ -213,6 +218,9 @@ def create_app() -> FastAPI:
     app.include_router(podcasts_router)
     app.include_router(games_router)
     app.include_router(comics_router)
+    app.include_router(news_router)
+    app.include_router(computers_router)
+    app.include_router(investing_router)
 
     # Auto-import Trakt data if shows tables are empty
     from .shows.models import Media as _ShowsMedia
@@ -292,6 +300,10 @@ def create_app() -> FastAPI:
     _podcasts_routes._refresher = _podcast_refresher
     _podcast_refresher.start()
 
+    # Start news feed refresher
+    from .news.routes import start_refresher as _start_news_refresher
+    _start_news_refresher(SessionLocal)
+
     # Start comic library background scanner
     from .comics.library import ComicLibraryScanner
     from .comics import routes as _comics_routes
@@ -302,6 +314,78 @@ def create_app() -> FastAPI:
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
     register_integrations(app, engine, private_engine=private_engine)
+
+    # Torrent discovery (search + DHT crawling) — separate DB for high-write crawl data
+    try:
+        from .discover import create_discover_router
+
+        discover_db_path = os.path.join(str(private_folder()), "discover.db")
+        discover_engine = create_engine(
+            f"sqlite:///{discover_db_path}",
+            connect_args={"check_same_thread": False, "timeout": 30},
+            pool_pre_ping=True,
+        )
+        event.listen(discover_engine, "connect", _set_sqlite_pragmas)
+
+        discover_router = create_discover_router(discover_engine)
+        app.include_router(discover_router)
+    except Exception as exc:
+        log.warning("Torrent discover routes not available: %s", exc)
+
+    # Dedicated DB for computer tasks (avoids bloating the main database)
+    from .computers.models import TaskBase
+    tasks_db_path = os.path.join(str(private_folder()), "computer_tasks.db")
+    tasks_engine = create_engine(
+        f"sqlite:///{tasks_db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(tasks_engine, "connect", _set_sqlite_pragmas)
+    TaskBase.metadata.create_all(bind=tasks_engine)
+    TasksSessionLocal = sessionmaker(bind=tasks_engine)
+
+    # Drop legacy computer_tasks from the main and private DBs
+    for _eng in (engine, private_engine):
+        _insp = sa_inspect(_eng)
+        if _insp.has_table("computer_tasks"):
+            with _eng.begin() as conn:
+                conn.execute(text("DROP TABLE computer_tasks"))
+            log.info("Dropped legacy computer_tasks table from %s", _eng.url)
+
+    def get_tasks_db():
+        db = TasksSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.state.get_tasks_db = get_tasks_db
+    app.state.TasksSessionLocal = TasksSessionLocal
+
+    from .computers.tasks import recover_orphaned_tasks
+    recover_orphaned_tasks(TasksSessionLocal)
+
+    # Dedicated DB for investing data (public, separate from main)
+    from .investing.models import InvestingBase
+    investing_db_path = os.path.join(STATIC_FOLDER, "investing.db")
+    investing_engine = create_engine(
+        f"sqlite:///{investing_db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(investing_engine, "connect", _set_sqlite_pragmas)
+    InvestingBase.metadata.create_all(bind=investing_engine)
+    InvestingSessionLocal = sessionmaker(bind=investing_engine)
+    app.state.InvestingSessionLocal = InvestingSessionLocal
+
+    # Start investing data scheduler
+    from .investing.scheduler import InvestingScheduler
+    from .investing import routes as _investing_routes
+    _inv_scheduler = InvestingScheduler(
+        SessionLocal, InvestingSessionLocal, STATIC_FOLDER,
+    )
+    _investing_routes._scheduler = _inv_scheduler
+    _inv_scheduler.start()
 
     @app.get("/health")
     def health_check():
@@ -393,7 +477,7 @@ def create_app() -> FastAPI:
         {"title": "Inventory & Shopping",   "href": "/inventory-shopping",  "items": ["Receipts", "Pantry", "Budget"]},
         {"title": "Planning",              "href": "/planning-section",    "items": ["Calendar", "Routine", "Tasks", "Projects"]},
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
-        {"title": "Investing",             "href": "/investing",           "items": ["Taxes", "Retirement"]},
+        {"title": "Investing",             "href": "/investing",           "items": ["Overview"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
         {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections", "Library"]},
         {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Playlists", "Stats", "Schedule"]},
@@ -711,7 +795,7 @@ def create_app() -> FastAPI:
                          "git/", "usda/", "subtasks",
                          "gcalendar/", "garmin/", "weather/",
                          "health-data/", "shows/", "audiobooks/", "books/", "music/",
-                         "comics/", "games/")
+                         "comics/", "games/", "investing/")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):

@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Button } from '@chakra-ui/react';
-import { Calendar, Play, CheckCircle, X } from 'lucide-react';
+import { Calendar, Play, CheckCircle, X, Lightbulb } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 
@@ -36,6 +36,7 @@ interface ContinueItem {
 interface ScheduleData {
   upcoming: UpcomingItem[];
   continue_watching: ContinueItem[];
+  suggestions: ContinueItem[];
 }
 
 function resolvePoster(path: string | null): string | undefined {
@@ -72,12 +73,12 @@ const ShowsSchedule: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(() => {
-    setLoading(true);
+  const fetchData = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
     recipeAPI.request<ScheduleData>('/shows/schedule')
       .then(setData)
-      .catch((e) => setError(e.message || 'Failed to load schedule'))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!silent) setError(e.message || 'Failed to load schedule'); })
+      .finally(() => { if (!silent) setLoading(false); });
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -118,7 +119,7 @@ const ShowsSchedule: React.FC = () => {
           episode: item.next_episode.episode,
         }),
       });
-      fetchData();
+      fetchData(true);
     } catch (e) {
       console.error(e);
     }
@@ -136,11 +137,7 @@ const ShowsSchedule: React.FC = () => {
           episode: item.latest_aired.episode,
         }),
       });
-      // Remove from continue watching locally
-      setData(prev => prev ? {
-        ...prev,
-        continue_watching: prev.continue_watching.filter(cw => cw.tmdb_id !== item.tmdb_id),
-      } : prev);
+      fetchData(true);
     } catch (e) {
       console.error(e);
     }
@@ -270,6 +267,28 @@ const ShowsSchedule: React.FC = () => {
           <Text color="var(--muted-text)" fontSize="sm">You're all caught up!</Text>
         )}
       </Box>
+
+      {/* Suggestions — shows in library but not started */}
+      {data?.suggestions && data.suggestions.length > 0 && (
+        <Box>
+          <HStack mb={4}>
+            <Lightbulb size={18} />
+            <Heading size="md" color="var(--heading-color)">Suggestions</Heading>
+            <Badge colorPalette="purple" ml={2}>{data.suggestions.length} items</Badge>
+          </HStack>
+          <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
+            {data.suggestions.map((item) => (
+              <ContinueCard
+                key={`suggest-${item.tmdb_id}`}
+                item={item}
+                onMarkWatched={() => handleMarkEpisodeWatched(item)}
+                onMarkCompleted={() => handleMarkShowCompleted(item)}
+                onDrop={() => handleDropShow(item)}
+              />
+            ))}
+          </Grid>
+        </Box>
+      )}
     </VStack>
   );
 };
@@ -343,92 +362,122 @@ interface ContinueCardProps {
   onDrop: () => void;
 }
 
+const SHUFFLE_KEYFRAMES = `
+@keyframes cardShuffle {
+  0%   { transform: translateY(0) rotateX(0) scale(1); opacity: 1; }
+  20%  { transform: translateY(-30px) rotateX(-15deg) scale(0.95); opacity: 0.7; }
+  40%  { transform: translateY(-40px) rotateX(-25deg) scale(0.9); opacity: 0.4; }
+  60%  { transform: translateY(-20px) rotateX(10deg) scale(0.97); opacity: 0.8; }
+  80%  { transform: translateY(-5px) rotateX(3deg) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) rotateX(0) scale(1); opacity: 1; }
+}`;
+
 const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMarkCompleted, onDrop }) => {
   const poster = resolvePoster(item.poster_path);
   const to = `/shows-detail/tv/${item.tmdb_id}`;
+  const epKey = `${item.next_episode.season}-${item.next_episode.episode}`;
+  const prevEpRef = useRef(epKey);
+  const [shuffling, setShuffling] = useState(false);
+
+  useEffect(() => {
+    if (prevEpRef.current !== epKey) {
+      prevEpRef.current = epKey;
+      setShuffling(true);
+      const t = setTimeout(() => setShuffling(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [epKey]);
 
   return (
-    <Box
-      borderRadius="lg"
-      overflow="hidden"
-      border="1px solid"
-      borderColor="var(--border-color)"
-      bg="var(--card-bg)"
-      transition="transform 0.2s, box-shadow 0.2s"
-      _hover={{ transform: 'translateY(-2px)', boxShadow: 'md' }}
-      position="relative"
-    >
-      {/* Top-right: mark next episode watched */}
-      <Box position="absolute" top={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={(e) => { e.preventDefault(); onMarkWatched(); }}
-          title="Mark next episode as watched"
-          p={1}
-          minW="auto"
-          h="auto"
-          borderRadius="full"
-          bg="rgba(0,0,0,0.5)"
-          color="white"
-          _hover={{ bg: 'rgba(0,0,0,0.7)' }}
-        >
-          <CheckCircle size={14} />
-        </Button>
-      </Box>
-      {/* Top-left: mark show completed */}
-      <Box position="absolute" top={1} left={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={(e) => { e.preventDefault(); onMarkCompleted(); }}
-          title="Watched all — mark show as completed"
-          p={1}
-          minW="auto"
-          h="auto"
-          borderRadius="full"
-          bg="rgba(0,0,0,0.5)"
-          color="white"
-          _hover={{ bg: 'rgba(0,0,0,0.7)' }}
-        >
-          <CheckCircle size={12} /><CheckCircle size={12} />
-        </Button>
-      </Box>
-      {/* Bottom-right on poster: drop show */}
-      <Box position="absolute" bottom={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={(e) => { e.preventDefault(); onDrop(); }}
-          title="Drop — not going to watch anymore"
-          p={1}
-          minW="auto"
-          h="auto"
-          borderRadius="full"
-          bg="rgba(0,0,0,0.5)"
-          color="white"
-          _hover={{ bg: 'rgba(200,0,0,0.7)' }}
-        >
-          <X size={14} />
-        </Button>
-      </Box>
-
-      <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>
-        {poster ? (
-          <Image src={poster} alt={item.title} w="100%" h="220px" objectFit="cover" loading="lazy" />
-        ) : (
-          <Box w="100%" h="220px" bg="var(--surface-muted)" display="flex" alignItems="center" justifyContent="center">
-            <Text color="var(--empty-text)" fontSize="sm">No Poster</Text>
-          </Box>
-        )}
-        <Box p={3}>
-          <Text fontSize="sm" fontWeight="semibold" lineClamp={2}>{item.title}</Text>
-          <Text fontSize="xs" color="var(--muted-text)" mt={1}>
-            Next: S{String(item.next_episode.season).padStart(2, '0')}E{String(item.next_episode.episode).padStart(2, '0')}
-          </Text>
+    <>
+      <style>{SHUFFLE_KEYFRAMES}</style>
+      <Box
+        borderRadius="lg"
+        overflow="hidden"
+        border="1px solid"
+        borderColor="var(--border-color)"
+        bg="var(--card-bg)"
+        transition="transform 0.2s, box-shadow 0.2s"
+        _hover={!shuffling ? { transform: 'translateY(-2px)', boxShadow: 'md' } : {}}
+        position="relative"
+        style={{
+          perspective: '800px',
+          transformStyle: 'preserve-3d',
+          animation: shuffling ? 'cardShuffle 0.6s ease-out' : undefined,
+        }}
+      >
+        {/* Top-right: mark next episode watched */}
+        <Box position="absolute" top={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={(e) => { e.preventDefault(); onMarkWatched(); }}
+            title="Mark next episode as watched"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <CheckCircle size={14} />
+          </Button>
         </Box>
-      </Link>
-    </Box>
+        {/* Top-left: mark show completed */}
+        <Box position="absolute" top={1} left={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={(e) => { e.preventDefault(); onMarkCompleted(); }}
+            title="Mark all aired episodes as watched"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <CheckCircle size={12} /><CheckCircle size={12} />
+          </Button>
+        </Box>
+        {/* Bottom-right on poster: drop show */}
+        <Box position="absolute" bottom={1} right={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={(e) => { e.preventDefault(); onDrop(); }}
+            title="Drop — not going to watch anymore"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(200,0,0,0.7)' }}
+          >
+            <X size={14} />
+          </Button>
+        </Box>
+
+        <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>
+          {poster ? (
+            <Image src={poster} alt={item.title} w="100%" h="220px" objectFit="cover" loading="lazy" />
+          ) : (
+            <Box w="100%" h="220px" bg="var(--surface-muted)" display="flex" alignItems="center" justifyContent="center">
+              <Text color="var(--empty-text)" fontSize="sm">No Poster</Text>
+            </Box>
+          )}
+          <Box p={3}>
+            <Text fontSize="sm" fontWeight="semibold" lineClamp={2}>{item.title}</Text>
+            <Text fontSize="xs" color="var(--muted-text)" mt={1}>
+              Next: S{String(item.next_episode.season).padStart(2, '0')}E{String(item.next_episode.episode).padStart(2, '0')}
+            </Text>
+          </Box>
+        </Link>
+      </Box>
+    </>
   );
 };
 

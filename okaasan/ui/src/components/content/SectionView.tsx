@@ -30,7 +30,8 @@ const SectionView: FC<SectionViewProps> = ({ title, items }) => {
                             p={6}
                             borderWidth="1px"
                             borderRadius="lg"
-                            borderColor="gray.200"
+                            borderColor="var(--border-color)"
+                            bg="var(--card-bg)"
                             transition="all 0.2s"
                             _hover={{
                                 borderColor: 'orange.500',
@@ -41,11 +42,11 @@ const SectionView: FC<SectionViewProps> = ({ title, items }) => {
                             height="100%"
                         >
                             <Card.Body>
-                                <Heading size="lg" mb={2} color="gray.700">
+                                <Heading size="lg" mb={2} color="var(--heading-color)">
                                     {item.name}
                                 </Heading>
                                 {item.description && (
-                                    <Box color="gray.600" fontSize="sm">
+                                    <Box color="var(--muted-text)" fontSize="sm">
                                         {item.description}
                                     </Box>
                                 )}

@@ -279,6 +279,27 @@ const getStaticSidebarSections = () => [
 // Export static version for use in App.tsx
 export const sidebarSections = getStaticSidebarSections();
 
+const STATIC_HIDDEN_SECTIONS = new Set(['Settings', 'Downloads']);
+const STATIC_HIDDEN_HREFS = new Set([
+  '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
+  '/shows-discover', '/shows-schedule', '/music-discover', '/music-schedule',
+  '/torrents',
+]);
+
+export function getRouteSections() {
+  const all = getStaticSidebarSections();
+  if (!isStaticMode()) return all;
+  return all
+    .filter(s => !STATIC_HIDDEN_SECTIONS.has(s.title))
+    .map(s => ({
+      ...s,
+      items: s.items.filter((item: { href: string }) =>
+        !STATIC_HIDDEN_HREFS.has(item.href) &&
+        !(s.title === 'Home' && item.href.startsWith('/day/'))
+      ),
+    }));
+}
+
 // Sections that should never be hidden (Settings stays visible only in dynamic mode)
 const ALWAYS_VISIBLE = new Set(['Home']);
 
@@ -317,21 +338,15 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     return () => window.removeEventListener('sidebar-config-changed', handler);
   }, [fetchSidebarConfig]);
 
-  const STATIC_HIDDEN_ITEMS = new Set([
-    '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
-    '/shows-discover', '/shows-schedule', '/music-discover', '/music-schedule',
-    '/torrents',
-  ]);
-
   const visibleSections = useMemo(() => {
     const filtered = allSections.filter(s => {
-      if (isStaticMode() && (s.title === 'Settings' || s.title === 'Downloads')) return false;
+      if (isStaticMode() && STATIC_HIDDEN_SECTIONS.has(s.title)) return false;
       const alwaysShow = ALWAYS_VISIBLE.has(s.title) || (!isStaticMode() && s.title === 'Settings');
       return alwaysShow || !hiddenSections.has(s.title);
     });
     if (!isStaticMode()) return filtered;
     return filtered.map(s => {
-      let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_ITEMS.has(item.href));
+      let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_HREFS.has(item.href));
       if (s.title === 'Home') items = items.filter((item: { href: string }) => !item.href.startsWith('/day/'));
       return Object.assign({}, s, { items });
     });

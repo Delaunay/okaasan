@@ -48,7 +48,7 @@ def _conversion_factor(db: Session, from_unit: str, to_unit: str):
 
 
 @router.get("/unit/definition/{name}")
-@expose(name=lambda: [])
+@expose(name=select(UnitConversion.from_unit).distinct())
 def flask_get_unit(name: str, db: Session = Depends(get_db)):
     unit = _get_unit(db, name)
     if unit is not None:
@@ -57,7 +57,11 @@ def flask_get_unit(name: str, db: Session = Depends(get_db)):
 
 
 @router.get("/unit/convert/{from_unit}/{to_unit}")
-@expose(from_unit=lambda: [], to_unit=lambda: [])
+@expose(
+    select(UnitConversion.from_unit, UnitConversion.to_unit)
+    .where(UnitConversion.ingredient_id.is_(None))
+    .distinct()
+)
 def convert_unit(from_unit: str, to_unit: str, db: Session = Depends(get_db)):
     conversion = _conversion_factor(db, from_unit, to_unit)
     if conversion is not None:

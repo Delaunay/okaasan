@@ -5,7 +5,7 @@ import {
   defaultConfig
 } from '@chakra-ui/react';
 import { ColorModeProvider } from "@/components/ui/color-mode"
-import Layout, { sidebarSections } from './layout/Layout';
+import Layout, { getRouteSections } from './layout/Layout';
 import { isStaticMode } from './services/api';
 import Home from './components/home/Home';
 import DayDetail from './components/home/DayDetail';
@@ -142,7 +142,7 @@ function App() {
                 <Route path="/" element={<Home />} />
 
                 {/* Section overview pages */}
-                {sidebarSections.map((section) => (
+                {getRouteSections().map((section) => (
                   <Route
                     key={section.href}
                     path={section.href}

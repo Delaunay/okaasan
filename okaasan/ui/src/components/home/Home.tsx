@@ -11,7 +11,7 @@ import { recipeAPI, isStaticMode } from '../../services/api';
 import {
   formatDateRangeForServer, fromDateServer, formatTimeDisplay,
 } from '../../utils/dateUtils';
-import { sidebarSections } from '../../layout/Layout';
+import { getRouteSections } from '../../layout/Layout';
 import SectionView from '../content/SectionView';
 import type { MealPlan, PlannedMeal, WeeklyDigest, DigestSlot, Task } from '../../services/type';
 import { DEFAULT_TASK_TAGS } from '../../services/type';
@@ -458,7 +458,7 @@ export function getDigestSlotsForDay(digest: WeeklyDigest | null, dayDate: Date)
 const STATIC_SKIP = new Set(['Home', 'Settings']);
 
 function StaticHome() {
-  const sections = sidebarSections.filter(s => !STATIC_SKIP.has(s.title) && s.items.length > 0);
+  const sections = getRouteSections().filter(s => !STATIC_SKIP.has(s.title) && s.items.length > 0);
   const items = sections.map(s => ({
     name: s.title,
     href: s.items[0]?.href || s.href,

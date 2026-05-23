@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, select
 from sqlalchemy.orm import Session
 
 from ..decorators import expose
@@ -1074,6 +1074,7 @@ def list_collections(request: Request, db: Session = Depends(_get_db)):
 
 
 @router.get("/collections/{collection_id}")
+@expose(collection_id=select(Collection.id))
 def get_collection(request: Request, collection_id: str, db: Session = Depends(_get_db)):
     """Get a specific collection with all its items."""
     coll = db.query(Collection).filter_by(id=collection_id).first()

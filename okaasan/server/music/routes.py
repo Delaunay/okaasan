@@ -9,8 +9,11 @@ from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from .models import MusicTrack, MusicPlaylist, MusicPlaylistItem, MusicEvent
 from .metadata import MusicBrainzClient
+from ..decorators import expose
 from ..paths import public_folder, cache_folder
 
 log = logging.getLogger("okaasan.music")
@@ -690,6 +693,7 @@ async def stream_audio(request: Request, file_id: int):
 # ── Playlists ──────────────────────────────────────────────────────
 
 @router.get("/playlists")
+@expose()
 def list_playlists(request: Request, db: Session = Depends(_get_db)):
     """List all playlists."""
     playlists = db.query(MusicPlaylist).order_by(MusicPlaylist.created_at).all()
@@ -697,6 +701,7 @@ def list_playlists(request: Request, db: Session = Depends(_get_db)):
 
 
 @router.get("/playlists/{playlist_id}")
+@expose(playlist_id=select(MusicPlaylist.id))
 def get_playlist(request: Request, playlist_id: int, db: Session = Depends(_get_db)):
     """Get a specific playlist with all its tracks."""
     playlist = db.query(MusicPlaylist).filter_by(id=playlist_id).first()

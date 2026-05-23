@@ -19,15 +19,9 @@ export class ItemBlock extends BlockBase {
         this.register(); 
     }
 
-    component(mode: string) {
+    component(_mode: string) {
         if (this.children.length > 0) {
-            // This makes the component editable
-            // but if the item block as its own BlockWrapper a lot of things overlap
             return <>{this.children.map(child => child.react())}</>
-
-            // This is the component unwrapped by the BlockWrapper
-            // this makes the children not EDITABLE
-            return <>{this.children.map(child => child.component(mode))}</>
         }
         return <EmptyBlockPlaceholder icon="📝" label="Empty block" hint="Click to add content" />
     }

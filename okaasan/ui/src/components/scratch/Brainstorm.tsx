@@ -664,7 +664,7 @@ const Brainstorm = () => {
 
   // ── Render ──
   return (
-    <Flex direction="column" h="100%" w="100%">
+    <Flex direction="column" h="calc(100vh - 140px)" w="100%">
       {/* ─── Toolbar ─── */}
       <Flex
         bg={chrome} borderBottom="1px solid" borderColor={border}

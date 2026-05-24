@@ -152,3 +152,25 @@ class OptionHistoricalBar(InvestingBase):
             "vwap": self.vwap,
             "trade_count": self.trade_count,
         }
+
+
+class EconomicSeries(InvestingBase):
+    """Cached time-series data from FRED / Bank of Canada / other sources."""
+    __tablename__ = "economic_series"
+
+    id = Column(Integer, primary_key=True)
+    series_id = Column(String(60), nullable=False, index=True)
+    source = Column(String(20), nullable=False, default="fred")
+    date = Column(Date, nullable=False)
+    value = Column(Float, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("series_id", "date", name="uq_econ_series_date"),
+        Index("idx_econ_series_date", "series_id", "date"),
+    )
+
+    def to_json(self) -> dict:
+        return {
+            "date": self.date.isoformat() if self.date else None,
+            "value": self.value,
+        }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Button, Input } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, RefreshCw, Plus, Settings, BarChart3, DollarSign } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Plus, Settings, BarChart3, DollarSign, Globe } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import VegaPlot from '../health/VegaPlot';
 import { VegaProvider } from '../../contexts/VegaContext';
@@ -679,6 +679,9 @@ const InvestingOverview: React.FC = () => {
           </Button>
           <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
             {refreshing ? <Spinner size="xs" /> : <RefreshCw size={14} />}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/investing/economics')} title="Economic Indicators">
+            <Globe size={14} />
           </Button>
           <Button size="sm" variant="ghost" onClick={() => navigate('/settings/investing')}>
             <Settings size={14} />

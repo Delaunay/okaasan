@@ -181,6 +181,7 @@ def create_app() -> FastAPI:
     from .route_keyvalue import router as kv_router
     from .route_images import router as images_router
     from .route_jsonstore import router as jsonstore_router
+    from .route_private_jsonstore import router as private_jsonstore_router
     from .projects.graph import router as graph_router
 
     from .calendar import router as calendar_router
@@ -209,6 +210,7 @@ def create_app() -> FastAPI:
     app.include_router(ingredient_router)
     app.include_router(images_router)
     app.include_router(jsonstore_router)
+    app.include_router(private_jsonstore_router)
     app.include_router(graph_router)
     app.include_router(feed_router)
     app.include_router(shows_router)

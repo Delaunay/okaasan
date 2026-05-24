@@ -106,12 +106,12 @@ const TickerDetail: React.FC = () => {
     return {
       $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
       data: { values: withDir },
-      padding: { right: 30 },
+      padding: { right: 20, top: 20 },
       vconcat: [
         {
           width: 'container' as const,
           height: 280,
-          encoding: { x: { field: 'date', type: 'temporal', title: null, axis: null } },
+          encoding: { x: { field: 'date', type: 'temporal', title: null, axis: null, scale: { zero: false, padding: 10 } } },
           layer: [
             {
               mark: { type: 'area', interpolate: 'monotone', opacity: 0.12, color: '#94a3b8' },
@@ -149,7 +149,7 @@ const TickerDetail: React.FC = () => {
           height: 80,
           mark: { type: 'bar' },
           encoding: {
-            x: { field: 'date', type: 'temporal', title: null },
+            x: { field: 'date', type: 'temporal', title: null, axis: { labelPadding: 8, labelSeparation: 15 } },
             y: { field: 'volume', type: 'quantitative', title: 'Vol', axis: { format: '~s', titlePadding: 16 } },
             color: {
               field: 'up', type: 'nominal',

@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
-from .models import WatchlistItem, StockPrice, OptionChainSnapshot, OptionHistoricalBar
+from .models import WatchlistItem, StockPrice, OptionChainSnapshot, OptionHistoricalBar, EconomicSeries
 
 log = logging.getLogger("okaasan.investing")
 
@@ -556,6 +556,103 @@ async def fetch_single(symbol: str, request: Request):
         db.close()
 
 
+# ── Economics ─────────────────────────────────────────────────────────
+
+
+@router.get("/economics/catalog")
+def economics_catalog():
+    """Return the catalog of available economic series."""
+    from .economics import ALL_SERIES, CA_SERIES_BOC, SERIES_METADATA
+
+    return {
+        "groups": {
+            name: {sid: SERIES_METADATA[sid] for sid in group}
+            for name, group in ALL_SERIES.items()
+        },
+        "boc": {sid: label for sid, label in CA_SERIES_BOC.items()},
+        "metadata": SERIES_METADATA,
+    }
+
+
+@router.get("/economics/series/{series_id}")
+def get_economic_series(
+    series_id: str,
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    db: Session = Depends(_get_inv_db),
+):
+    """Get cached economic series data."""
+    q = db.query(EconomicSeries).filter(EconomicSeries.series_id == series_id)
+    if start:
+        q = q.filter(EconomicSeries.date >= date.fromisoformat(start))
+    if end:
+        q = q.filter(EconomicSeries.date <= date.fromisoformat(end))
+    rows = q.order_by(EconomicSeries.date).all()
+    return {
+        "series_id": series_id,
+        "count": len(rows),
+        "data": [r.to_json() for r in rows],
+    }
+
+
+@router.get("/economics/multi")
+def get_economic_multi(
+    ids: str = Query(..., description="Comma-separated series IDs"),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    db: Session = Depends(_get_inv_db),
+):
+    """Get multiple economic series in one request."""
+    series_ids = [s.strip() for s in ids.split(",") if s.strip()]
+    result: dict = {}
+    for sid in series_ids:
+        q = db.query(EconomicSeries).filter(EconomicSeries.series_id == sid)
+        if start:
+            q = q.filter(EconomicSeries.date >= date.fromisoformat(start))
+        if end:
+            q = q.filter(EconomicSeries.date <= date.fromisoformat(end))
+        rows = q.order_by(EconomicSeries.date).all()
+        result[sid] = [r.to_json() for r in rows]
+    return result
+
+
+@router.post("/economics/refresh")
+async def refresh_economics_data(request: Request):
+    """Fetch latest data for all economic series."""
+    import asyncio
+    from .fetcher import load_config
+    from .economics import refresh_economics
+
+    config = load_config(request.app.state.static_folder)
+    fred_key = config.get("fred_api_key", "")
+    db = request.app.state.InvestingSessionLocal()
+    try:
+        result = await asyncio.to_thread(refresh_economics, db, fred_key)
+        return result
+    finally:
+        db.close()
+
+
+@router.post("/economics/fetch/{series_id}")
+async def fetch_single_series(series_id: str, request: Request):
+    """Fetch a single economic series."""
+    import asyncio
+    from .fetcher import load_config
+    from .economics import fetch_fred_series, fetch_boc_series, CA_SERIES_BOC
+
+    config = load_config(request.app.state.static_folder)
+    fred_key = config.get("fred_api_key", "")
+    db = request.app.state.InvestingSessionLocal()
+    try:
+        if series_id in CA_SERIES_BOC:
+            result = await asyncio.to_thread(fetch_boc_series, db, series_id)
+        else:
+            result = await asyncio.to_thread(fetch_fred_series, db, series_id, fred_key)
+        return result
+    finally:
+        db.close()
+
+
 # ── Status / Config ───────────────────────────────────────────────────
 
 
@@ -565,6 +662,7 @@ def investing_status(request: Request, db: Session = Depends(_get_inv_db)):
 
     config = load_config(request.app.state.static_folder)
     has_alpaca = bool(config.get("alpaca_api_key"))
+    has_fred = bool(config.get("fred_api_key"))
 
     global _scheduler
     last_refresh = _scheduler.last_refresh.isoformat() + "Z" if _scheduler and _scheduler.last_refresh else None
@@ -577,6 +675,7 @@ def investing_status(request: Request, db: Session = Depends(_get_inv_db)):
 
     return {
         "has_alpaca_key": has_alpaca,
+        "has_fred_key": has_fred,
         "refresh_interval_minutes": config.get("refresh_interval_minutes", 60),
         "option_symbols": config.get("option_symbols", ["SPY"]),
         "max_expirations": config.get("max_expirations", 0),
@@ -597,7 +696,7 @@ async def configure(request: Request):
     static_folder = request.app.state.static_folder
     config = load_config(static_folder)
 
-    for key in ("alpaca_api_key", "alpaca_secret_key", "refresh_interval_minutes", "option_symbols", "max_expirations"):
+    for key in ("alpaca_api_key", "alpaca_secret_key", "fred_api_key", "refresh_interval_minutes", "option_symbols", "max_expirations"):
         if key in data:
             config[key] = data[key]
 

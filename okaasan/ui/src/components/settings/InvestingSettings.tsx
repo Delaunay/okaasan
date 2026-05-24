@@ -6,6 +6,7 @@ import { recipeAPI } from '../../services/api';
 
 interface InvestingStatus {
   has_alpaca_key: boolean;
+  has_fred_key: boolean;
   refresh_interval_minutes: number;
   option_symbols: string[];
   max_expirations: number;
@@ -35,6 +36,7 @@ const InvestingSettings: React.FC = () => {
 
   const [alpacaKey, setAlpacaKey] = useState('');
   const [alpacaSecret, setAlpacaSecret] = useState('');
+  const [fredKey, setFredKey] = useState('');
   const [optionSymbols, setOptionSymbols] = useState('SPY');
   const [refreshInterval, setRefreshInterval] = useState(60);
   const [maxExpirations, setMaxExpirations] = useState(0);
@@ -90,6 +92,7 @@ const InvestingSettings: React.FC = () => {
         body: JSON.stringify({
           alpaca_api_key: alpacaKey || undefined,
           alpaca_secret_key: alpacaSecret || undefined,
+          fred_api_key: fredKey || undefined,
           option_symbols: optionSymbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
           refresh_interval_minutes: refreshInterval,
           max_expirations: maxExpirations,
@@ -150,6 +153,12 @@ const InvestingSettings: React.FC = () => {
               <Text fontSize="sm" color="var(--muted-text)">Alpaca API configured</Text>
               <Badge colorPalette={status.has_alpaca_key ? 'green' : 'gray'}>
                 {status.has_alpaca_key ? 'Yes' : 'No'}
+              </Badge>
+            </HStack>
+            <HStack justify="space-between">
+              <Text fontSize="sm" color="var(--muted-text)">FRED API configured</Text>
+              <Badge colorPalette={status.has_fred_key ? 'green' : 'gray'}>
+                {status.has_fred_key ? 'Yes' : 'No'}
               </Badge>
             </HStack>
             {status.last_refresh && (
@@ -236,6 +245,27 @@ const InvestingSettings: React.FC = () => {
             />
           </Box>
         </VStack>
+      </Box>
+
+      {/* FRED API Key */}
+      <Box bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" p={4}>
+        <HStack mb={3}>
+          <Key size={16} color="var(--icon-color)" />
+          <Heading size="sm" color="var(--heading-color)">FRED API Key</Heading>
+        </HStack>
+        <Text fontSize="xs" color="var(--muted-text)" mb={3}>
+          Required for economic indicators (GDP, CPI, etc.). Get a free key at fred.stlouisfed.org/docs/api/api_key.html
+        </Text>
+        <Box>
+          <Text fontSize="xs" fontWeight="bold" mb={1}>API Key</Text>
+          <Input
+            placeholder="FRED_API_KEY"
+            value={fredKey}
+            onChange={e => setFredKey(e.target.value)}
+            size="sm"
+            type="password"
+          />
+        </Box>
       </Box>
 
       {/* General Settings */}

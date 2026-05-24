@@ -57,13 +57,16 @@ def fetch_stock_prices(
         latest = db.query(func.max(StockPrice.date)).filter(
             StockPrice.symbol == symbol
         ).scalar()
-        start = (latest + timedelta(days=1)) if latest else (end - timedelta(days=365 * 5))
+        start = (latest + timedelta(days=1)) if latest else None
 
-    if start >= end:
+    if start is not None and start >= end:
         return {"symbol": symbol, "rows_added": 0, "message": "already up to date"}
 
     ticker = yf.Ticker(symbol)
-    hist = ticker.history(start=start.isoformat(), end=end.isoformat(), auto_adjust=False)
+    if start is None:
+        hist = ticker.history(period="max", auto_adjust=False)
+    else:
+        hist = ticker.history(start=start.isoformat(), end=end.isoformat(), auto_adjust=False)
 
     if hist.empty:
         return {"symbol": symbol, "rows_added": 0, "message": "no data from yfinance"}

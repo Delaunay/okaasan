@@ -700,7 +700,9 @@ const InvestingOverview: React.FC = () => {
                 borderColor="var(--border-color)"
                 borderRadius="lg"
                 justify="space-between"
-                _hover={{ borderColor: 'var(--icon-color)' }}
+                cursor="pointer"
+                _hover={{ borderColor: 'var(--icon-color)', bg: 'var(--hover-bg)' }}
+                onClick={() => navigate(`/investing/${w.symbol}`)}
               >
                 <HStack gap={3} flex={1}>
                   <Box minW="60px">

@@ -259,6 +259,80 @@ def get_prices(
     return {"symbol": symbol, "prices": [r.to_json() for r in rows]}
 
 
+@router.post("/prices/{symbol}/backfill")
+def backfill_prices(symbol: str, request: Request, db: Session = Depends(_get_inv_db)):
+    """Delete all stored prices for a symbol and re-fetch full history."""
+    from .fetcher import fetch_stock_prices
+
+    symbol = symbol.upper()
+    deleted = db.query(StockPrice).filter(StockPrice.symbol == symbol).delete()
+    db.commit()
+    result = fetch_stock_prices(db, symbol)
+    result["deleted"] = deleted
+    return result
+
+
+# ── Ticker Detail ────────────────────────────────────────────────────
+
+
+@router.get("/ticker/{symbol}")
+def get_ticker_detail(symbol: str, db: Session = Depends(_get_inv_db)):
+    """Combined endpoint for the ticker detail page."""
+    symbol = symbol.upper()
+
+    watchlist_item = db.query(WatchlistItem).filter_by(symbol=symbol).first()
+
+    latest_prices = (
+        db.query(StockPrice)
+        .filter(StockPrice.symbol == symbol)
+        .order_by(desc(StockPrice.date))
+        .limit(2)
+        .all()
+    )
+    latest = latest_prices[0] if latest_prices else None
+    prev = latest_prices[1] if len(latest_prices) > 1 else None
+
+    change = change_pct = None
+    if latest and prev and prev.close and latest.close:
+        change = round(latest.close - prev.close, 4)
+        change_pct = round((change / prev.close) * 100, 2)
+
+    total_price_rows = db.query(func.count(StockPrice.id)).filter(
+        StockPrice.symbol == symbol
+    ).scalar() or 0
+
+    date_range = None
+    if total_price_rows > 0:
+        min_date = db.query(func.min(StockPrice.date)).filter(StockPrice.symbol == symbol).scalar()
+        max_date = db.query(func.max(StockPrice.date)).filter(StockPrice.symbol == symbol).scalar()
+        date_range = {
+            "start": min_date.isoformat() if min_date else None,
+            "end": max_date.isoformat() if max_date else None,
+        }
+
+    has_options = db.query(OptionChainSnapshot).filter(
+        OptionChainSnapshot.symbol == symbol
+    ).first() is not None
+
+    return {
+        "symbol": symbol,
+        "name": watchlist_item.name if watchlist_item else symbol,
+        "asset_type": watchlist_item.asset_type if watchlist_item else None,
+        "on_watchlist": watchlist_item is not None,
+        "latest_price": latest.close if latest else None,
+        "latest_date": latest.date.isoformat() if latest and latest.date else None,
+        "change": change,
+        "change_pct": change_pct,
+        "high": latest.high if latest else None,
+        "low": latest.low if latest else None,
+        "open": latest.open if latest else None,
+        "volume": latest.volume if latest else None,
+        "total_price_rows": total_price_rows,
+        "date_range": date_range,
+        "has_options": has_options,
+    }
+
+
 # ── Options ───────────────────────────────────────────────────────────
 
 

@@ -997,7 +997,590 @@ function PortfolioGreeksTab() {
         h1Greeks={h1Greeks} h2Greeks={h2Greeks}
         hedge1={hedge1} hedge2={hedge2}
       />
+
+      {/* Portfolio summary & margin requirements */}
+      <PortfolioMarginSummary
+        positions={positions} spotPrice={spotPrice} T={T} r={r}
+        positionGreeks={positionGreeks} totals={totals}
+        hedgeResult={hedgeResult}
+        h1Greeks={h1Greeks} h2Greeks={h2Greeks}
+        hedge1={hedge1} hedge2={hedge2}
+      />
     </VStack>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Portfolio Summary & Collateral (Cash Account)
+// ---------------------------------------------------------------------------
+
+interface CashLine {
+  name: string;
+  tag: string;
+  tagColor: string;
+  qty: number;
+  cashEffect: number;
+  nakedCollateral: number;
+  collateral: number;
+  maxLoss: number;
+  rule: string;
+  isHedge: boolean;
+}
+
+function computeCashPortfolio(
+  allLegs: { name: string; optType: 'call' | 'put'; side: 'long' | 'short'; K: number; qty: number; price: number; isHedge: boolean }[],
+  sharesBuy: number,
+  sharesSell: number,
+  S: number,
+): CashLine[] {
+  const lines: CashLine[] = [];
+  const shortLegs = allLegs.filter(l => l.side === 'short');
+  const longLegs = allLegs.filter(l => l.side === 'long');
+  let longSharesAvail = sharesBuy;
+
+  const longAvail = longLegs.map(l => ({ ...l, avail: l.qty }));
+
+  // --- Short options: you RECEIVE premium, but broker holds COLLATERAL ---
+  for (const leg of shortLegs) {
+    const premium = leg.price * leg.qty * 100;
+    const nakedCollateral = leg.optType === 'put'
+      ? leg.K * leg.qty * 100
+      : S * leg.qty * 100;
+    let uncoveredQty = leg.qty;
+    let collateral = 0;
+    let maxLoss: number;
+    let rule = '';
+
+    // Shares cover short calls → covered call, no collateral needed on those
+    if (leg.optType === 'call' && longSharesAvail > 0) {
+      const covered = Math.min(uncoveredQty, Math.floor(longSharesAvail / 100));
+      if (covered > 0) {
+        longSharesAvail -= covered * 100;
+        uncoveredQty -= covered;
+        rule = `Covered call (${covered} by ${covered * 100} shares)`;
+      }
+    }
+
+    // Long options of same type → spread: collateral = spread width only
+    // Match tightest strikes first to minimize collateral
+    while (uncoveredQty > 0) {
+      const candidates = longAvail
+        .filter(l => l.optType === leg.optType && l.avail > 0)
+        .sort((a, b) => Math.abs(leg.K - a.K) - Math.abs(leg.K - b.K));
+      if (candidates.length === 0) break;
+      const cover = candidates[0];
+      const spreadQty = Math.min(uncoveredQty, cover.avail);
+      const spreadWidth = Math.abs(leg.K - cover.K) * spreadQty * 100;
+      collateral += spreadWidth;
+      cover.avail -= spreadQty;
+      uncoveredQty -= spreadQty;
+      const tag = `Spread (${spreadQty} by ${cover.name}): |K₁−K₂|×100 = ${fmt$Simple(spreadWidth)}`;
+      rule = rule ? `${rule} + ${tag}` : tag;
+    }
+
+    // Remaining uncovered: cash-secured
+    if (uncoveredQty > 0) {
+      if (leg.optType === 'put') {
+        const secured = leg.K * uncoveredQty * 100;
+        collateral += secured;
+        const tag = `Cash-secured put: K×100×qty = ${fmt$Simple(secured)}`;
+        rule = rule ? `${rule} + ${tag}` : tag;
+      } else {
+        const secured = S * uncoveredQty * 100;
+        collateral += secured;
+        const tag = `Naked call collateral: S×100×qty = ${fmt$Simple(secured)} (most brokers reject in cash acct)`;
+        rule = rule ? `${rule} + ${tag}` : tag;
+      }
+    }
+
+    maxLoss = leg.optType === 'call' && uncoveredQty > 0
+      ? Infinity
+      : collateral;
+
+    lines.push({
+      name: leg.name,
+      tag: `short ${leg.optType}`,
+      tagColor: 'red',
+      qty: leg.qty,
+      cashEffect: premium,
+      nakedCollateral,
+      collateral,
+      maxLoss,
+      rule: rule || 'Fully covered',
+      isHedge: leg.isHedge,
+    });
+  }
+
+  // --- Long options: you PAY premium (cost), no collateral, but reduces shorts above ---
+  for (const leg of allLegs.filter(l => l.side === 'long')) {
+    const premium = leg.price * leg.qty * 100;
+    const usedAsCover = leg.qty - (longAvail.find(la => la.name === leg.name)?.avail ?? leg.qty);
+    lines.push({
+      name: leg.name,
+      tag: `long ${leg.optType}`,
+      tagColor: 'green',
+      qty: leg.qty,
+      cashEffect: -premium,
+      nakedCollateral: 0,
+      collateral: 0,
+      maxLoss: premium,
+      rule: usedAsCover > 0
+        ? `Premium paid; ${usedAsCover} contract(s) used as spread cover above`
+        : 'Premium paid',
+      isHedge: leg.isHedge,
+    });
+  }
+
+  // Long shares: cash purchase, no collateral, but covers short calls above
+  if (sharesBuy > 0) {
+    const cost = sharesBuy * S;
+    lines.push({
+      name: 'Buy underlying shares',
+      tag: 'long shares',
+      tagColor: 'blue',
+      qty: sharesBuy,
+      cashEffect: -cost,
+      nakedCollateral: 0,
+      collateral: 0,
+      maxLoss: cost,
+      rule: 'Cash purchase; covers short calls',
+      isHedge: true,
+    });
+  }
+
+  // Short shares: receive proceeds, broker holds collateral
+  if (sharesSell > 0) {
+    const proceeds = sharesSell * S;
+    lines.push({
+      name: 'Short sell shares',
+      tag: 'short shares',
+      tagColor: 'orange',
+      qty: sharesSell,
+      cashEffect: proceeds,
+      nakedCollateral: proceeds,
+      collateral: proceeds,
+      maxLoss: Infinity,
+      rule: 'Proceeds held as collateral (unlimited risk)',
+      isHedge: true,
+    });
+  }
+
+  return lines;
+}
+
+function fmt$Simple(v: number) {
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function detectSpreads(positions: BSPosition[]): string[] {
+  const tags: string[] = [];
+  const calls = positions.filter(p => p.optType === 'call');
+  const puts = positions.filter(p => p.optType === 'put');
+
+  for (const leg of calls) {
+    const opposite = calls.find(o => o !== leg && o.side !== leg.side);
+    if (opposite) {
+      const longLeg = leg.side === 'long' ? leg : opposite;
+      const shortLeg = leg.side === 'short' ? leg : opposite;
+      if (longLeg.K < shortLeg.K) tags.push(`Bull call spread (${longLeg.K}/${shortLeg.K})`);
+      else if (longLeg.K > shortLeg.K) tags.push(`Bear call spread (${shortLeg.K}/${longLeg.K})`);
+    }
+  }
+  for (const leg of puts) {
+    const opposite = puts.find(o => o !== leg && o.side !== leg.side);
+    if (opposite) {
+      const longLeg = leg.side === 'long' ? leg : opposite;
+      const shortLeg = leg.side === 'short' ? leg : opposite;
+      if (longLeg.K > shortLeg.K) tags.push(`Bear put spread (${shortLeg.K}/${longLeg.K})`);
+      else if (longLeg.K < shortLeg.K) tags.push(`Bull put spread (${longLeg.K}/${shortLeg.K})`);
+    }
+  }
+
+  const longCall = calls.find(c => c.side === 'long');
+  const longPut = puts.find(p => p.side === 'long');
+  if (longCall && longPut && Math.abs(longCall.K - longPut.K) < 0.01 && longCall.qty === longPut.qty)
+    tags.push(`Straddle at ${longCall.K}`);
+  if (longCall && longPut && Math.abs(longCall.K - longPut.K) > 0.01 && longCall.qty === longPut.qty)
+    tags.push(`Strangle (${longPut.K}/${longCall.K})`);
+
+  const shortCall = calls.find(c => c.side === 'short');
+  const shortPut = puts.find(p => p.side === 'short');
+  if (shortCall && shortPut) {
+    if (longCall && longPut && longCall.K > shortCall.K && longPut.K < shortPut.K)
+      tags.push('Iron condor detected');
+    else if (longCall && longPut && Math.abs(shortCall.K - shortPut.K) < 0.01)
+      tags.push('Iron butterfly detected');
+  }
+
+  if (tags.length === 0) tags.push('Custom / unclassified strategy');
+  return [...new Set(tags)];
+}
+
+interface ExecStep {
+  order: number;
+  action: 'BUY' | 'SELL';
+  description: string;
+  cashEffect: number;
+  reason: string;
+}
+
+function ExecutionOrder({ cashLines, spotPrice }: { cashLines: CashLine[]; spotPrice: number }) {
+  const steps = useMemo(() => {
+    const result: ExecStep[] = [];
+    let step = 0;
+
+    // Phase 1: Buy shares first — they cover short calls (cheapest collateral reduction)
+    for (const l of cashLines) {
+      if (l.tag === 'long shares') {
+        result.push({
+          order: ++step, action: 'BUY',
+          description: `${l.qty} shares @ ${spotPrice.toFixed(2)}`,
+          cashEffect: l.cashEffect,
+          reason: 'Establishes share position; will cover short calls',
+        });
+      }
+    }
+
+    // Phase 2: Buy long options — they create spread coverage for upcoming shorts
+    for (const l of cashLines) {
+      if (l.tag.startsWith('long ') && l.tag !== 'long shares') {
+        result.push({
+          order: ++step, action: 'BUY',
+          description: `${l.qty}× ${l.name}`,
+          cashEffect: l.cashEffect,
+          reason: 'Long option in place before selling; reduces collateral on matching short',
+        });
+      }
+    }
+
+    // Phase 3: Sell short options — collateral is minimized by existing longs/shares
+    for (const l of cashLines) {
+      if (l.tag.startsWith('short ') && l.tag !== 'short shares') {
+        const saving = l.nakedCollateral > l.collateral
+          ? ` (collateral ${l.nakedCollateral > 0 ? `reduced from $${l.nakedCollateral.toLocaleString()} to $${l.collateral.toLocaleString()}` : 'covered'})`
+          : '';
+        result.push({
+          order: ++step, action: 'SELL',
+          description: `${l.qty}× ${l.name}`,
+          cashEffect: l.cashEffect,
+          reason: `Receives premium${saving}`,
+        });
+      }
+    }
+
+    // Phase 4: Short sell shares last
+    for (const l of cashLines) {
+      if (l.tag === 'short shares') {
+        result.push({
+          order: ++step, action: 'SELL',
+          description: `${l.qty} shares @ ${spotPrice.toFixed(2)}`,
+          cashEffect: l.cashEffect,
+          reason: 'Short sell; proceeds held as collateral',
+        });
+      }
+    }
+
+    return result;
+  }, [cashLines, spotPrice]);
+
+  if (steps.length < 2) return null;
+
+  return (
+    <Box bg="whiteAlpha.50" borderRadius="md" p={3} mt={3}>
+      <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>
+        Suggested Execution Order
+      </Text>
+      <Text fontSize="2xs" color="gray.500" mb={2}>
+        Buy longs first to establish spread coverage, then sell shorts to minimize collateral.
+      </Text>
+      <Table.Root size="sm" variant="outline">
+        <Table.Header>
+          <Table.Row>
+            <Table.ColumnHeader fontSize="xs" w="40px">#</Table.ColumnHeader>
+            <Table.ColumnHeader fontSize="xs" w="60px">Action</Table.ColumnHeader>
+            <Table.ColumnHeader fontSize="xs">Instrument</Table.ColumnHeader>
+            <Table.ColumnHeader fontSize="xs" textAlign="right">Cash Effect</Table.ColumnHeader>
+            <Table.ColumnHeader fontSize="xs">Reason</Table.ColumnHeader>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {steps.map(s => (
+            <Table.Row key={s.order}>
+              <Table.Cell fontSize="xs" color="gray.400">{s.order}</Table.Cell>
+              <Table.Cell fontSize="xs">
+                <Badge variant="subtle" colorPalette={s.action === 'BUY' ? 'green' : 'red'} fontSize="2xs">
+                  {s.action}
+                </Badge>
+              </Table.Cell>
+              <Table.Cell fontSize="xs">{s.description}</Table.Cell>
+              <Table.Cell fontSize="xs" textAlign="right" color={s.cashEffect >= 0 ? 'green.300' : 'red.300'}>
+                {s.cashEffect >= 0
+                  ? `+$${s.cashEffect.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                  : `-$${Math.abs(s.cashEffect).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+              </Table.Cell>
+              <Table.Cell fontSize="xs" color="gray.500">{s.reason}</Table.Cell>
+            </Table.Row>
+          ))}
+        </Table.Body>
+      </Table.Root>
+    </Box>
+  );
+}
+
+function PortfolioMarginSummary({
+  positions, spotPrice, T: _T, r: _r, positionGreeks, totals: _totals,
+  hedgeResult, h1Greeks, h2Greeks, hedge1, hedge2,
+}: {
+  positions: BSPosition[];
+  spotPrice: number;
+  T: number;
+  r: number;
+  positionGreeks: ComputedGreeks[];
+  totals: Record<GreekKey, number>;
+  hedgeResult: HedgeResult | null;
+  h1Greeks: ComputedGreeks;
+  h2Greeks: ComputedGreeks;
+  hedge1: { name: string; optType: 'call' | 'put'; K: number; sigma: number };
+  hedge2: { name: string; optType: 'call' | 'put'; K: number; sigma: number };
+}) {
+  const spreadTags = useMemo(() => {
+    const allPos = [...positions];
+    if (hedgeResult) {
+      for (const a of hedgeResult.actions) {
+        if (a.label.includes('Shares') || a.qty < 0.5) continue;
+        const isH1 = a.label.includes(hedge1.name);
+        const inst = isH1 ? hedge1 : hedge2;
+        allPos.push({
+          name: a.label, optType: inst.optType,
+          side: a.side === 'Buy' ? 'long' : 'short',
+          K: inst.K, sigma: inst.sigma, qty: Math.round(a.qty),
+        });
+      }
+    }
+    return detectSpreads(allPos);
+  }, [positions, hedgeResult, hedge1, hedge2]);
+
+  const posLegs = useMemo(() => {
+    const legs: Parameters<typeof computeCashPortfolio>[0] = [];
+    for (let i = 0; i < positions.length; i++) {
+      legs.push({
+        name: positions[i].name,
+        optType: positions[i].optType,
+        side: positions[i].side,
+        K: positions[i].K,
+        qty: positions[i].qty,
+        price: positionGreeks[i].price,
+        isHedge: false,
+      });
+    }
+    return legs;
+  }, [positions, positionGreeks]);
+
+  // Full portfolio (positions + hedge)
+  const cashLines = useMemo(() => {
+    const allLegs = [...posLegs];
+    let sharesBuy = 0, sharesSell = 0;
+    if (hedgeResult) {
+      for (const a of hedgeResult.actions) {
+        if (a.qty < 0.5) continue;
+        if (a.label.includes('Shares')) {
+          if (a.side === 'Buy') sharesBuy += Math.round(a.qty);
+          else sharesSell += Math.round(a.qty);
+        } else {
+          const isH1 = a.label.includes(hedge1.name);
+          const inst = isH1 ? hedge1 : hedge2;
+          const greeks = isH1 ? h1Greeks : h2Greeks;
+          allLegs.push({
+            name: `${a.side} ${Math.round(a.qty)} ${inst.name}`,
+            optType: inst.optType,
+            side: a.side === 'Buy' ? 'long' : 'short',
+            K: inst.K,
+            qty: Math.round(a.qty),
+            price: greeks.price,
+            isHedge: true,
+          });
+        }
+      }
+    }
+
+    return computeCashPortfolio(allLegs, sharesBuy, sharesSell, spotPrice);
+  }, [posLegs, spotPrice, hedgeResult, hedge1, hedge2, h1Greeks, h2Greeks]);
+
+  const totalNakedCollateral = cashLines.reduce((s, l) => s + l.nakedCollateral, 0);
+  const totalCashEffect = cashLines.reduce((s, l) => s + l.cashEffect, 0);
+  const totalCollateral = cashLines.reduce((s, l) => s + l.collateral, 0);
+  const premiumsReceived = cashLines.filter(l => l.cashEffect > 0).reduce((s, l) => s + l.cashEffect, 0);
+  const cashNeeded = totalCollateral - premiumsReceived;
+  const hasHedge = hedgeResult !== null;
+  const collateralSaved = hasHedge ? totalNakedCollateral - totalCollateral : 0;
+
+  const fmt$ = (v: number) => {
+    if (!isFinite(v)) return '∞';
+    return v < 0
+      ? `-$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+      : `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  };
+
+  return (
+    <Card>
+      <Heading size="xs" color={headingColor} mb={3}>
+        Portfolio Summary &amp; Collateral (Cash Account)
+      </Heading>
+
+      <Flex gap={2} mb={4} wrap="wrap">
+        {spreadTags.map((tag, i) => (
+          <Badge key={i} variant="subtle" colorPalette="purple" fontSize="xs">{tag}</Badge>
+        ))}
+      </Flex>
+
+      {/* Per-leg breakdown */}
+      <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>
+        Per-Leg Breakdown {hedgeResult ? '(Positions + Hedge)' : ''}
+      </Text>
+      <Box overflowX="auto" mb={4}>
+        <Table.Root size="sm" variant="outline">
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeader fontSize="xs">Leg</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs">Type</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs" textAlign="right">Qty</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs" textAlign="right">Cash Effect</Table.ColumnHeader>
+              {hasHedge && <Table.ColumnHeader fontSize="xs" textAlign="right">Standalone Collateral</Table.ColumnHeader>}
+              <Table.ColumnHeader fontSize="xs" textAlign="right">Collateral{hasHedge ? ' (net)' : ''}</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs" textAlign="right">Max Loss</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs">How It Works</Table.ColumnHeader>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {cashLines.map((l, i) => {
+              const standaloneCol = l.nakedCollateral;
+              const showReduction = hasHedge && standaloneCol > l.collateral;
+              return (
+                <Table.Row key={i} bg={l.isHedge ? 'whiteAlpha.50' : undefined}>
+                  <Table.Cell fontSize="xs">
+                    {l.isHedge && <Badge variant="subtle" colorPalette="cyan" fontSize="2xs" mr={1}>HEDGE</Badge>}
+                    {l.name}
+                  </Table.Cell>
+                  <Table.Cell fontSize="xs">
+                    <Badge variant="subtle" colorPalette={l.tagColor} fontSize="2xs">{l.tag}</Badge>
+                  </Table.Cell>
+                  <Table.Cell fontSize="xs" textAlign="right">{l.qty}</Table.Cell>
+                  <Table.Cell fontSize="xs" textAlign="right" color={l.cashEffect >= 0 ? 'green.300' : 'red.300'}>
+                    {l.cashEffect >= 0 ? `+${fmt$(l.cashEffect)}` : fmt$(l.cashEffect)}
+                    <Text as="span" fontSize="2xs" color="gray.500" ml={1}>
+                      {l.cashEffect >= 0 ? 'income' : 'cost'}
+                    </Text>
+                  </Table.Cell>
+                  {hasHedge && (
+                    <Table.Cell fontSize="xs" textAlign="right" color={standaloneCol > 0 ? 'orange.300' : 'gray.500'}>
+                      {standaloneCol > 0 ? fmt$(standaloneCol) : '—'}
+                    </Table.Cell>
+                  )}
+                  <Table.Cell fontSize="xs" textAlign="right" color={l.collateral > 0 ? 'yellow.300' : showReduction ? 'green.400' : 'gray.500'}>
+                    {l.collateral > 0 ? fmt$(l.collateral) : showReduction ? '$0 (covered)' : '—'}
+                  </Table.Cell>
+                  <Table.Cell fontSize="xs" textAlign="right" color={l.maxLoss === Infinity ? 'red.400' : 'gray.300'}>
+                    {l.maxLoss === Infinity ? 'Unlimited' : fmt$(l.maxLoss)}
+                  </Table.Cell>
+                  <Table.Cell fontSize="xs" color="gray.500">{l.rule}</Table.Cell>
+                </Table.Row>
+              );
+            })}
+            <Table.Row bg="whiteAlpha.100">
+              <Table.Cell fontSize="xs" fontWeight="bold" colSpan={3}>TOTALS</Table.Cell>
+              <Table.Cell fontSize="xs" fontWeight="bold" textAlign="right"
+                color={totalCashEffect >= 0 ? 'green.300' : 'red.300'}>
+                {totalCashEffect >= 0 ? `+${fmt$(totalCashEffect)}` : fmt$(totalCashEffect)}
+              </Table.Cell>
+              {hasHedge && (
+                <Table.Cell fontSize="xs" fontWeight="bold" textAlign="right" color="orange.300">
+                  {fmt$(totalNakedCollateral)}
+                </Table.Cell>
+              )}
+              <Table.Cell fontSize="xs" fontWeight="bold" textAlign="right" color="yellow.300">
+                {fmt$(totalCollateral)}
+              </Table.Cell>
+              <Table.Cell fontSize="xs" fontWeight="bold" textAlign="right" color="gray.300">
+                {cashLines.some(l => l.maxLoss === Infinity) ? 'Unlimited' : fmt$(cashLines.reduce((s, l) => s + l.maxLoss, 0))}
+              </Table.Cell>
+              <Table.Cell></Table.Cell>
+            </Table.Row>
+          </Table.Body>
+        </Table.Root>
+      </Box>
+
+      {/* Account summary */}
+      <Box bg="whiteAlpha.50" borderRadius="md" p={3}>
+        <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>Account Summary</Text>
+        <Grid templateColumns={{ base: '1fr', sm: hasHedge ? '1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr' }} gap={4}>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Costs (debits)</Text>
+            <Text fontSize="lg" fontWeight="bold" color="red.300">
+              {fmt$(Math.abs(cashLines.filter(l => l.cashEffect < 0).reduce((s, l) => s + l.cashEffect, 0)))}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">premiums + purchases</Text>
+          </VStack>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Income (credits)</Text>
+            <Text fontSize="lg" fontWeight="bold" color="green.300">
+              +{fmt$(premiumsReceived)}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">premiums received</Text>
+          </VStack>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Collateral{hasHedge ? ' (after hedge)' : ''}</Text>
+            <Text fontSize="lg" fontWeight="bold" color="yellow.300">
+              {fmt$(totalCollateral)}
+            </Text>
+            {hasHedge && collateralSaved > 0 ? (
+              <Text fontSize="2xs" color="green.400">
+                was {fmt$(totalNakedCollateral)}, saved {fmt$(collateralSaved)}
+              </Text>
+            ) : (
+              <Text fontSize="2xs" color="gray.500">broker holds for shorts</Text>
+            )}
+          </VStack>
+          {hasHedge && (
+            <VStack gap={0}>
+              <Text fontSize="xs" color="gray.400">Collateral Saved</Text>
+              <Text fontSize="lg" fontWeight="bold" color="green.400">
+                −{fmt$(collateralSaved)}
+              </Text>
+              <Text fontSize="2xs" color="gray.500">hedge covers short risk</Text>
+            </VStack>
+          )}
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Cash Needed in Acct.</Text>
+            <Text fontSize="lg" fontWeight="bold" color="cyan.300">
+              {fmt$(Math.max(0, cashNeeded))}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">collateral − premiums received</Text>
+          </VStack>
+        </Grid>
+        <Box mt={3} pt={2} borderTop="1px solid" borderColor="whiteAlpha.200">
+          <Flex justify="space-between">
+            <Text fontSize="xs" color="gray.400">Net cash effect on account</Text>
+            <Text fontSize="sm" fontWeight="bold" color={totalCashEffect >= 0 ? 'green.300' : 'red.300'}>
+              {totalCashEffect >= 0 ? `+${fmt$(totalCashEffect)}` : fmt$(totalCashEffect)}
+              <Text as="span" fontSize="2xs" color="gray.500" ml={1}>
+                {totalCashEffect >= 0 ? '(net credit)' : '(net debit)'}
+              </Text>
+            </Text>
+          </Flex>
+        </Box>
+      </Box>
+
+      {/* Suggested execution order */}
+      <ExecutionOrder cashLines={cashLines} spotPrice={spotPrice} />
+
+      <Text fontSize="xs" color="gray.500" mt={3}>
+        Cash account: no leverage. Long options cost the premium. Short options bring in premium
+        but the broker holds collateral — cash-secured put: K×100, naked call: S×100.
+        A long option of the same type turns a short into a spread, reducing collateral to just the
+        spread width. Long shares cover short calls (covered call = no extra collateral).
+        Premiums received from shorts offset the cash you need from your own pocket.
+      </Text>
+    </Card>
   );
 }
 

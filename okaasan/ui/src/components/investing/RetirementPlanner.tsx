@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Flex, Heading, Text, VStack, HStack, Input, Button, Badge } from '@chakra-ui/react';
-import { ArrowLeft, Save, Trash2, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, FolderOpen, Download } from 'lucide-react';
 import { privateJsonStore } from '../../services/jsonstore';
 import VegaPlot from '../health/VegaPlot';
 import { VegaProvider } from '../../contexts/VegaContext';
+import { exportRetirementExcel } from '../../utils/exportExcel';
 
 interface RetirementInputs {
   currentAge: number;
@@ -13,6 +14,7 @@ interface RetirementInputs {
   currentSavings: number;
   monthlyContribution: number;
   annualReturn: number;
+  retirementReturn: number;
   inflationRate: number;
   desiredAnnualIncome: number;
   monthlyPension: number;
@@ -27,6 +29,7 @@ const DEFAULTS: RetirementInputs = {
   currentSavings: 50000,
   monthlyContribution: 1500,
   annualReturn: 7,
+  retirementReturn: 3,
   inflationRate: 2.5,
   desiredAnnualIncome: 60000,
   monthlyPension: 1500,
@@ -39,16 +42,22 @@ const COLLECTION = 'retirement';
 function computeProjection(inputs: RetirementInputs) {
   const {
     currentAge, retirementAge, lifeExpectancy, currentSavings,
-    monthlyContribution, annualReturn, inflationRate,
+    monthlyContribution, annualReturn, retirementReturn, inflationRate,
     desiredAnnualIncome, monthlyPension, employerMatchPct, employerMatchCap,
   } = inputs;
 
   const monthlyReturn = annualReturn / 100 / 12;
+  const monthlyRetReturn = retirementReturn / 100 / 12;
   const monthlyInflation = inflationRate / 100 / 12;
   const employerMatch = Math.min(monthlyContribution * employerMatchPct / 100, employerMatchCap);
   const totalMonthly = monthlyContribution + employerMatch;
 
   const points: { age: number; savings: number; contributions: number; growth: number; employer: number; phase: string }[] = [];
+  const yearly: {
+    age: number; phase: string; startBalance: number; endBalance: number;
+    yearContrib: number; yearEmployer: number; yearGrowth: number;
+    yearWithdrawal: number;
+  }[] = [];
 
   let savings = currentSavings;
   let totalContribs = currentSavings;
@@ -59,11 +68,18 @@ function computeProjection(inputs: RetirementInputs) {
     const growth = savings - totalContribs - totalEmployer;
     points.push({ age, savings: Math.max(0, savings), contributions: totalContribs, growth: Math.max(0, growth), employer: totalEmployer, phase });
 
+    const startBalance = savings;
+    let yearContrib = 0;
+    let yearEmployer = 0;
+    let yearWithdrawal = 0;
+
     if (age < retirementAge) {
       for (let m = 0; m < 12; m++) {
         savings = savings * (1 + monthlyReturn) + totalMonthly;
         totalContribs += monthlyContribution;
         totalEmployer += employerMatch;
+        yearContrib += monthlyContribution;
+        yearEmployer += employerMatch;
       }
     } else {
       const yearsInRetirement = age - retirementAge;
@@ -71,10 +87,14 @@ function computeProjection(inputs: RetirementInputs) {
       const adjustedIncome = desiredAnnualIncome * inflationFactor;
       const adjustedPension = monthlyPension * 12 * inflationFactor;
       const withdrawal = Math.max(0, adjustedIncome - adjustedPension);
+      yearWithdrawal = withdrawal;
       for (let m = 0; m < 12; m++) {
-        savings = savings * (1 + monthlyReturn) - withdrawal / 12;
+        savings = savings * (1 + monthlyRetReturn) - withdrawal / 12;
       }
     }
+
+    const yearGrowth = savings - startBalance - yearContrib - yearEmployer + yearWithdrawal;
+    yearly.push({ age, phase, startBalance, endBalance: savings, yearContrib, yearEmployer, yearGrowth, yearWithdrawal });
   }
 
   const savingsAtRetirement = points.find(p => p.age === retirementAge)?.savings || 0;
@@ -84,14 +104,14 @@ function computeProjection(inputs: RetirementInputs) {
   const annualGapAtRetirement = realDesiredIncome - annualPensionAtRetirement;
 
   const drawdownYears = lifeExpectancy - retirementAge;
-  const realReturn = (1 + annualReturn / 100) / (1 + inflationRate / 100) - 1;
+  const realReturn = (1 + retirementReturn / 100) / (1 + inflationRate / 100) - 1;
   const neededAtRetirement = annualGapAtRetirement > 0 && realReturn > 0
     ? annualGapAtRetirement * (1 - Math.pow(1 + realReturn, -drawdownYears)) / realReturn
     : annualGapAtRetirement * drawdownYears;
 
   const runsOutAge = points.find(p => p.age > retirementAge && p.savings <= 0)?.age;
 
-  return { points, savingsAtRetirement, neededAtRetirement, runsOutAge };
+  return { points, yearly, savingsAtRetirement, neededAtRetirement, runsOutAge };
 }
 
 function sensitivityData(inputs: RetirementInputs) {
@@ -262,6 +282,10 @@ const RetirementPlanner: React.FC = () => {
   const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const onTrack = projection.savingsAtRetirement >= projection.neededAtRetirement;
 
+  const handleExport = useCallback(() => {
+    exportRetirementExcel(inputs, scenarioName);
+  }, [inputs, scenarioName]);
+
   return (
     <VStack align="stretch" gap={6} p={0}>
       <HStack gap={3}>
@@ -269,6 +293,9 @@ const RetirementPlanner: React.FC = () => {
           <ArrowLeft size={16} />
         </Button>
         <Heading size="xl" color="var(--heading-color)">Retirement Planner</Heading>
+        <Button size="sm" variant="outline" onClick={handleExport} ml="auto">
+          <Download size={14} /> Export Excel
+        </Button>
       </HStack>
 
       {/* Scenario management */}
@@ -323,7 +350,8 @@ const RetirementPlanner: React.FC = () => {
         <Box flex="1 1 280px" bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" p={4}>
           <Heading size="sm" mb={3} color="var(--heading-color)">Assumptions</Heading>
           <VStack align="stretch" gap={3}>
-            <Field label="Annual Return" suffix="%" value={inputs.annualReturn} onChange={v => set('annualReturn', v)} />
+            <Field label="Growth Return" suffix="%" value={inputs.annualReturn} onChange={v => set('annualReturn', v)} />
+            <Field label="Retirement Return" suffix="%" value={inputs.retirementReturn} onChange={v => set('retirementReturn', v)} />
             <Field label="Inflation Rate" suffix="%" value={inputs.inflationRate} onChange={v => set('inflationRate', v)} />
             <Field label="Desired Annual Income" suffix="$" value={inputs.desiredAnnualIncome} onChange={v => set('desiredAnnualIncome', v)} />
             <Field label="Monthly Pension / CPP / SS" suffix="$/mo" value={inputs.monthlyPension} onChange={v => set('monthlyPension', v)} />
@@ -360,9 +388,82 @@ const RetirementPlanner: React.FC = () => {
           <VegaProvider><VegaPlot spec={sensitivitySpec} height="240px" /></VegaProvider>
         </Box>
       </Flex>
+
+      {/* Year-by-year spreadsheet */}
+      <Box>
+        <Heading size="sm" color="var(--heading-color)" mb={3}>Year-by-Year Breakdown</Heading>
+        <Box overflowX="auto" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color)', background: 'var(--card-bg)' }}>
+                <Th>Age</Th>
+                <Th>Phase</Th>
+                <Th align="right">Start Balance</Th>
+                <Th align="right">Contributions</Th>
+                <Th align="right">Employer</Th>
+                <Th align="right">Growth</Th>
+                <Th align="right">Withdrawal</Th>
+                <Th align="right">End Balance</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {projection.yearly.map(y => (
+                <tr key={y.age} style={{
+                  borderBottom: '1px solid var(--border-color)',
+                  background: y.age === inputs.retirementAge ? 'var(--border-color)' : undefined,
+                }}>
+                  <Td>{y.age}</Td>
+                  <Td>
+                    <Badge size="sm" colorPalette={y.phase === 'Accumulation' ? 'green' : 'orange'}>
+                      {y.phase}
+                    </Badge>
+                  </Td>
+                  <Td align="right">{fmt(Math.max(0, y.startBalance))}</Td>
+                  <Td align="right">{y.yearContrib > 0 ? fmt(y.yearContrib) : '—'}</Td>
+                  <Td align="right">{y.yearEmployer > 0 ? fmt(y.yearEmployer) : '—'}</Td>
+                  <Td align="right" style={{ color: y.yearGrowth >= 0 ? 'var(--panel-green-text, #22c55e)' : 'var(--panel-red-text, #ef4444)' }}>
+                    {y.yearGrowth >= 0 ? '+' : ''}{fmt(y.yearGrowth)}
+                  </Td>
+                  <Td align="right" style={{ color: y.yearWithdrawal > 0 ? 'var(--panel-red-text, #ef4444)' : undefined }}>
+                    {y.yearWithdrawal > 0 ? `-${fmt(y.yearWithdrawal)}` : '—'}
+                  </Td>
+                  <Td align="right" style={{ fontWeight: 600 }}>{fmt(Math.max(0, y.endBalance))}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Box>
+      </Box>
     </VStack>
   );
 };
+
+function Th({ children, align }: { children: React.ReactNode; align?: string }) {
+  return (
+    <th style={{
+      padding: '8px 12px',
+      textAlign: (align as any) || 'left',
+      fontWeight: 700,
+      color: 'var(--heading-color)',
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, align, style }: { children: React.ReactNode; align?: string; style?: React.CSSProperties }) {
+  return (
+    <td style={{
+      padding: '6px 12px',
+      textAlign: (align as any) || 'left',
+      whiteSpace: 'nowrap',
+      ...style,
+    }}>
+      {children}
+    </td>
+  );
+}
 
 function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (

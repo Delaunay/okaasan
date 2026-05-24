@@ -433,6 +433,63 @@ def get_option_history(
     return {"bars": [r.to_json() for r in rows]}
 
 
+@router.get("/options/{symbol}/max-pain-history")
+def get_max_pain_history(
+    symbol: str,
+    expiration: str | None = Query(None),
+    db: Session = Depends(_get_inv_db),
+):
+    """Compute max pain per (snapshot_date, expiration) from stored snapshots."""
+    sym = symbol.upper()
+
+    q = db.query(
+        OptionChainSnapshot.snapshot_date,
+        OptionChainSnapshot.expiration,
+    ).filter(
+        OptionChainSnapshot.symbol == sym,
+    ).distinct()
+
+    if expiration:
+        q = q.filter(OptionChainSnapshot.expiration == expiration)
+
+    pairs = q.order_by(
+        OptionChainSnapshot.snapshot_date,
+        OptionChainSnapshot.expiration,
+    ).all()
+
+    spot_cache: dict[date, float | None] = {}
+    contracts_cache: dict[tuple, list] = {}
+
+    for snap_date, exp in pairs:
+        key = (snap_date, exp)
+        if key not in contracts_cache:
+            rows = db.query(OptionChainSnapshot).filter(
+                OptionChainSnapshot.symbol == sym,
+                OptionChainSnapshot.snapshot_date == snap_date,
+                OptionChainSnapshot.expiration == exp,
+            ).all()
+            contracts_cache[key] = rows
+            if snap_date not in spot_cache and rows:
+                spot_cache[snap_date] = rows[0].underlying_price
+
+    series = []
+    for snap_date, exp in pairs:
+        contracts = contracts_cache.get((snap_date, exp), [])
+        mp = _compute_max_pain(contracts)
+        if mp is None:
+            continue
+        dte = (exp - snap_date).days
+        series.append({
+            "snapshot_date": snap_date.isoformat(),
+            "expiration": exp.isoformat(),
+            "dte": dte,
+            "max_pain_strike": mp["strike"],
+            "underlying_price": spot_cache.get(snap_date),
+        })
+
+    return {"symbol": sym, "series": series}
+
+
 # ── Overview ──────────────────────────────────────────────────────────
 
 

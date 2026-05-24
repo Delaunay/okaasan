@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Flex, Heading, Text, VStack, HStack, Input, Button } from '@chakra-ui/react';
-import { ArrowLeft, Save, Trash2, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, FolderOpen, Download } from 'lucide-react';
 import { privateJsonStore } from '../../services/jsonstore';
 import VegaPlot from '../health/VegaPlot';
 import { VegaProvider } from '../../contexts/VegaContext';
+import { exportMortgageExcel } from '../../utils/exportExcel';
 
 interface MortgageInputs {
   homePrice: number;
@@ -21,6 +22,7 @@ interface MortgageInputs {
   monthlyRent: number;
   rentersInsuranceAnnual: number;
   annualRentIncrease: number;
+  inflationRate: number;
   investmentReturn: number;
   homeAppreciation: number;
   marginalTaxRate: number;
@@ -42,6 +44,7 @@ const DEFAULTS: MortgageInputs = {
   monthlyRent: 2200,
   rentersInsuranceAnnual: 0,
   annualRentIncrease: 3,
+  inflationRate: 2.5,
   investmentReturn: 7,
   homeAppreciation: 3,
   marginalTaxRate: 30,
@@ -55,7 +58,7 @@ function computeMortgage(inputs: MortgageInputs) {
     homePrice, downPaymentPct, interestRate, amortizationYears,
     closingCostsPct, extraMonthlyPayment,
     propertyTaxAnnual, homeInsuranceAnnual, condoFeesMonthly, maintenancePct, utilitiesDelta,
-    monthlyRent, rentersInsuranceAnnual, annualRentIncrease,
+    monthlyRent, rentersInsuranceAnnual, annualRentIncrease, inflationRate,
     investmentReturn, homeAppreciation, timeHorizonYears,
   } = inputs;
 
@@ -101,8 +104,15 @@ function computeMortgage(inputs: MortgageInputs) {
 
   for (let year = 1; year <= timeHorizonYears; year++) {
     const homeValue = homePrice * Math.pow(1 + homeAppreciation / 100, year);
+    const inflFactor = Math.pow(1 + inflationRate / 100, year - 1);
     const currentRent = monthlyRent * Math.pow(1 + annualRentIncrease / 100, year - 1);
     const annualMaintenance = homeValue * maintenancePct / 100;
+
+    const propTax = propertyTaxAnnual * inflFactor;
+    const homeIns = homeInsuranceAnnual * inflFactor;
+    const condoFees = condoFeesMonthly * inflFactor;
+    const utilDelta = utilitiesDelta * inflFactor;
+    const renterIns = rentersInsuranceAnnual * inflFactor;
 
     let yearInterest = 0;
     let yearPrincipal = 0;
@@ -118,14 +128,14 @@ function computeMortgage(inputs: MortgageInputs) {
         yearPrincipal += prinPayment;
       }
 
-      const ownershipFixed = propertyTaxAnnual / 12
-        + homeInsuranceAnnual / 12
-        + condoFeesMonthly
+      const ownershipFixed = propTax / 12
+        + homeIns / 12
+        + condoFees
         + annualMaintenance / 12
-        + utilitiesDelta;
+        + utilDelta;
 
       const buyCashflow = mortgagePayment + ownershipFixed;
-      const rentCashflow = currentRent + rentersInsuranceAnnual / 12;
+      const rentCashflow = currentRent + renterIns / 12;
 
       buyCumCost += buyCashflow;
       rentCumCost += rentCashflow;
@@ -152,14 +162,14 @@ function computeMortgage(inputs: MortgageInputs) {
     }
 
     yearlyCost.push({ year, type: 'Mortgage P&I', amount: yearPrincipal + yearInterest });
-    yearlyCost.push({ year, type: 'Property Tax', amount: propertyTaxAnnual });
-    yearlyCost.push({ year, type: 'Insurance', amount: homeInsuranceAnnual });
-    yearlyCost.push({ year, type: 'Condo/HOA', amount: condoFeesMonthly * 12 });
+    yearlyCost.push({ year, type: 'Property Tax', amount: propTax });
+    yearlyCost.push({ year, type: 'Insurance', amount: homeIns });
+    yearlyCost.push({ year, type: 'Condo/HOA', amount: condoFees * 12 });
     yearlyCost.push({ year, type: 'Maintenance', amount: annualMaintenance });
 
-    const currentRentMonthly = currentRent + rentersInsuranceAnnual / 12;
+    const currentRentMonthly = currentRent + renterIns / 12;
     const mortgageMonthly = balance > 0 ? monthlyPI + extraMonthlyPayment : 0;
-    const ownershipMonthly = mortgageMonthly + propertyTaxAnnual / 12 + homeInsuranceAnnual / 12 + condoFeesMonthly + annualMaintenance / 12 + utilitiesDelta;
+    const ownershipMonthly = mortgageMonthly + propTax / 12 + homeIns / 12 + condoFees + annualMaintenance / 12 + utilDelta;
 
     buyVsRent.push({
       year,
@@ -270,6 +280,16 @@ const MortgagePlanner: React.FC = () => {
     };
   }, [result.buyVsRent]);
 
+  const sharedYMax = useMemo(() => {
+    let max = 0;
+    for (const p of result.buyVsRent) {
+      const buyTotal = (p.homeValue - p.mortgageBalance) + p.buyInvestments;
+      const rentTotal = p.rentInitialInv + p.rentSavingsInv;
+      max = Math.max(max, buyTotal, rentTotal);
+    }
+    return max * 1.05;
+  }, [result.buyVsRent]);
+
   const buyBreakdownSpec = useMemo(() => {
     const values = result.buyVsRent.flatMap(p => [
       { year: p.year, amount: p.homeValue - p.mortgageBalance, component: 'Home Equity' },
@@ -284,7 +304,7 @@ const MortgagePlanner: React.FC = () => {
       mark: { type: 'area', interpolate: 'monotone', opacity: 0.7, line: { strokeWidth: 2 } },
       encoding: {
         x: { field: 'year', type: 'quantitative', title: 'Year' },
-        y: { field: 'amount', type: 'quantitative', title: 'Net Worth ($)', axis: { format: '~s', titlePadding: 16 }, stack: true },
+        y: { field: 'amount', type: 'quantitative', title: 'Net Worth ($)', axis: { format: '~s', titlePadding: 16 }, stack: true, scale: { domain: [0, sharedYMax] } },
         color: {
           field: 'component', type: 'nominal',
           scale: {
@@ -301,7 +321,7 @@ const MortgagePlanner: React.FC = () => {
         ],
       },
     };
-  }, [result.buyVsRent]);
+  }, [result.buyVsRent, sharedYMax]);
 
   const rentBreakdownSpec = useMemo(() => {
     const values = result.buyVsRent.flatMap(p => [
@@ -317,7 +337,7 @@ const MortgagePlanner: React.FC = () => {
       mark: { type: 'area', interpolate: 'monotone', opacity: 0.7, line: { strokeWidth: 2 } },
       encoding: {
         x: { field: 'year', type: 'quantitative', title: 'Year' },
-        y: { field: 'amount', type: 'quantitative', title: 'Net Worth ($)', axis: { format: '~s', titlePadding: 16 }, stack: true },
+        y: { field: 'amount', type: 'quantitative', title: 'Net Worth ($)', axis: { format: '~s', titlePadding: 16 }, stack: true, scale: { domain: [0, sharedYMax] } },
         color: {
           field: 'component', type: 'nominal',
           scale: {
@@ -334,7 +354,7 @@ const MortgagePlanner: React.FC = () => {
         ],
       },
     };
-  }, [result.buyVsRent]);
+  }, [result.buyVsRent, sharedYMax]);
 
   const costComparisonSpec = useMemo(() => {
     const values = result.buyVsRent.filter(p => p.year > 0).flatMap(p => [
@@ -499,6 +519,10 @@ const MortgagePlanner: React.FC = () => {
     };
   }, [result.buyVsRent]);
 
+  const handleExport = useCallback(() => {
+    exportMortgageExcel(inputs, result.buyVsRent, scenarioName);
+  }, [inputs, result.buyVsRent, scenarioName]);
+
   return (
     <VStack align="stretch" gap={6} p={0}>
       <HStack gap={3}>
@@ -506,6 +530,9 @@ const MortgagePlanner: React.FC = () => {
           <ArrowLeft size={16} />
         </Button>
         <Heading size="xl" color="var(--heading-color)">Mortgage Planner</Heading>
+        <Button size="sm" variant="outline" onClick={handleExport} ml="auto">
+          <Download size={14} /> Export Excel
+        </Button>
       </HStack>
 
       {/* Scenario management */}
@@ -570,6 +597,7 @@ const MortgagePlanner: React.FC = () => {
           </VStack>
           <Heading size="sm" mt={5} mb={3} color="var(--heading-color)">Assumptions</Heading>
           <VStack align="stretch" gap={3}>
+            <Field label="Inflation Rate" suffix="%" value={inputs.inflationRate} onChange={v => set('inflationRate', v)} />
             <Field label="Investment Return" suffix="%" value={inputs.investmentReturn} onChange={v => set('investmentReturn', v)} />
             <Field label="Home Appreciation" suffix="%" value={inputs.homeAppreciation} onChange={v => set('homeAppreciation', v)} />
             <Field label="Marginal Tax Rate" suffix="%" value={inputs.marginalTaxRate} onChange={v => set('marginalTaxRate', v)} />

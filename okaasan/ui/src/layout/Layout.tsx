@@ -129,14 +129,15 @@ const getStaticSidebarSections = () => [
     ],
   },
   {
-    title: 'Investing',
+    title: 'Money',
     href: '/investing',
     isSelected: (location: Location) => location.pathname.startsWith('/investing'),
     items: [
-      { name: 'Overview', href: '/investing' },
+      { name: 'Investing', href: '/investing' },
       { name: 'Economics', href: '/investing/economics' },
       { name: 'Retirement', href: '/investing/retirement' },
       { name: 'Mortgage', href: '/investing/mortgage' },
+      { name: 'Options', href: '/investing/options' },
     ]
   },
   {

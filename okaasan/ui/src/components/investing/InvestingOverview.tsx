@@ -115,6 +115,19 @@ interface OptionChainData {
   contracts: OptionContract[];
 }
 
+interface MaxPainHistoryPoint {
+  snapshot_date: string;
+  expiration: string;
+  dte: number;
+  max_pain_strike: number;
+  underlying_price: number | null;
+}
+
+interface MaxPainHistoryData {
+  symbol: string;
+  series: MaxPainHistoryPoint[];
+}
+
 function MiniSparkline({ data, width = 80, height = 24 }: { data: number[]; width?: number; height?: number }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
@@ -221,6 +234,7 @@ const InvestingOverview: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [optionChain, setOptionChain] = useState<OptionChainData | null>(null);
   const [selectedExpiration, setSelectedExpiration] = useState<string | null>(null);
+  const [maxPainHistory, setMaxPainHistory] = useState<MaxPainHistoryData | null>(null);
   const navigate = useNavigate();
 
   const fetchData = useCallback(() => {
@@ -265,12 +279,16 @@ const InvestingOverview: React.FC = () => {
   const loadOptionChain = async (symbol: string) => {
     setSelectedOption(symbol);
     setSelectedExpiration(null);
+    setMaxPainHistory(null);
     try {
       const chain = await recipeAPI.request<OptionChainData>(`/investing/options/${symbol}`);
       setOptionChain(chain);
       if (chain.expirations.length > 0) {
         setSelectedExpiration(chain.expirations[0]);
       }
+      recipeAPI.request<MaxPainHistoryData>(`/investing/options/${symbol}/max-pain-history`)
+        .then(setMaxPainHistory)
+        .catch(console.error);
     } catch (e) {
       console.error(e);
     }
@@ -499,9 +517,157 @@ const InvestingOverview: React.FC = () => {
     };
   }, [optionChain, selectedExpiration]);
 
+  const strikeAggregation = useMemo(() => {
+    if (!optionChain?.contracts?.length) return null;
+    const contracts = selectedExpiration
+      ? optionChain.contracts.filter(c => c.expiration === selectedExpiration)
+      : optionChain.contracts;
+    const byStrike: Record<number, { callVol: number; putVol: number; callOI: number; putOI: number }> = {};
+    for (const c of contracts) {
+      if (!byStrike[c.strike]) byStrike[c.strike] = { callVol: 0, putVol: 0, callOI: 0, putOI: 0 };
+      const s = byStrike[c.strike];
+      if (c.option_type === 'call') {
+        s.callVol += c.volume || 0;
+        s.callOI += c.open_interest || 0;
+      } else {
+        s.putVol += c.volume || 0;
+        s.putOI += c.open_interest || 0;
+      }
+    }
+    const all = Object.entries(byStrike)
+      .map(([k, v]) => ({ strike: Number(k), ...v, activity: v.callVol + v.putVol + v.callOI + v.putOI }))
+      .filter(d => d.activity > 0);
+
+    const totalActivity = all.reduce((sum, d) => sum + d.activity, 0);
+    if (totalActivity === 0) return null;
+
+    const sorted = [...all].sort((a, b) => b.activity - a.activity);
+    let cumulative = 0;
+    const kept = new Set<number>();
+    for (const d of sorted) {
+      kept.add(d.strike);
+      cumulative += d.activity;
+      if (cumulative >= totalActivity * 0.75) break;
+    }
+
+    return all
+      .filter(d => kept.has(d.strike))
+      .sort((a, b) => a.strike - b.strike);
+  }, [optionChain, selectedExpiration]);
+
+  const spotRule = (price: number | null | undefined) => price != null ? [
+    {
+      mark: { type: 'rule', strokeDash: [6, 4], strokeWidth: 2 },
+      encoding: { x: { datum: price }, color: { value: '#6366f1' } },
+    },
+    {
+      mark: { type: 'text', align: 'left', dx: 4, dy: -8, fontSize: 11 },
+      encoding: { x: { datum: price }, text: { value: `Spot $${price.toFixed(2)}` }, color: { value: '#6366f1' } },
+    },
+  ] : [];
+
+  const volumeByStrikeSpec = useMemo(() => {
+    if (!strikeAggregation?.length) return null;
+    const data = strikeAggregation.flatMap(d => [
+      { strike: d.strike, volume: d.callVol, type: 'Call' },
+      { strike: d.strike, volume: d.putVol, type: 'Put' },
+    ]).filter(d => d.volume > 0);
+    if (!data.length) return null;
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container', height: 260,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: data },
+      layer: [
+        {
+          mark: { type: 'bar', opacity: 0.7 },
+          encoding: {
+            x: { field: 'strike', type: 'quantitative', title: 'Strike Price', axis: { labelAngle: -45 } },
+            y: { field: 'volume', type: 'quantitative', title: 'Volume', stack: null },
+            color: { field: 'type', type: 'nominal', scale: { domain: ['Call', 'Put'], range: ['#22c55e', '#ef4444'] } },
+            tooltip: [
+              { field: 'strike', type: 'quantitative', title: 'Strike', format: '.2f' },
+              { field: 'type', type: 'nominal', title: 'Type' },
+              { field: 'volume', type: 'quantitative', title: 'Volume', format: ',.0f' },
+            ],
+          },
+        },
+        ...spotRule(optionChain?.underlying_price),
+      ],
+    };
+  }, [strikeAggregation, optionChain?.underlying_price]);
+
+  const oiByStrikeSpec = useMemo(() => {
+    if (!strikeAggregation?.length) return null;
+    const data = strikeAggregation.flatMap(d => [
+      { strike: d.strike, oi: d.callOI, type: 'Call' },
+      { strike: d.strike, oi: d.putOI, type: 'Put' },
+    ]).filter(d => d.oi > 0);
+    if (!data.length) return null;
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container', height: 260,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: data },
+      layer: [
+        {
+          mark: { type: 'bar', opacity: 0.7 },
+          encoding: {
+            x: { field: 'strike', type: 'quantitative', title: 'Strike Price', axis: { labelAngle: -45 } },
+            y: { field: 'oi', type: 'quantitative', title: 'Open Interest', stack: null },
+            color: { field: 'type', type: 'nominal', scale: { domain: ['Call', 'Put'], range: ['#22c55e', '#ef4444'] } },
+            tooltip: [
+              { field: 'strike', type: 'quantitative', title: 'Strike', format: '.2f' },
+              { field: 'type', type: 'nominal', title: 'Type' },
+              { field: 'oi', type: 'quantitative', title: 'Open Interest', format: ',.0f' },
+            ],
+          },
+        },
+        ...spotRule(optionChain?.underlying_price),
+      ],
+    };
+  }, [strikeAggregation, optionChain?.underlying_price]);
+
+  const volOiRatioByStrikeSpec = useMemo(() => {
+    if (!strikeAggregation?.length) return null;
+    const data = strikeAggregation.flatMap(d => {
+      const out: { strike: number; ratio: number; type: string }[] = [];
+      if (d.callOI > 0) out.push({ strike: d.strike, ratio: d.callVol / d.callOI, type: 'Call' });
+      if (d.putOI > 0) out.push({ strike: d.strike, ratio: d.putVol / d.putOI, type: 'Put' });
+      return out;
+    }).filter(d => d.ratio > 0);
+    if (!data.length) return null;
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container', height: 260,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: data },
+      layer: [
+        {
+          mark: { type: 'bar', opacity: 0.7 },
+          encoding: {
+            x: { field: 'strike', type: 'quantitative', title: 'Strike Price', axis: { labelAngle: -45 } },
+            y: { field: 'ratio', type: 'quantitative', title: 'Volume / OI Ratio', stack: null },
+            color: { field: 'type', type: 'nominal', scale: { domain: ['Call', 'Put'], range: ['#22c55e', '#ef4444'] } },
+            tooltip: [
+              { field: 'strike', type: 'quantitative', title: 'Strike', format: '.2f' },
+              { field: 'type', type: 'nominal', title: 'Type' },
+              { field: 'ratio', type: 'quantitative', title: 'Vol/OI', format: '.2f' },
+            ],
+          },
+        },
+        ...spotRule(optionChain?.underlying_price),
+      ],
+    };
+  }, [strikeAggregation, optionChain?.underlying_price]);
+
   const volOiSpec = useMemo(() => {
     if (!optionChain?.analytics?.vol_oi_flags?.length) return null;
-    const top = optionChain.analytics.vol_oi_flags.slice(0, 30);
+    const keptStrikes = strikeAggregation ? new Set(strikeAggregation.map(d => d.strike)) : null;
+    const filtered = keptStrikes
+      ? optionChain.analytics.vol_oi_flags.filter(d => keptStrikes.has(d.strike))
+      : optionChain.analytics.vol_oi_flags;
+    const top = filtered.slice(0, 30);
     if (top.length === 0) return null;
     const data = top.map(d => ({
       label: `${d.strike} ${d.option_type[0].toUpperCase()} ${d.dte ?? ''}d`,
@@ -516,12 +682,13 @@ const InvestingOverview: React.FC = () => {
       $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
       width: 'container', height: 240,
       autosize: { type: 'fit', contains: 'padding' },
+      padding: { left: 40, top: 10 },
       data: { values: data },
       layer: [
         {
           mark: { type: 'bar', opacity: 0.85 },
           encoding: {
-            y: { field: 'label', type: 'nominal', title: null, sort: { field: 'vol_oi_ratio', order: 'descending' } },
+            y: { field: 'label', type: 'nominal', title: null, sort: { field: 'vol_oi_ratio', order: 'descending' }, axis: { labelLimit: 160 } },
             x: { field: 'vol_oi_ratio', type: 'quantitative', title: 'Volume / Open Interest' },
             color: {
               field: 'type', type: 'nominal', title: 'Side',
@@ -543,7 +710,137 @@ const InvestingOverview: React.FC = () => {
         },
       ],
     };
-  }, [optionChain]);
+  }, [optionChain, strikeAggregation]);
+
+  const maxPainHistorySpec = useMemo(() => {
+    if (!maxPainHistory?.series?.length) return null;
+
+    const expirations = [...new Set(maxPainHistory.series.map(p => p.expiration))];
+
+    const mpData = maxPainHistory.series.map(p => ({
+      date: p.snapshot_date,
+      price: p.max_pain_strike,
+      series: `MP ${p.expiration}`,
+      expiration: p.expiration,
+      dte: p.dte,
+    }));
+
+    const spotDates = new Set<string>();
+    const spotData = maxPainHistory.series
+      .filter(p => p.underlying_price != null && !spotDates.has(p.snapshot_date))
+      .map(p => {
+        spotDates.add(p.snapshot_date);
+        return { date: p.snapshot_date, price: p.underlying_price!, series: 'Spot Price', expiration: '', dte: 0 };
+      });
+
+    const allData = [...mpData, ...spotData];
+
+    const colorDomain = ['Spot Price', ...expirations.map(e => `MP ${e}`)];
+    const colorRange = ['#6366f1', ...expirations.map((_, i) => {
+      const hues = ['#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6'];
+      return hues[i % hues.length];
+    })];
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container',
+      height: 300,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: allData },
+      mark: { type: 'point', size: 40, filled: true, opacity: 0.8 },
+      encoding: {
+        x: { field: 'date', type: 'temporal', title: 'Date' },
+        y: { field: 'price', type: 'quantitative', title: 'Price ($)', scale: { zero: false } },
+        color: {
+          field: 'series', type: 'nominal',
+          scale: { domain: colorDomain, range: colorRange },
+          legend: { title: null },
+        },
+        shape: {
+          condition: { test: "datum.series === 'Spot Price'", value: 'diamond' },
+          value: 'circle',
+        },
+        tooltip: [
+          { field: 'date', type: 'temporal', title: 'Date' },
+          { field: 'series', type: 'nominal', title: 'Series' },
+          { field: 'price', type: 'quantitative', title: 'Price', format: '$.2f' },
+          { field: 'dte', type: 'quantitative', title: 'DTE' },
+        ],
+      },
+    };
+  }, [maxPainHistory]);
+
+  const maxPainByExpirationSpec = useMemo(() => {
+    if (!maxPainHistory?.series?.length) return null;
+
+    const latestByExp: Record<string, MaxPainHistoryPoint> = {};
+    for (const p of maxPainHistory.series) {
+      const prev = latestByExp[p.expiration];
+      if (!prev || p.snapshot_date > prev.snapshot_date) {
+        latestByExp[p.expiration] = p;
+      }
+    }
+
+    const twoWeeks = new Date();
+    twoWeeks.setDate(twoWeeks.getDate() + 14);
+    const cutoff = twoWeeks.toISOString().slice(0, 10);
+
+    const data = Object.values(latestByExp)
+      .filter(p => p.expiration <= cutoff)
+      .sort((a, b) => a.expiration.localeCompare(b.expiration))
+      .map(p => ({
+        expiration: p.expiration,
+        max_pain: p.max_pain_strike,
+        dte: p.dte,
+        snapshot_date: p.snapshot_date,
+      }));
+
+    if (!data.length) return null;
+
+    const spot = maxPainHistory.series.find(p => p.underlying_price != null)?.underlying_price;
+
+    const layers: any[] = [
+      {
+        mark: { type: 'point', size: 80, filled: true, opacity: 0.85 },
+        encoding: {
+          x: { field: 'expiration', type: 'temporal', title: 'Expiration Date' },
+          y: { field: 'max_pain', type: 'quantitative', title: 'Max Pain ($)', scale: { zero: false } },
+          color: { value: '#f59e0b' },
+          tooltip: [
+            { field: 'expiration', type: 'temporal', title: 'Expiration' },
+            { field: 'max_pain', type: 'quantitative', title: 'Max Pain', format: '$.2f' },
+            { field: 'dte', type: 'quantitative', title: 'DTE' },
+            { field: 'snapshot_date', type: 'temporal', title: 'As Of' },
+          ],
+        },
+      },
+    ];
+
+    if (spot != null) {
+      layers.push({
+        mark: { type: 'rule', strokeDash: [6, 4], strokeWidth: 2 },
+        encoding: { y: { datum: spot }, color: { value: '#6366f1' } },
+      });
+      layers.push({
+        mark: { type: 'text', align: 'right', dx: -4, dy: -8, fontSize: 11 },
+        encoding: {
+          y: { datum: spot },
+          x: { value: 'width' },
+          text: { value: `Spot $${spot.toFixed(2)}` },
+          color: { value: '#6366f1' },
+        },
+      });
+    }
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container',
+      height: 260,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: data },
+      layer: layers,
+    };
+  }, [maxPainHistory]);
 
   const ivTermSpec = useMemo(() => {
     if (!optionChain?.analytics?.iv_term_structure?.length) return null;
@@ -866,19 +1163,93 @@ const InvestingOverview: React.FC = () => {
             </Box>
           )}
 
+          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
+            {volumeByStrikeSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Volume by Strike
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Today's trading activity per strike. High volume at a strike signals active positioning. Purple line = spot price.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={volumeByStrikeSpec} height="260px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            {oiByStrikeSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Open Interest by Strike
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Accumulated positions per strike. Large OI clusters act as support/resistance walls. Purple line = spot price.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={oiByStrikeSpec} height="260px" />
+                </VegaProvider>
+              </Box>
+            )}
+          </Grid>
+
+          {volOiRatioByStrikeSpec && (
+            <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+              <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                Volume / OI Ratio by Strike
+              </Text>
+              <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                Ratio &gt; 1 (above yellow line) means new positions opening — fresh money flowing in. Ratio &lt; 1 means mostly existing positions.
+              </Text>
+              <VegaProvider>
+                <VegaPlot spec={volOiRatioByStrikeSpec} height="260px" />
+              </VegaProvider>
+            </Box>
+          )}
+
           {oiWallsSpec && (
             <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
               <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                Open Interest by Strike
+                OI Distribution (Puts negative)
               </Text>
               <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                Large OI clusters act as support/resistance. The yellow line marks Max Pain — the strike where most options expire worthless.
+                Mirrored view — puts shown negative. The yellow line marks Max Pain — the strike where most options expire worthless.
               </Text>
               <VegaProvider>
                 <VegaPlot spec={oiWallsSpec} height="260px" />
               </VegaProvider>
             </Box>
           )}
+
+          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
+            {maxPainHistorySpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Max Pain vs Spot Over Time
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  How max pain evolves as each expiration approaches. Diamonds = spot, circles = max pain per expiry.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={maxPainHistorySpec} height="280px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            {maxPainByExpirationSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Max Pain by Expiration
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Latest max pain strike for each expiration date. Purple line = current spot price.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={maxPainByExpirationSpec} height="280px" />
+                </VegaProvider>
+              </Box>
+            )}
+          </Grid>
 
           <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
             {ivTermSpec && (

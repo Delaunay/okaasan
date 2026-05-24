@@ -94,6 +94,7 @@ import TickerDetail from './components/investing/TickerDetail';
 import EconomicsOverview from './components/investing/EconomicsOverview';
 import RetirementPlanner from './components/investing/RetirementPlanner';
 import MortgagePlanner from './components/investing/MortgagePlanner';
+import OptionsPage from './components/investing/OptionsPage';
 import InvestingSettings from './components/settings/InvestingSettings';
 import TorrentsPage from './components/torrents/TorrentsPage';
 import DiscoverPage from './components/torrents/DiscoverPage';
@@ -251,6 +252,7 @@ function App() {
                 <Route path="/investing/retirement/:scenario" element={<RetirementPlanner />} />
                 <Route path="/investing/mortgage" element={<MortgagePlanner />} />
                 <Route path="/investing/mortgage/:scenario" element={<MortgagePlanner />} />
+                <Route path="/investing/options" element={<OptionsPage />} />
                 <Route path="/investing/:symbol" element={<TickerDetail />} />
                 <Route path="/settings/investing" element={isStaticMode() ? <Navigate to="/settings" replace /> : <InvestingSettings />} />
 

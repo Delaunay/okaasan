@@ -103,6 +103,60 @@ const TickerDetail: React.FC = () => {
       { field: 'close', type: 'quantitative' as const, title: 'Close', format: '.2f' },
       { field: 'volume', type: 'quantitative' as const, title: 'Volume', format: ',' },
     ];
+
+    const minDate = prices[0]?.date;
+    const maxDate = prices[prices.length - 1]?.date;
+
+    const weekly: string[] = [];
+    const monthly: string[] = [];
+    const quarterly: string[] = [];
+
+    const d = new Date(minDate + 'T12:00:00');
+    const endD = new Date(maxDate + 'T12:00:00');
+    const friCountByMonth: Record<string, number> = {};
+
+    while (d <= endD) {
+      const dow = d.getDay();
+      if (dow === 1 || dow === 3 || dow === 5) {
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (dow === 5) {
+          const mk = `${d.getFullYear()}-${d.getMonth()}`;
+          friCountByMonth[mk] = (friCountByMonth[mk] || 0) + 1;
+          if (friCountByMonth[mk] === 3) {
+            const m = d.getMonth() + 1;
+            if (m === 3 || m === 6 || m === 9 || m === 12) {
+              quarterly.push(iso);
+            } else {
+              monthly.push(iso);
+            }
+          } else {
+            weekly.push(iso);
+          }
+        } else {
+          weekly.push(iso);
+        }
+      }
+      d.setDate(d.getDate() + 1);
+    }
+
+    const expiryRules = [
+      {
+        data: { values: weekly.map(e => ({ exp_date: e })) },
+        mark: { type: 'rule' as const, strokeWidth: 0.8, opacity: 0.3 },
+        encoding: { x: { field: 'exp_date', type: 'temporal' as const }, color: { value: '#94a3b8' } },
+      },
+      {
+        data: { values: monthly.map(e => ({ exp_date: e })) },
+        mark: { type: 'rule' as const, strokeDash: [4, 3], strokeWidth: 1.5, opacity: 0.5 },
+        encoding: { x: { field: 'exp_date', type: 'temporal' as const }, color: { value: '#f59e0b' } },
+      },
+      {
+        data: { values: quarterly.map(e => ({ exp_date: e })) },
+        mark: { type: 'rule' as const, strokeDash: [6, 3], strokeWidth: 2, opacity: 0.7 },
+        encoding: { x: { field: 'exp_date', type: 'temporal' as const }, color: { value: '#ef4444' } },
+      },
+    ];
+
     return {
       $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
       data: { values: withDir },
@@ -113,6 +167,7 @@ const TickerDetail: React.FC = () => {
           height: 280,
           encoding: { x: { field: 'date', type: 'temporal', title: null, axis: null, scale: { zero: false, padding: 10 } } },
           layer: [
+            ...expiryRules,
             {
               mark: { type: 'area', interpolate: 'monotone', opacity: 0.12, color: '#94a3b8' },
               encoding: {

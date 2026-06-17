@@ -19,6 +19,7 @@ interface ZigbeeDevice {
   supported: boolean;
   state: Record<string, any>;
   metrics: Record<string, string>;
+  availability: 'online' | 'offline' | 'unknown';
 }
 
 interface SensorConfigEntry {
@@ -118,16 +119,16 @@ const SensorTile: React.FC<{
   configs: SensorConfigEntry[];
   onClick: () => void;
 }> = ({ device, configs, onClick }) => {
-  const { state, friendly_name, metrics, power_source } = device;
+  const { state, friendly_name, metrics, power_source, availability } = device;
 
-  // Only show non-diagnostic metrics that are enabled for recording
   const enabledMetrics = Object.entries(metrics || {}).filter(([metricName]) => {
     if (DIAGNOSTIC_METRICS.has(metricName)) return false;
     const cfg = configs.find(c => c.device_name === friendly_name && c.metric === metricName);
     return cfg ? cfg.enabled : true;
   });
 
-  const hasData = enabledMetrics.some(([k]) => k in state && typeof state[k] === 'number');
+  const badgeColor = availability === 'online' ? 'green' : availability === 'offline' ? 'red' : 'gray';
+  const badgeLabel = availability === 'online' ? 'Online' : availability === 'offline' ? 'Offline' : 'Unknown';
 
   return (
     <Box
@@ -161,8 +162,8 @@ const SensorTile: React.FC<{
       </VStack>
 
       <HStack justify="space-between" mt={1}>
-        <Badge fontSize="2xs" colorPalette={hasData ? 'green' : 'gray'}>
-          {hasData ? 'Live' : 'Offline'}
+        <Badge fontSize="2xs" colorPalette={badgeColor}>
+          {badgeLabel}
         </Badge>
         {power_source === 'Battery' && typeof state.battery === 'number' && (
           <Text fontSize="xs" color="var(--muted-text)">🔋{state.battery}%</Text>

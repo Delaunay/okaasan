@@ -200,7 +200,12 @@ def create_app() -> FastAPI:
     from .news import router as news_router
     from .computers import router as computers_router
     from .investing import router as investing_router
-    from .smarthome import router as smarthome_router
+    try:
+        from .smarthome import router as smarthome_router
+        _has_smarthome = True
+    except ImportError:
+        _has_smarthome = False
+
     from .alerts import router as alerts_router
     from .proxy import router as proxy_router
 
@@ -226,25 +231,27 @@ def create_app() -> FastAPI:
     app.include_router(news_router)
     app.include_router(computers_router)
     app.include_router(investing_router)
-    app.include_router(smarthome_router)
+    if _has_smarthome:
+        app.include_router(smarthome_router)
     app.include_router(alerts_router)
     app.include_router(proxy_router)
 
     # Dedicated DB for smart home sensor history
-    from .smarthome.models import SmartHomeBase
-    smarthome_db_path = os.path.join(str(private_folder()), "smarthome.db")
-    smarthome_engine = create_engine(
-        f"sqlite:///{smarthome_db_path}",
-        connect_args={"check_same_thread": False, "timeout": 30},
-        pool_pre_ping=True,
-    )
-    event.listen(smarthome_engine, "connect", _set_sqlite_pragmas)
-    SmartHomeBase.metadata.create_all(bind=smarthome_engine)
-    SmartHomeSessionLocal = sessionmaker(bind=smarthome_engine)
-    app.state.SmartHomeSessionLocal = SmartHomeSessionLocal
+    if _has_smarthome:
+        from .smarthome.models import SmartHomeBase
+        smarthome_db_path = os.path.join(str(private_folder()), "smarthome.db")
+        smarthome_engine = create_engine(
+            f"sqlite:///{smarthome_db_path}",
+            connect_args={"check_same_thread": False, "timeout": 30},
+            pool_pre_ping=True,
+        )
+        event.listen(smarthome_engine, "connect", _set_sqlite_pragmas)
+        SmartHomeBase.metadata.create_all(bind=smarthome_engine)
+        SmartHomeSessionLocal = sessionmaker(bind=smarthome_engine)
+        app.state.SmartHomeSessionLocal = SmartHomeSessionLocal
 
-    from .smarthome import routes as _smarthome_routes
-    _smarthome_routes._SessionLocal = SmartHomeSessionLocal
+        from .smarthome import routes as _smarthome_routes
+        _smarthome_routes._SessionLocal = SmartHomeSessionLocal
 
     # Dedicated DB for alerts
     from .alerts.models import AlertsBase
@@ -264,8 +271,9 @@ def create_app() -> FastAPI:
 
     # Register alert metric sources
     from .alerts.sources import register as _register_source
-    from .alerts.sources.sensors import SensorMetricSource
-    _register_source(SensorMetricSource())
+    if _has_smarthome:
+        from .alerts.sources.sensors import SensorMetricSource
+        _register_source(SensorMetricSource())
 
     from .alerts.sources.calendar import CalendarMetricSource
     _register_source(CalendarMetricSource(SessionLocal))
@@ -615,12 +623,13 @@ def create_app() -> FastAPI:
             if settings.get("auto_update"):
                 updater.start_update_loop(settings.get("update_interval_hours", 24))
 
-        from .smarthome.mqtt_client import start as _start_mqtt
-        _start_mqtt()
+        if _has_smarthome:
+            from .smarthome.mqtt_client import start as _start_mqtt
+            _start_mqtt()
 
-        from .smarthome.recorder import SensorRecorder
-        app.state._sensor_recorder = SensorRecorder(app.state.SmartHomeSessionLocal)
-        app.state._sensor_recorder.start()
+            from .smarthome.recorder import SensorRecorder
+            app.state._sensor_recorder = SensorRecorder(app.state.SmartHomeSessionLocal)
+            app.state._sensor_recorder.start()
 
         from .alerts.yaml_loader import load_yaml_config
         _alerts_yaml_path = public_folder() / "data" / "_config" / "_alerts.yaml"

@@ -102,10 +102,19 @@ async def list_devices():
     states = mqtt_client.get_all_states()
     all_metrics = mqtt_client.get_all_numeric_metrics()
     all_reporting = mqtt_client.get_all_reporting()
+    availability = mqtt_client.get_all_availability()
 
     result = []
     for dev in devices:
         friendly_name = dev.get("friendly_name", "")
+        state = states.get(friendly_name, {})
+
+        # Determine availability: prefer MQTT availability topic,
+        # fall back to "online" if we have state data, else "offline"
+        avail = availability.get(friendly_name, "")
+        if not avail or avail == "unknown":
+            avail = "online" if state else "offline"
+
         result.append({
             "ieee_address": dev.get("ieee_address"),
             "friendly_name": friendly_name,
@@ -115,9 +124,10 @@ async def list_devices():
             "description": dev.get("definition", {}).get("description", ""),
             "power_source": dev.get("power_source", ""),
             "supported": dev.get("supported", False),
-            "state": states.get(friendly_name, {}),
+            "state": state,
             "metrics": all_metrics.get(friendly_name, {}),
             "reporting": all_reporting.get(friendly_name, {}),
+            "availability": avail,
         })
     return {"devices": result, "mqtt_connected": mqtt_client.is_connected()}
 

@@ -13,6 +13,7 @@ log = logging.getLogger("okaasan.smarthome.mqtt")
 _client: mqtt.Client | None = None
 _devices: dict[str, dict[str, Any]] = {}
 _device_states: dict[str, dict[str, Any]] = {}
+_device_availability: dict[str, str] = {}  # friendly_name -> "online" | "offline"
 _lock = threading.Lock()
 
 BRIDGE_DEVICES_TOPIC = "zigbee2mqtt/bridge/devices"
@@ -123,6 +124,17 @@ def get_all_states() -> dict[str, dict[str, Any]]:
         return dict(_device_states)
 
 
+def get_device_availability(friendly_name: str) -> str:
+    """Return 'online', 'offline', or 'unknown'."""
+    with _lock:
+        return _device_availability.get(friendly_name, "unknown")
+
+
+def get_all_availability() -> dict[str, str]:
+    with _lock:
+        return dict(_device_availability)
+
+
 def publish(topic: str, payload: dict | str) -> bool:
     if _client is None or not _client.is_connected():
         return False
@@ -136,10 +148,18 @@ def set_device_state(friendly_name: str, state: dict[str, Any]) -> bool:
     return publish(topic, state)
 
 
+def request_device_state(friendly_name: str) -> bool:
+    """Ask Z2M to query the device and publish its current state."""
+    topic = f"{BASE_TOPIC}/{friendly_name}/get"
+    return publish(topic, {"state": ""})
+
+
 def _on_connect(client: mqtt.Client, userdata: Any, flags: Any, rc: int, properties: Any = None) -> None:
     if rc == 0:
         log.info("Connected to MQTT broker")
         client.subscribe(f"{BASE_TOPIC}/#")
+        # Ask Z2M to publish the device list and request state from all devices
+        client.publish(f"{BASE_TOPIC}/bridge/request/devices", "")
     else:
         log.error("MQTT connection failed with code %d", rc)
 
@@ -152,12 +172,18 @@ def _on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> No
         return
 
     if topic == BRIDGE_DEVICES_TOPIC:
+        names = []
         with _lock:
             _devices.clear()
             for dev in payload:
                 if dev.get("type") in ("EndDevice", "Router"):
                     _devices[dev["friendly_name"]] = dev
-        log.info("Received %d devices from bridge", len(_devices))
+                    names.append(dev["friendly_name"])
+        log.info("Received %d devices from bridge", len(names))
+        # Request current state from each device to populate the cache
+        for name in names:
+            if _client and _client.is_connected():
+                _client.publish(f"{BASE_TOPIC}/{name}/get", json.dumps({"state": ""}))
         return
 
     if topic == BRIDGE_STATE_TOPIC:
@@ -166,8 +192,17 @@ def _on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> No
     if topic.startswith(f"{BASE_TOPIC}/bridge/"):
         return
 
-    # Device state update: zigbee2mqtt/<friendly_name>
     parts = topic.split("/")
+
+    # Availability update: zigbee2mqtt/<friendly_name>/availability
+    if len(parts) == 3 and parts[0] == BASE_TOPIC and parts[2] == "availability":
+        friendly_name = parts[1]
+        state = payload.get("state", "") if isinstance(payload, dict) else str(payload)
+        with _lock:
+            _device_availability[friendly_name] = state
+        return
+
+    # Device state update: zigbee2mqtt/<friendly_name>
     if len(parts) == 2 and parts[0] == BASE_TOPIC:
         friendly_name = parts[1]
         if isinstance(payload, dict):

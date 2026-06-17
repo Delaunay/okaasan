@@ -254,6 +254,8 @@ def create_health_router(engine) -> APIRouter:
         ext = a.extension or {}
         tz_off = ext.get("tz_offset_sec", 0) or 0
         local_bed = a.start_time + timedelta(seconds=tz_off)
+        if local_bed.hour < 12:
+            local_bed -= timedelta(days=1)
         return local_bed.strftime("%Y-%m-%d")
 
     def _sleep_dedupe_score(a: HealthActivity) -> Tuple[int, int, int, int]:
@@ -299,10 +301,9 @@ def create_health_router(engine) -> APIRouter:
         activities = _dedupe_sleep_sessions(activities)
         rows: list[dict] = []
         for a in activities:
-            ext = a.extension or {}
-            tz_off = ext.get("tz_offset_sec", 0) or 0
-            local_bed = a.start_time + timedelta(seconds=tz_off)
-            day_iso = local_bed.strftime("%Y-%m-%d")
+            day_iso = _sleep_local_bed_date(a)
+            if not day_iso:
+                continue
             smry = a.summary or {}
             for stage, key in [("Deep", "deep_seconds"), ("Light", "light_seconds"), ("REM", "rem_seconds"), ("Awake", "awake_seconds")]:
                 val = smry.get(key)
@@ -354,10 +355,13 @@ def create_health_router(engine) -> APIRouter:
             if not sleep_levels or not a.start_time:
                 continue
 
+            bed_date_str = _sleep_local_bed_date(a)
+            if not bed_date_str:
+                continue
+            bed_date = datetime.fromisoformat(bed_date_str)
             tz_off = ext.get("tz_offset_sec", 0) or 0
-            local_bed = a.start_time + timedelta(seconds=tz_off)
-            date_label = local_bed.strftime("%m/%d")
-            weekday = _WEEKDAY_ORDER[local_bed.weekday()]
+            date_label = bed_date.strftime("%m/%d")
+            weekday = _WEEKDAY_ORDER[bed_date.weekday()]
 
             for lvl in sleep_levels:
                 try:
@@ -368,7 +372,7 @@ def create_health_router(engine) -> APIRouter:
                 rows.append({
                     "night": date_label,
                     "weekday": weekday,
-                    "weekday_num": local_bed.weekday(),
+                    "weekday_num": bed_date.weekday(),
                     "week_offset": night_idx,
                     "stage": lvl.get("stage", "Unknown"),
                     "start_h": _to_night_hour(s_dt, tz_off),
@@ -391,15 +395,22 @@ def create_health_router(engine) -> APIRouter:
             .order_by(HealthActivity.start_time)
             .all()
         )
-        return [
-            {
+        rows = []
+        for a in activities:
+            dur_sec = a.duration_seconds
+            if not dur_sec and a.end_time and a.start_time:
+                dur_sec = int((a.end_time - a.start_time).total_seconds())
+            duration_min = round((dur_sec or 0) / 60, 1)
+            # Ensure activities with no duration still appear on the chart
+            if duration_min <= 0:
+                duration_min = 1.0
+            rows.append({
                 "date": a.start_time.isoformat() + "Z",
                 "type": a.activity_type,
-                "duration_min": round((a.duration_seconds or 0) / 60, 1),
+                "duration_min": duration_min,
                 "distance_km": round((a.distance_m or 0) / 1000, 1),
-            }
-            for a in activities
-        ]
+            })
+        return rows
 
     @router.get("/data/activities-detail")
     def data_activities_detail(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):

@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .models import StockPrice, OptionChainSnapshot, OptionHistoricalBar, WatchlistItem
+from .models import StockPrice, OptionChainSnapshot, OptionHistoricalBar, IntradayPrice, WatchlistItem
 
 log = logging.getLogger("okaasan.investing.fetcher")
 
@@ -52,7 +52,7 @@ def fetch_stock_prices(
     import yfinance as yf
 
     if end is None:
-        end = date.today()
+        end = date.today() + timedelta(days=1)
     if start is None:
         latest = db.query(func.max(StockPrice.date)).filter(
             StockPrice.symbol == symbol
@@ -94,11 +94,89 @@ def fetch_stock_prices(
     return {"symbol": symbol, "rows_added": added}
 
 
+# ── Intraday Prices (yfinance) ────────────────────────────────────────
+
+
+def fetch_intraday_prices(
+    db: Session,
+    symbol: str,
+    *,
+    interval: str = "5m",
+    period: str = "1d",
+) -> dict:
+    """Fetch intraday OHLCV bars and accumulate in local DB.
+
+    Yahoo retains 1m data for ~7 days, 5m for ~60 days.
+    By fetching daily we build a permanent intraday archive.
+    """
+    import yfinance as yf
+
+    valid_intervals = ("1m", "2m", "5m", "15m", "30m", "60m", "1h")
+    if interval not in valid_intervals:
+        return {"symbol": symbol, "error": f"invalid interval, use one of {valid_intervals}"}
+
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period=period, interval=interval, prepost=False)
+
+    if hist.empty:
+        return {"symbol": symbol, "rows_added": 0, "message": "no intraday data"}
+
+    added = 0
+    for idx, row in hist.iterrows():
+        ts = idx.to_pydatetime()
+        if ts.tzinfo:
+            ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+
+        exists = db.query(IntradayPrice).filter_by(
+            symbol=symbol, timestamp=ts, interval=interval,
+        ).first()
+        if exists:
+            continue
+
+        db.add(IntradayPrice(
+            symbol=symbol,
+            timestamp=ts,
+            interval=interval,
+            open=_safe_float(row.get("Open")),
+            high=_safe_float(row.get("High")),
+            low=_safe_float(row.get("Low")),
+            close=_safe_float(row.get("Close")),
+            volume=_safe_float(row.get("Volume")),
+        ))
+        added += 1
+
+    db.commit()
+    log.info("Fetched %d intraday bars (%s) for %s", added, interval, symbol)
+    return {"symbol": symbol, "rows_added": added, "interval": interval}
+
+
 # ── Option Chain Snapshots (yfinance) ────────────────────────────────
 
 
-def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) -> dict:
-    """Snapshot the current option chain via yfinance and store."""
+def _current_session_label() -> str:
+    """Determine market session based on current US Eastern time."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+
+    et = datetime.now(ZoneInfo("America/New_York"))
+    hour = et.hour + et.minute / 60.0
+    if hour < 11.0:
+        return "open"
+    elif hour < 14.0:
+        return "midday"
+    else:
+        return "close"
+
+
+def fetch_option_chain(
+    db: Session, symbol: str, *, max_expirations: int = 0, session_label: str | None = None,
+) -> dict:
+    """Snapshot the current option chain via yfinance and store.
+
+    session_label: "open", "midday", or "close". Auto-detected from current time if not provided.
+    """
     import yfinance as yf
 
     ticker = yf.Ticker(symbol)
@@ -107,6 +185,7 @@ def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) ->
         return {"symbol": symbol, "contracts_added": 0, "message": "no expirations"}
 
     today = date.today()
+    label = session_label or _current_session_label()
     added = 0
 
     spot = None
@@ -139,6 +218,7 @@ def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) ->
                 exists = db.query(OptionChainSnapshot).filter_by(
                     symbol=symbol,
                     snapshot_date=today,
+                    snapshot_time=label,
                     expiration=exp_date,
                     strike=strike,
                     option_type=opt_type,
@@ -149,6 +229,7 @@ def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) ->
                 db.add(OptionChainSnapshot(
                     symbol=symbol,
                     snapshot_date=today,
+                    snapshot_time=label,
                     underlying_price=spot,
                     expiration=exp_date,
                     strike=strike,
@@ -163,8 +244,8 @@ def fetch_option_chain(db: Session, symbol: str, *, max_expirations: int = 0) ->
                 added += 1
 
     db.commit()
-    log.info("Fetched %d option contracts for %s", added, symbol)
-    return {"symbol": symbol, "contracts_added": added, "expirations": len(expirations)}
+    log.info("Fetched %d option contracts for %s [%s]", added, symbol, label)
+    return {"symbol": symbol, "contracts_added": added, "expirations": len(expirations), "session": label}
 
 
 # ── Historical Option Bars (Alpaca) ──────────────────────────────────
@@ -248,8 +329,9 @@ def refresh_all(db: Session, config: dict) -> dict:
     symbols = [w.symbol for w in db.query(WatchlistItem).all()]
     option_symbols = config.get("option_symbols", ["SPY"])
     max_exp = config.get("max_expirations", 0)
+    intraday_interval = config.get("intraday_interval", "5m")
 
-    results = {"prices": [], "options": [], "alpaca_options": []}
+    results = {"prices": [], "intraday": [], "options": [], "alpaca_options": []}
 
     for sym in symbols:
         try:
@@ -258,6 +340,16 @@ def refresh_all(db: Session, config: dict) -> dict:
         except Exception as exc:
             log.error("Price fetch failed for %s: %s", sym, exc)
             results["prices"].append({"symbol": sym, "error": str(exc)})
+
+    # Intraday prices for all watchlist symbols + option symbols
+    intraday_symbols = list(set(symbols + option_symbols))
+    for sym in intraday_symbols:
+        try:
+            r = fetch_intraday_prices(db, sym, interval=intraday_interval)
+            results["intraday"].append(r)
+        except Exception as exc:
+            log.error("Intraday fetch failed for %s: %s", sym, exc)
+            results["intraday"].append({"symbol": sym, "error": str(exc)})
 
     for sym in option_symbols:
         try:

@@ -19,7 +19,7 @@ const HRVChart: React.FC<Props> = ({ start, end }) => {
         data: { url: healthDataUrl('hrv', { start, end }) },
         layer: [
             {
-                mark: { type: 'point', size: 30, opacity: 0.5 },
+                mark: { type: 'point', size: 15, opacity: 0.5 },
                 encoding: {
                     x: { field: 't', type: 'temporal', title: null, scale: { type: 'time', domain: start && end ? [start, endOfDay(end)] : undefined } },
                     y: { field: 'v', type: 'quantitative', title: 'HRV (ms)', scale: { zero: false } },

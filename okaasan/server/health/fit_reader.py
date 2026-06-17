@@ -24,7 +24,7 @@ _SPORT_NORMALIZE: dict[str, str] = {
     "swimming": "lap_swimming",
     "training": "yoga",
     "generic": "other",
-}
+} 
 
 log = logging.getLogger("okaasan.health.fit")
 

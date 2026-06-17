@@ -37,6 +37,7 @@ function fmt(d: Date) {
     return d.toISOString().slice(0, 10);
 }
 
+
 const SummaryCard: React.FC<{ label: string; value?: number; unit?: string }> = ({ label, value, unit }) => (
     <Box
         p={4}
@@ -228,7 +229,7 @@ const HealthDashboard: React.FC = () => {
                     </Box>
                 </Grid>
 
-                {/* Sleep overlay */}
+                {/* Sleep consistency */}
                 <VStack align="stretch" gap={4} mb={8}>
                     <Heading size="md">Sleep Consistency</Heading>
                     <SleepOverlayChart start={startDate} end={endDate} />

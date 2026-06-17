@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge,
-  Button, Table, Textarea,
+  Button, Table, Textarea, Input,
 } from '@chakra-ui/react';
 import {
   Download, Upload, Play, Pause, Trash2, Plus, Power, PowerOff,
   RefreshCw, CheckCircle, ArrowDownToLine, Settings, Clock,
-  Clipboard, X, Shield, ShieldOff, ShieldAlert, Link,
+  Clipboard, X, Shield, ShieldOff, ShieldAlert, Link, LogIn,
 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -136,6 +136,8 @@ const TorrentsPage: React.FC = () => {
   const [clipboardMagnet, setClipboardMagnet] = useState<string | null>(null);
   const [vpn, setVpn] = useState<VpnStatus | null>(null);
   const [vpnConnecting, setVpnConnecting] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [vpnLoggedIn, setVpnLoggedIn] = useState<boolean | null>(null);
   const lastDismissedRef = useRef<string | null>(null);
 
   // ── WebSocket: receive live status updates from the server ───
@@ -164,10 +166,19 @@ const TorrentsPage: React.FC = () => {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchVpnAccount = useCallback(async () => {
+    try {
+      const data = await recipeAPI.getVpnAccount();
+      setVpnLoggedIn(data.logged_in);
+    } catch {
+      setVpnLoggedIn(false);
+    }
+  }, []);
+
   const fetchInitial = useCallback(async () => {
-    await Promise.all([fetchHistory(), fetchDestinations()]);
+    await Promise.all([fetchHistory(), fetchDestinations(), fetchVpnAccount()]);
     setLoading(false);
-  }, [fetchHistory, fetchDestinations]);
+  }, [fetchHistory, fetchDestinations, fetchVpnAccount]);
 
   useEffect(() => {
     fetchInitial();
@@ -207,11 +218,7 @@ const TorrentsPage: React.FC = () => {
     setError(null);
     setVpnConnecting(true);
     try {
-      await recipeAPI.request('/vpn/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p2p: true }),
-      });
+      await recipeAPI.vpnConnect({ p2p: true });
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -222,7 +229,7 @@ const TorrentsPage: React.FC = () => {
   const disconnectVpn = async () => {
     setError(null);
     try {
-      await recipeAPI.request('/vpn/disconnect', { method: 'POST' });
+      await recipeAPI.vpnDisconnect();
     } catch (e: any) {
       setError(e?.message || String(e));
     }
@@ -231,13 +238,17 @@ const TorrentsPage: React.FC = () => {
   const bindQbtToVpn = async () => {
     setError(null);
     try {
-      await recipeAPI.request('/vpn/bind-qbt', { method: 'POST' });
+      await recipeAPI.vpnBindQbt();
     } catch (e: any) {
       setError(e?.message || String(e));
     }
   };
 
   const startQbt = async () => {
+    if (!vpn?.connected) {
+      setError('VPN must be connected before starting the torrent client.');
+      return;
+    }
     setError(null);
     try {
       await recipeAPI.request('/torrents/start', { method: 'POST' });
@@ -275,7 +286,6 @@ const TorrentsPage: React.FC = () => {
     try {
       await recipeAPI.request('/torrents/remove', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hash, delete_files: deleteFiles }),
       });
     } catch (e: any) { setError(e?.message || String(e)); }
@@ -285,7 +295,6 @@ const TorrentsPage: React.FC = () => {
     try {
       await recipeAPI.request('/torrents/pause', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hash }),
       });
     } catch (e: any) { setError(e?.message || String(e)); }
@@ -295,7 +304,6 @@ const TorrentsPage: React.FC = () => {
     try {
       await recipeAPI.request('/torrents/resume', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hash }),
       });
     } catch (e: any) { setError(e?.message || String(e)); }
@@ -351,7 +359,7 @@ const TorrentsPage: React.FC = () => {
               <Text ml={1}>Stop</Text>
             </Button>
           ) : (
-            <Button size="sm" colorPalette="green" variant="outline" onClick={startQbt}>
+            <Button size="sm" colorPalette="green" variant="outline" onClick={startQbt} disabled={!vpnUp} title={!vpnUp ? 'Connect VPN first' : 'Start qBittorrent'}>
               <Power size={14} />
               <Text ml={1}>Start</Text>
             </Button>
@@ -393,6 +401,12 @@ const TorrentsPage: React.FC = () => {
             )}
           </HStack>
           <HStack gap={2}>
+            {vpnLoggedIn === false && (
+              <Button size="xs" colorPalette="blue" variant="outline" onClick={() => setShowLoginModal(true)}>
+                <LogIn size={12} />
+                <Text ml={1}>Login</Text>
+              </Button>
+            )}
             {vpnUp && isConnected && (
               <Button size="xs" variant="outline" onClick={bindQbtToVpn} title="Bind qBittorrent to VPN interface">
                 <Link size={12} />
@@ -409,7 +423,7 @@ const TorrentsPage: React.FC = () => {
                 size="xs"
                 colorPalette="green"
                 variant="outline"
-                onClick={connectVpn}
+                onClick={vpnLoggedIn === false ? () => setShowLoginModal(true) : connectVpn}
                 disabled={vpnConnecting}
               >
                 {vpnConnecting ? <Spinner size="xs" /> : <Shield size={12} />}
@@ -677,8 +691,16 @@ const TorrentsPage: React.FC = () => {
           <VStack>
             <PowerOff size={32} color="var(--empty-text)" />
             <Text color="var(--empty-text)">
-              qBittorrent is not running. Click Start to launch it.
+              {!vpnUp
+                ? 'Connect VPN first, then start qBittorrent.'
+                : 'qBittorrent is not running. Click Start to launch it.'}
             </Text>
+            {!vpnUp && vpnLoggedIn === false && (
+              <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowLoginModal(true)}>
+                <LogIn size={14} />
+                <Text ml={1}>Login to NordVPN</Text>
+              </Button>
+            )}
           </VStack>
         </Flex>
       )}
@@ -737,6 +759,12 @@ const TorrentsPage: React.FC = () => {
             </Table.Root>
           </Box>
         </Box>
+      )}
+      {showLoginModal && (
+        <VpnLoginModal
+          onClose={() => setShowLoginModal(false)}
+          onLoggedIn={() => { setVpnLoggedIn(true); fetchVpnAccount(); }}
+        />
       )}
     </VStack>
   );
@@ -803,6 +831,101 @@ const ConfigPanel: React.FC<{
           </Button>
         </HStack>
       </VStack>
+    </Box>
+  );
+};
+
+const VpnLoginModal: React.FC<{
+  onClose: () => void;
+  onLoggedIn: () => void;
+}> = ({ onClose, onLoggedIn }) => {
+  const [token, setToken] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    if (!token.trim()) return;
+    setSubmitting(true);
+    setLoginError(null);
+    try {
+      const result = await recipeAPI.vpnLogin(token.trim());
+      if (result.success) {
+        onLoggedIn();
+        onClose();
+      } else {
+        setLoginError(result.error || result.message || 'Login failed');
+      }
+    } catch (e: any) {
+      setLoginError(e?.message || 'Login failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Box
+      position="fixed"
+      inset={0}
+      zIndex={1000}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+    >
+      <Box position="absolute" inset={0} bg="blackAlpha.600" onClick={onClose} />
+      <Box
+        position="relative"
+        bg="var(--card-bg-raised)"
+        borderRadius="xl"
+        p={6}
+        w="100%"
+        maxW="440px"
+        mx={4}
+        borderWidth="1px"
+        borderColor="var(--border-color)"
+        boxShadow="xl"
+      >
+        <HStack mb={4}>
+          <Shield size={20} />
+          <Heading size="md" color="var(--heading-color)">NordVPN Login</Heading>
+        </HStack>
+
+        <VStack gap={4} align="stretch">
+          <Text fontSize="sm" color="var(--muted-text)">
+            Enter your NordVPN access token to activate the VPN.
+            Generate one from your NordVPN account dashboard.
+          </Text>
+
+          {loginError && (
+            <Box p={3} borderRadius="md" bg="var(--panel-red-bg)" borderWidth="1px" borderColor="var(--panel-red-border)">
+              <Text fontSize="sm" color="var(--panel-red-text)">{loginError}</Text>
+            </Box>
+          )}
+
+          <Input
+            placeholder="NordVPN access token..."
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
+            type="password"
+            bg="var(--input-bg)"
+          />
+
+          <HStack gap={2} justify="end">
+            <Button size="sm" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              colorPalette="green"
+              onClick={handleLogin}
+              disabled={submitting || !token.trim()}
+            >
+              {submitting ? <Spinner size="xs" /> : <LogIn size={14} />}
+              <Text ml={1}>{submitting ? 'Logging in...' : 'Login'}</Text>
+            </Button>
+          </HStack>
+        </VStack>
+      </Box>
     </Box>
   );
 };

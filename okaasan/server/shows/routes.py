@@ -335,6 +335,80 @@ def get_watched_movies(request: Request, db: Session = Depends(_get_db)):
     return [m.to_json() for m in media_list]
 
 
+@router.get("/seen")
+@expose()
+def get_seen(request: Request, db: Session = Depends(_get_db)):
+    """Compact seen list: shows/movies with completion progress."""
+    tmdb = _get_tmdb(request)
+
+    # Get all media with their most recent watch time, ordered by latest activity
+    from sqlalchemy import func as sqla_func_sub
+    last_watched_sub = (
+        db.query(
+            WatchHistory.media_id,
+            sqla_func_sub.max(WatchHistory.watched_at).label("last_watched")
+        )
+        .group_by(WatchHistory.media_id)
+        .subquery()
+    )
+    media_list = (
+        db.query(Media)
+        .join(last_watched_sub, Media.id == last_watched_sub.c.media_id)
+        .order_by(last_watched_sub.c.last_watched.desc())
+        .all()
+    )
+
+    # Count distinct episodes watched per show
+    from sqlalchemy import func as sqla_func
+    episode_counts = dict(
+        db.query(
+            WatchHistory.media_id,
+            sqla_func.count(sqla_func.distinct(
+                sqla_func.concat(WatchHistory.season, '-', WatchHistory.episode)
+            ))
+        )
+        .filter(
+            WatchHistory.season.isnot(None),
+            WatchHistory.episode.isnot(None),
+        )
+        .group_by(WatchHistory.media_id)
+        .all()
+    )
+
+    # Also count total watch entries (including those without season/episode)
+    # as a fallback for shows where episodes weren't individually logged
+    total_watch_entries = dict(
+        db.query(WatchHistory.media_id, sqla_func.count(WatchHistory.id))
+        .group_by(WatchHistory.media_id)
+        .all()
+    )
+
+    results = []
+    for media in media_list:
+        item = media.to_json()
+        if media.media_type == "movie":
+            item["progress"] = 1.0
+        else:
+            watched_eps = episode_counts.get(media.id, 0)
+            # Fall back to total watch entries if no episode-level data
+            if watched_eps == 0:
+                watched_eps = total_watch_entries.get(media.id, 0)
+            total_eps = None
+            if tmdb and tmdb.available and media.tmdb_id:
+                info = tmdb.get_show(media.tmdb_id)
+                if info:
+                    total_eps = info.get("number_of_episodes")
+            if total_eps and total_eps > 0:
+                item["progress"] = min(watched_eps / total_eps, 1.0)
+            else:
+                item["progress"] = None
+            item["episodes_watched"] = watched_eps
+            item["episodes_total"] = total_eps
+        results.append(item)
+
+    return results
+
+
 # ── Favorites ───────────────────────────────────────────────────────
 
 @router.get("/favorites")
@@ -475,11 +549,13 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
     continue_watching = []
     suggestions = []
 
+    SCHEDULE_CACHE_TTL = 24 * 60 * 60  # 1 day — need fresh data for upcoming episodes
+
     for show in shows:
         if not tmdb.available:
             break
 
-        tmdb_data = tmdb.get_show(show.tmdb_id)
+        tmdb_data = tmdb.get_show(show.tmdb_id, max_age=SCHEDULE_CACHE_TTL)
         if not tmdb_data:
             continue
 
@@ -543,73 +619,85 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
             except (ValueError, TypeError):
                 pass
 
-        if effective_ep:
-            # Get the user's most recent watched entry that has episode info
-            last_watched = (
-                db.query(WatchHistory)
-                .filter(
-                    WatchHistory.media_id == show.id,
-                    WatchHistory.season.isnot(None),
-                    WatchHistory.season > 0,
-                )
-                .order_by(desc(WatchHistory.season), desc(WatchHistory.episode))
-                .first()
+        # Get the user's most recent watched entry that has episode info
+        last_watched = (
+            db.query(WatchHistory)
+            .filter(
+                WatchHistory.media_id == show.id,
+                WatchHistory.season.isnot(None),
+                WatchHistory.season > 0,
             )
+            .order_by(desc(WatchHistory.season), desc(WatchHistory.episode))
+            .first()
+        )
 
+        # Determine the latest aired season/episode from TMDB
+        # Use effective_ep if available, otherwise fall back to seasons data
+        if effective_ep:
             tmdb_season = effective_ep.get("season_number", 0)
             tmdb_episode = effective_ep.get("episode_number", 0)
-
-            if not last_watched:
-                # No episode-level tracking — show is in library/watchlist
-                # but user hasn't started watching yet.
-                first_regular = next(
-                    (s for s in tmdb_data.get("seasons", []) if s.get("season_number", 0) >= 1),
-                    None,
-                )
-                if not first_regular:
-                    continue
-                suggestions.append({
-                    **show_info,
-                    "last_watched": {"season": 0, "episode": 0},
-                    "next_episode": {"season": first_regular.get("season_number", 1), "episode": 1},
-                    "latest_aired": {"season": tmdb_season, "episode": tmdb_episode},
-                })
+        else:
+            # No next/last episode fields — derive from seasons list
+            seasons_data = tmdb_data.get("seasons", [])
+            regular_seasons = [s for s in seasons_data if s.get("season_number", 0) >= 1]
+            if regular_seasons:
+                last_season_info = max(regular_seasons, key=lambda s: s.get("season_number", 0))
+                tmdb_season = last_season_info.get("season_number", 0)
+                tmdb_episode = last_season_info.get("episode_count", 0)
+            else:
                 continue
 
-            user_season = last_watched.season
-            user_episode = last_watched.episode or 0
+        if not last_watched:
+            # No episode-level tracking — show is in library/watchlist
+            # but user hasn't started watching yet.
+            first_regular = next(
+                (s for s in tmdb_data.get("seasons", []) if s.get("season_number", 0) >= 1),
+                None,
+            )
+            if not first_regular:
+                continue
+            suggestions.append({
+                **show_info,
+                "last_watched": {"season": 0, "episode": 0},
+                "next_episode": {"season": first_regular.get("season_number", 1), "episode": 1},
+                "latest_aired": {"season": tmdb_season, "episode": tmdb_episode},
+            })
+            continue
 
-            if (tmdb_season, tmdb_episode) > (user_season, user_episode):
-                # Determine next unwatched episode
-                next_season = user_season
-                next_episode = user_episode + 1
-                # Check if the next episode exists in the same season
-                seasons_data = tmdb_data.get("seasons", [])
-                current_season_info = next(
-                    (s for s in seasons_data if s.get("season_number") == user_season), None
-                )
-                if current_season_info:
-                    ep_count = current_season_info.get("episode_count", 0)
-                    if next_episode > ep_count:
-                        next_season = user_season + 1
-                        next_episode = 1
+        user_season = last_watched.season
+        user_episode = last_watched.episode or 0
 
-                continue_watching.append({
-                    **show_info,
-                    "last_watched": {
-                        "season": user_season,
-                        "episode": user_episode,
-                    },
-                    "next_episode": {
-                        "season": next_season,
-                        "episode": next_episode,
-                    },
-                    "latest_aired": {
-                        "season": tmdb_season,
-                        "episode": tmdb_episode,
-                    },
-                    "last_watched_at": last_watched.watched_at.isoformat() + "Z" if last_watched.watched_at else None,
-                })
+        if (tmdb_season, tmdb_episode) > (user_season, user_episode):
+            # Determine next unwatched episode
+            next_season = user_season
+            next_episode = user_episode + 1
+            # Check if the next episode exists in the same season
+            seasons_data = tmdb_data.get("seasons", [])
+            current_season_info = next(
+                (s for s in seasons_data if s.get("season_number") == user_season), None
+            )
+            if current_season_info:
+                ep_count = current_season_info.get("episode_count", 0)
+                if next_episode > ep_count:
+                    next_season = user_season + 1
+                    next_episode = 1
+
+            continue_watching.append({
+                **show_info,
+                "last_watched": {
+                    "season": user_season,
+                    "episode": user_episode,
+                },
+                "next_episode": {
+                    "season": next_season,
+                    "episode": next_episode,
+                },
+                "latest_aired": {
+                    "season": tmdb_season,
+                    "episode": tmdb_episode,
+                },
+                "last_watched_at": last_watched.watched_at.isoformat() + "Z" if last_watched.watched_at else None,
+            })
 
     # Deduplicate (same show+season+episode can appear from both next/last)
     seen = set()

@@ -1,13 +1,16 @@
 """API routes for computer management and background tasks."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import platform
+import socket
 import subprocess
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
 import psutil
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
@@ -135,6 +138,231 @@ def restart_computer(computer_id: str):
         raise HTTPException(404, "Computer not found")
     subprocess.Popen(["sudo", "reboot"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return {"status": "reboot initiated"}
+
+
+# ---------------------------------------------------------------------------
+# Services endpoints
+# ---------------------------------------------------------------------------
+
+_SERVICES = [
+    {
+        "id": "pihole",
+        "name": "Pi-hole",
+        "description": "Network-wide ad blocking",
+        "check_url": "http://localhost:8080/admin/api.php?summaryRaw",
+        "web_port": 8080,
+        "web_path": "/admin",
+    },
+    {
+        "id": "rustdesk",
+        "name": "RustDesk Server",
+        "description": "Remote desktop access server",
+        "systemd_units": ["rustdesk-hbbs", "rustdesk-hbbr"],
+    },
+    {
+        "id": "plex",
+        "name": "Plex",
+        "description": "Media server",
+        "check_url": "http://localhost:32400/identity",
+        "web_port": 32400,
+        "web_path": "/web",
+    },
+    {
+        "id": "stash",
+        "name": "Stash",
+        "description": "Media organizer",
+        "check_url": "http://localhost:9999",
+        "web_port": 9999,
+        "web_path": "",
+    },
+    {
+        "id": "samba",
+        "name": "Samba",
+        "description": "SMB file sharing",
+        "check_port": 445,
+    },
+    {
+        "id": "nfs",
+        "name": "NFS",
+        "description": "Network file system",
+        "check_port": 2049,
+    },
+]
+
+
+def _get_lan_ip() -> str:
+    """Get the LAN-facing IP by connecting to an external target (no traffic sent)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "192.168.2.157"
+
+
+def _check_systemd_unit(unit: str) -> bool:
+    """Return True if a systemd unit is active."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", unit],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "active"
+    except Exception:
+        return False
+
+
+def _check_port(port: int) -> bool:
+    """Return True if something is listening on the given TCP port."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        s.connect(("127.0.0.1", port))
+        s.close()
+        return True
+    except Exception:
+        return False
+
+
+async def _check_service(svc: dict) -> dict:
+    """Check a single service and return its status dict."""
+    lan_ip = _get_lan_ip()
+    info: dict = {
+        "id": svc["id"],
+        "name": svc["name"],
+        "description": svc["description"],
+        "status": "unknown",
+        "url": None,
+    }
+
+    if "web_port" in svc:
+        port = svc["web_port"]
+        path = svc.get("web_path", "")
+        port_str = "" if port == 80 else f":{port}"
+        info["url"] = f"http://{lan_ip}{port_str}{path}"
+
+    if "check_url" in svc:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(svc["check_url"])
+                info["status"] = "running" if resp.status_code < 500 else "error"
+        except Exception:
+            info["status"] = "stopped"
+    elif "systemd_units" in svc:
+        all_active = all(_check_systemd_unit(u) for u in svc["systemd_units"])
+        info["status"] = "running" if all_active else "stopped"
+    elif "check_port" in svc:
+        info["status"] = "running" if _check_port(svc["check_port"]) else "stopped"
+
+    return info
+
+
+def _get_zfs_pools() -> list[dict]:
+    """Query ZFS pool status via zpool commands."""
+    pools = []
+    try:
+        result = subprocess.run(
+            ["zpool", "list", "-Hp", "-o", "name,size,alloc,free,capacity,health,fragmentation"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("\t")
+            if len(parts) < 6:
+                continue
+            name = parts[0]
+            total = int(parts[1])
+            used = int(parts[2])
+            free = int(parts[3])
+            cap_pct = int(parts[4])
+            health = parts[5]
+            frag = parts[6].rstrip("%") if len(parts) > 6 and parts[6] != "-" else "0"
+
+            pools.append({
+                "name": name,
+                "total": total,
+                "used": used,
+                "free": free,
+                "capacity_pct": cap_pct,
+                "health": health,
+                "fragmentation_pct": int(frag),
+            })
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+    # Get scrub status per pool
+    for pool in pools:
+        try:
+            result = subprocess.run(
+                ["zpool", "status", pool["name"]],
+                capture_output=True, text=True, timeout=10,
+            )
+            output = result.stdout
+            if "scrub in progress" in output:
+                pool["scrub_status"] = "in_progress"
+            elif "scrub repaired" in output:
+                for line in output.splitlines():
+                    if "scan:" in line and "scrub repaired" in line:
+                        pool["scrub_status"] = line.strip().removeprefix("scan: ")
+                        break
+            else:
+                pool["scrub_status"] = "none"
+
+            # Check for errors
+            pool["errors"] = "none"
+            for line in output.splitlines():
+                if line.strip().startswith("errors:"):
+                    pool["errors"] = line.strip().removeprefix("errors: ")
+                    break
+        except Exception:
+            pool["scrub_status"] = "unknown"
+            pool["errors"] = "unknown"
+
+    return pools
+
+
+@router.get("/{computer_id}/zfs")
+def get_zfs_status(computer_id: str):
+    if computer_id != "local":
+        raise HTTPException(404, "Computer not found")
+    return _get_zfs_pools()
+
+
+@router.get("/{computer_id}/services")
+async def list_services(computer_id: str):
+    if computer_id != "local":
+        raise HTTPException(404, "Computer not found")
+
+    results = await asyncio.gather(*[_check_service(s) for s in _SERVICES])
+    return results
+
+
+@router.get("/{computer_id}/services/rustdesk/config")
+async def get_rustdesk_config(computer_id: str):
+    """Return the RustDesk server config needed by clients."""
+    if computer_id != "local":
+        raise HTTPException(404, "Computer not found")
+
+    key_path = "/opt/rustdesk/id_ed25519.pub"
+    public_key = ""
+    if os.path.isfile(key_path):
+        with open(key_path) as f:
+            public_key = f.read().strip()
+
+    lan_ip = _get_lan_ip()
+
+    return {
+        "relay_server": lan_ip,
+        "id_server": lan_ip,
+        "api_server": "",
+        "public_key": public_key,
+    }
 
 
 # ---------------------------------------------------------------------------

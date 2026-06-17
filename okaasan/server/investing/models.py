@@ -72,6 +72,7 @@ class OptionChainSnapshot(InvestingBase):
     id = Column(Integer, primary_key=True)
     symbol = Column(String(20), nullable=False, index=True)
     snapshot_date = Column(Date, nullable=False, index=True)
+    snapshot_time = Column(String(10), nullable=True)  # "open" | "midday" | "close" | None (legacy)
     underlying_price = Column(Float, nullable=True)
     expiration = Column(Date, nullable=False)
     strike = Column(Float, nullable=False)
@@ -90,8 +91,8 @@ class OptionChainSnapshot(InvestingBase):
 
     __table_args__ = (
         UniqueConstraint(
-            "symbol", "snapshot_date", "expiration", "strike", "option_type",
-            name="uq_option_snap",
+            "symbol", "snapshot_date", "snapshot_time", "expiration", "strike", "option_type",
+            name="uq_option_snap_v2",
         ),
         Index("idx_ocs_sym_date", "symbol", "snapshot_date"),
     )
@@ -101,6 +102,7 @@ class OptionChainSnapshot(InvestingBase):
             "id": self.id,
             "symbol": self.symbol,
             "snapshot_date": self.snapshot_date.isoformat() if self.snapshot_date else None,
+            "snapshot_time": self.snapshot_time,
             "underlying_price": self.underlying_price,
             "expiration": self.expiration.isoformat() if self.expiration else None,
             "days_to_expiration": (self.expiration - date.today()).days if self.expiration else None,
@@ -151,6 +153,38 @@ class OptionHistoricalBar(InvestingBase):
             "volume": self.volume,
             "vwap": self.vwap,
             "trade_count": self.trade_count,
+        }
+
+
+class IntradayPrice(InvestingBase):
+    """Intraday OHLCV bars fetched from yfinance and accumulated locally."""
+    __tablename__ = "intraday_prices"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    interval = Column(String(5), nullable=False, default="5m")  # 1m, 5m, 15m, 1h
+    open = Column(Float, nullable=True)
+    high = Column(Float, nullable=True)
+    low = Column(Float, nullable=True)
+    close = Column(Float, nullable=True)
+    volume = Column(Float, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timestamp", "interval", name="uq_intraday_price"),
+        Index("idx_intraday_sym_ts", "symbol", "timestamp"),
+    )
+
+    def to_json(self) -> dict:
+        return {
+            "symbol": self.symbol,
+            "timestamp": self.timestamp.isoformat() + "Z" if self.timestamp else None,
+            "interval": self.interval,
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
         }
 
 

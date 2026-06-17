@@ -71,6 +71,13 @@ const RecipeList = () => {
       });
     }
 
+    // Stable sort: recipes with images first, preserve relative order within each group
+    filtered.sort((a, b) => {
+      const aHasImage = (a.images && a.images.length > 0) ? 0 : 1;
+      const bHasImage = (b.images && b.images.length > 0) ? 0 : 1;
+      return aHasImage - bHasImage;
+    });
+
     setFilteredRecipes(filtered);
   }, [recipes, componentFilter, tagFilter]);
 

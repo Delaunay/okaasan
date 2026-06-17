@@ -33,6 +33,16 @@ interface PricePoint {
   volume: number;
 }
 
+interface IntradayBar {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  interval: string;
+}
+
 function formatVolume(v: number): string {
   if (v >= 1_000_000_000) return (v / 1_000_000_000).toFixed(1) + 'B';
   if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
@@ -47,9 +57,10 @@ const TickerDetail: React.FC = () => {
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [range, setRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
-  const [volWindow, setVolWindow] = useState(20);
+  const [range, setRange] = useState<'1D' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('3M');
+  const [volWindow, setVolWindow] = useState(2);
   const [backfilling, setBackfilling] = useState(false);
+  const [intradayBars, setIntradayBars] = useState<IntradayBar[]>([]);
 
   const fetchInfo = useCallback(() => {
     if (!symbol) return;
@@ -60,6 +71,14 @@ const TickerDetail: React.FC = () => {
 
   const fetchPrices = useCallback(() => {
     if (!symbol) return;
+    if (range === '1D') {
+      const today = new Date().toISOString().slice(0, 10);
+      recipeAPI.request<{ symbol: string; bars: IntradayBar[] }>(`/investing/intraday/${symbol}?date=${today}`)
+        .then(d => { setIntradayBars(d.bars); setPrices([]); })
+        .catch(e => setError(e.message || 'Failed to load intraday'));
+      return;
+    }
+    setIntradayBars([]);
     let start: string | undefined;
     if (range !== 'ALL') {
       const d = new Date();
@@ -169,20 +188,30 @@ const TickerDetail: React.FC = () => {
           layer: [
             ...expiryRules,
             {
-              mark: { type: 'area', interpolate: 'monotone', opacity: 0.12, color: '#94a3b8' },
+              mark: { type: 'rule' as const },
               encoding: {
-                y: { field: 'high', type: 'quantitative', title: 'Price ($)', scale: { zero: false }, axis: { titlePadding: 16 } },
-                y2: { field: 'low' },
+                y: { field: 'low', type: 'quantitative', title: 'Price ($)', scale: { zero: false }, axis: { titlePadding: 16 } },
+                y2: { field: 'high' },
+                color: {
+                  field: 'up', type: 'nominal',
+                  scale: { domain: [true, false], range: ['#22c55e', '#ef4444'] },
+                  legend: null,
+                },
                 tooltip,
               },
             },
             {
-              mark: { type: 'line', interpolate: 'monotone', strokeWidth: 1.5, color: '#8b5cf6', strokeDash: [4, 3] },
-              encoding: { y: { field: 'open', type: 'quantitative', scale: { zero: false } }, tooltip },
-            },
-            {
-              mark: { type: 'line', interpolate: 'monotone', strokeWidth: 2, color: '#3b82f6' },
-              encoding: { y: { field: 'close', type: 'quantitative', scale: { zero: false } }, tooltip },
+              mark: { type: 'bar' as const, width: 12 },
+              encoding: {
+                y: { field: 'open', type: 'quantitative', scale: { zero: false } },
+                y2: { field: 'close' },
+                color: {
+                  field: 'up', type: 'nominal',
+                  scale: { domain: [true, false], range: ['#22c55e', '#ef4444'] },
+                  legend: null,
+                },
+                tooltip,
+              },
             },
           ],
         },
@@ -222,6 +251,87 @@ const TickerDetail: React.FC = () => {
       spacing: 0,
     };
   }, [prices, volWindow]);
+
+  const intradaySpec = useMemo(() => {
+    if (intradayBars.length === 0) return null;
+
+    const bars = intradayBars.map(b => ({
+      ...b,
+      up: b.close >= b.open,
+    }));
+
+    const tooltip = [
+      { field: 'timestamp', type: 'temporal' as const, title: 'Time', format: '%H:%M' },
+      { field: 'open', type: 'quantitative' as const, title: 'Open', format: '.2f' },
+      { field: 'high', type: 'quantitative' as const, title: 'High', format: '.2f' },
+      { field: 'low', type: 'quantitative' as const, title: 'Low', format: '.2f' },
+      { field: 'close', type: 'quantitative' as const, title: 'Close', format: '.2f' },
+      { field: 'volume', type: 'quantitative' as const, title: 'Volume', format: ',' },
+    ];
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      data: { values: bars },
+      padding: { right: 20, top: 20, bottom: 20 },
+      vconcat: [
+        {
+          width: 'container' as const,
+          height: 280,
+          encoding: {
+            x: { field: 'timestamp', type: 'temporal', title: null, axis: null },
+          },
+          layer: [
+            {
+              mark: { type: 'rule' as const },
+              encoding: {
+                y: { field: 'low', type: 'quantitative', title: 'Price ($)', scale: { zero: false } },
+                y2: { field: 'high' },
+                color: {
+                  field: 'up', type: 'nominal',
+                  scale: { domain: [true, false], range: ['#22c55e', '#ef4444'] },
+                  legend: null,
+                },
+                tooltip,
+              },
+            },
+            {
+              mark: { type: 'bar' as const, width: 12 },
+              encoding: {
+                y: { field: 'open', type: 'quantitative', scale: { zero: false } },
+                y2: { field: 'close' },
+                color: {
+                  field: 'up', type: 'nominal',
+                  scale: { domain: [true, false], range: ['#22c55e', '#ef4444'] },
+                  legend: null,
+                },
+                tooltip,
+              },
+            },
+          ],
+        },
+        {
+          width: 'container' as const,
+          height: 80,
+          mark: { type: 'bar' as const },
+          encoding: {
+            x: { field: 'timestamp', type: 'temporal', title: null, axis: { format: '%H:%M', labelAngle: -45, labelPadding: 8 } },
+            y: { field: 'volume', type: 'quantitative', title: 'Vol', axis: { format: '~s', titlePadding: 16 } },
+            color: {
+              field: 'up', type: 'nominal',
+              scale: { domain: [true, false], range: ['#22c55e', '#ef4444'] },
+              legend: null,
+            },
+            tooltip: [
+              { field: 'timestamp', type: 'temporal', title: 'Time', format: '%H:%M' },
+              { field: 'volume', type: 'quantitative', title: 'Volume', format: ',' },
+            ],
+          },
+        },
+      ],
+      resolve: { scale: { x: 'shared' } },
+      spacing: 0,
+    };
+  }, [intradayBars]);
 
   if (loading) {
     return (
@@ -307,7 +417,7 @@ const TickerDetail: React.FC = () => {
       {/* Range buttons + volatility window */}
       <HStack gap={3} flexWrap="wrap">
         <HStack gap={1}>
-          {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map(r => (
+          {(['1D', '1M', '3M', '6M', '1Y', 'ALL'] as const).map(r => (
             <Button
               key={r}
               size="xs"
@@ -336,7 +446,12 @@ const TickerDetail: React.FC = () => {
       </HStack>
 
       {/* Price + Volume chart */}
-      {chartSpec && (
+      {range === '1D' && intradaySpec && (
+        <VegaProvider>
+          <VegaPlot spec={intradaySpec} height="400px" />
+        </VegaProvider>
+      )}
+      {range !== '1D' && chartSpec && (
         <VegaProvider>
           <VegaPlot spec={chartSpec} height="400px" />
         </VegaProvider>

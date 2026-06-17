@@ -128,6 +128,26 @@ interface MaxPainHistoryData {
   series: MaxPainHistoryPoint[];
 }
 
+interface VolSmilePoint {
+  strike: number;
+  iv: number;
+}
+
+interface VolSmileSnapshot {
+  snapshot_date: string;
+  snapshot_time: string;
+  expiration: string | null;
+  underlying_price: number | null;
+  calls: VolSmilePoint[];
+  puts: VolSmilePoint[];
+}
+
+interface VolSmileHistoryData {
+  symbol: string;
+  expiration: string | null;
+  smiles: VolSmileSnapshot[];
+}
+
 function MiniSparkline({ data, width = 80, height = 24 }: { data: number[]; width?: number; height?: number }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
@@ -235,6 +255,7 @@ const InvestingOverview: React.FC = () => {
   const [optionChain, setOptionChain] = useState<OptionChainData | null>(null);
   const [selectedExpiration, setSelectedExpiration] = useState<string | null>(null);
   const [maxPainHistory, setMaxPainHistory] = useState<MaxPainHistoryData | null>(null);
+  const [volSmileHistory, setVolSmileHistory] = useState<VolSmileHistoryData | null>(null);
   const navigate = useNavigate();
 
   const fetchData = useCallback(() => {
@@ -280,6 +301,7 @@ const InvestingOverview: React.FC = () => {
     setSelectedOption(symbol);
     setSelectedExpiration(null);
     setMaxPainHistory(null);
+    setVolSmileHistory(null);
     try {
       const chain = await recipeAPI.request<OptionChainData>(`/investing/options/${symbol}`);
       setOptionChain(chain);
@@ -294,6 +316,19 @@ const InvestingOverview: React.FC = () => {
     }
   };
 
+  // Refetch vol smile history when expiration changes
+  useEffect(() => {
+    if (!selectedOption || !selectedExpiration) {
+      setVolSmileHistory(null);
+      return;
+    }
+    recipeAPI.request<VolSmileHistoryData>(
+      `/investing/options/${selectedOption}/vol-smile-history?expiration=${selectedExpiration}`
+    )
+      .then(setVolSmileHistory)
+      .catch(console.error);
+  }, [selectedOption, selectedExpiration]);
+
   const filteredContracts = optionChain?.contracts.filter(
     c => !selectedExpiration || c.expiration === selectedExpiration
   ) || [];
@@ -304,7 +339,11 @@ const InvestingOverview: React.FC = () => {
   const smileSpec = useMemo(() => {
     if (!optionChain || optionChain.contracts.length === 0) return null;
 
-    const rows = optionChain.contracts
+    const contracts = selectedExpiration
+      ? optionChain.contracts.filter(c => c.expiration === selectedExpiration)
+      : optionChain.contracts;
+
+    const rows = contracts
       .filter(c => c.implied_volatility != null && c.implied_volatility > 0.001)
       .map(c => {
         const dte = c.days_to_expiration ?? Math.round(
@@ -403,7 +442,7 @@ const InvestingOverview: React.FC = () => {
       data: { values: rows },
       layer: layers,
     };
-  }, [optionChain]);
+  }, [optionChain, selectedExpiration]);
 
   const pcrSpec = useMemo(() => {
     if (!optionChain?.sentiment_by_expiration) return null;
@@ -566,6 +605,23 @@ const InvestingOverview: React.FC = () => {
     },
   ] : [];
 
+  const maxPainRule = () => {
+    const mp = selectedExpiration
+      ? optionChain?.max_pain_by_expiration?.[selectedExpiration]
+      : Object.values(optionChain?.max_pain_by_expiration || {}).find(Boolean);
+    if (!mp) return [];
+    return [
+      {
+        mark: { type: 'rule', strokeDash: [2, 2], strokeWidth: 2 },
+        encoding: { x: { datum: mp.strike }, color: { value: '#f59e0b' } },
+      },
+      {
+        mark: { type: 'text', align: 'right', dx: -4, dy: -8, fontSize: 11 },
+        encoding: { x: { datum: mp.strike }, text: { value: `MP $${mp.strike}` }, color: { value: '#f59e0b' } },
+      },
+    ];
+  };
+
   const volumeByStrikeSpec = useMemo(() => {
     if (!strikeAggregation?.length) return null;
     const data = strikeAggregation.flatMap(d => [
@@ -593,9 +649,10 @@ const InvestingOverview: React.FC = () => {
           },
         },
         ...spotRule(optionChain?.underlying_price),
+        ...maxPainRule(),
       ],
     };
-  }, [strikeAggregation, optionChain?.underlying_price]);
+  }, [strikeAggregation, optionChain?.underlying_price, selectedExpiration]);
 
   const oiByStrikeSpec = useMemo(() => {
     if (!strikeAggregation?.length) return null;
@@ -624,9 +681,10 @@ const InvestingOverview: React.FC = () => {
           },
         },
         ...spotRule(optionChain?.underlying_price),
+        ...maxPainRule(),
       ],
     };
-  }, [strikeAggregation, optionChain?.underlying_price]);
+  }, [strikeAggregation, optionChain?.underlying_price, selectedExpiration]);
 
   const volOiRatioByStrikeSpec = useMemo(() => {
     if (!strikeAggregation?.length) return null;
@@ -663,11 +721,7 @@ const InvestingOverview: React.FC = () => {
 
   const volOiSpec = useMemo(() => {
     if (!optionChain?.analytics?.vol_oi_flags?.length) return null;
-    const keptStrikes = strikeAggregation ? new Set(strikeAggregation.map(d => d.strike)) : null;
-    const filtered = keptStrikes
-      ? optionChain.analytics.vol_oi_flags.filter(d => keptStrikes.has(d.strike))
-      : optionChain.analytics.vol_oi_flags;
-    const top = filtered.slice(0, 30);
+    const top = optionChain.analytics.vol_oi_flags.slice(0, 30);
     if (top.length === 0) return null;
     const data = top.map(d => ({
       label: `${d.strike} ${d.option_type[0].toUpperCase()} ${d.dte ?? ''}d`,
@@ -710,63 +764,73 @@ const InvestingOverview: React.FC = () => {
         },
       ],
     };
-  }, [optionChain, strikeAggregation]);
+  }, [optionChain]);
 
   const maxPainHistorySpec = useMemo(() => {
     if (!maxPainHistory?.series?.length) return null;
 
-    const expirations = [...new Set(maxPainHistory.series.map(p => p.expiration))];
-
-    const mpData = maxPainHistory.series.map(p => ({
-      date: p.snapshot_date,
-      price: p.max_pain_strike,
-      series: `MP ${p.expiration}`,
-      expiration: p.expiration,
-      dte: p.dte,
-    }));
-
+    // Spot price as a line over time (one point per unique snapshot date)
     const spotDates = new Set<string>();
     const spotData = maxPainHistory.series
       .filter(p => p.underlying_price != null && !spotDates.has(p.snapshot_date))
       .map(p => {
         spotDates.add(p.snapshot_date);
-        return { date: p.snapshot_date, price: p.underlying_price!, series: 'Spot Price', expiration: '', dte: 0 };
-      });
+        return { date: p.snapshot_date, price: p.underlying_price! };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    const allData = [...mpData, ...spotData];
+    // Max pain plotted at the expiration date (latest snapshot per expiration)
+    const latestByExp: Record<string, { max_pain: number; snapshot_date: string; expiration: string }> = {};
+    for (const p of maxPainHistory.series) {
+      const prev = latestByExp[p.expiration];
+      if (!prev || p.snapshot_date > prev.snapshot_date) {
+        latestByExp[p.expiration] = {
+          max_pain: p.max_pain_strike,
+          snapshot_date: p.snapshot_date,
+          expiration: p.expiration,
+        };
+      }
+    }
+    const mpData = Object.values(latestByExp)
+      .map(p => ({ date: p.expiration, price: p.max_pain, computed_on: p.snapshot_date }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    const colorDomain = ['Spot Price', ...expirations.map(e => `MP ${e}`)];
-    const colorRange = ['#6366f1', ...expirations.map((_, i) => {
-      const hues = ['#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6'];
-      return hues[i % hues.length];
-    })];
+    const layers: any[] = [
+      {
+        data: { values: spotData },
+        mark: { type: 'line', strokeWidth: 2, interpolate: 'monotone', point: { size: 30, filled: true } },
+        encoding: {
+          x: { field: 'date', type: 'temporal', title: 'Date' },
+          y: { field: 'price', type: 'quantitative', title: 'Price ($)', scale: { zero: false } },
+          color: { value: '#6366f1' },
+          tooltip: [
+            { field: 'date', type: 'temporal', title: 'Date' },
+            { field: 'price', type: 'quantitative', title: 'Spot', format: '$.2f' },
+          ],
+        },
+      },
+      {
+        data: { values: mpData },
+        mark: { type: 'point', size: 70, filled: true, opacity: 0.9 },
+        encoding: {
+          x: { field: 'date', type: 'temporal' },
+          y: { field: 'price', type: 'quantitative' },
+          color: { value: '#f59e0b' },
+          tooltip: [
+            { field: 'date', type: 'temporal', title: 'Expiration' },
+            { field: 'price', type: 'quantitative', title: 'Max Pain', format: '$.2f' },
+            { field: 'computed_on', type: 'temporal', title: 'Computed On' },
+          ],
+        },
+      },
+    ];
 
     return {
       $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
       width: 'container',
       height: 300,
       autosize: { type: 'fit', contains: 'padding' },
-      data: { values: allData },
-      mark: { type: 'point', size: 40, filled: true, opacity: 0.8 },
-      encoding: {
-        x: { field: 'date', type: 'temporal', title: 'Date' },
-        y: { field: 'price', type: 'quantitative', title: 'Price ($)', scale: { zero: false } },
-        color: {
-          field: 'series', type: 'nominal',
-          scale: { domain: colorDomain, range: colorRange },
-          legend: { title: null },
-        },
-        shape: {
-          condition: { test: "datum.series === 'Spot Price'", value: 'diamond' },
-          value: 'circle',
-        },
-        tooltip: [
-          { field: 'date', type: 'temporal', title: 'Date' },
-          { field: 'series', type: 'nominal', title: 'Series' },
-          { field: 'price', type: 'quantitative', title: 'Price', format: '$.2f' },
-          { field: 'dte', type: 'quantitative', title: 'DTE' },
-        ],
-      },
+      layer: layers,
     };
   }, [maxPainHistory]);
 
@@ -841,6 +905,173 @@ const InvestingOverview: React.FC = () => {
       layer: layers,
     };
   }, [maxPainHistory]);
+
+  const maxPainDistributionSpec = useMemo(() => {
+    if (!maxPainHistory?.series?.length) return null;
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Build spot lookup by date (snapshot_date → underlying_price)
+    const spotByDate: Record<string, number> = {};
+    for (const p of maxPainHistory.series) {
+      if (p.underlying_price != null) {
+        spotByDate[p.snapshot_date] = p.underlying_price;
+      }
+    }
+
+    // For each past expiration, find latest max pain and spot closest to expiration
+    const latestByExp: Record<string, { max_pain: number; expiration: string }> = {};
+    for (const p of maxPainHistory.series) {
+      if (p.expiration >= today) continue;
+      const prev = latestByExp[p.expiration];
+      if (!prev || p.snapshot_date > (prev as any).snapshot_date) {
+        latestByExp[p.expiration] = { max_pain: p.max_pain_strike, expiration: p.expiration, ...{ snapshot_date: p.snapshot_date } };
+      }
+    }
+
+    const sortedDates = Object.keys(spotByDate).sort();
+    const findClosestSpot = (target: string): number | null => {
+      if (spotByDate[target] != null) return spotByDate[target];
+      let best: string | null = null;
+      for (const d of sortedDates) {
+        if (!best || Math.abs(Date.parse(d) - Date.parse(target)) < Math.abs(Date.parse(best) - Date.parse(target))) {
+          best = d;
+        }
+      }
+      return best ? spotByDate[best] : null;
+    };
+
+    const diffs: { diff: number; expiration: string; max_pain: number; spot: number }[] = [];
+    for (const [exp, info] of Object.entries(latestByExp)) {
+      const spot = findClosestSpot(exp);
+      if (spot == null) continue;
+      diffs.push({
+        diff: spot - info.max_pain,
+        expiration: exp,
+        max_pain: info.max_pain,
+        spot,
+      });
+    }
+
+    if (diffs.length < 3) return null;
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container',
+      height: 220,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: diffs },
+      layer: [
+        {
+          mark: { type: 'bar', opacity: 0.7, cornerRadiusEnd: 3 },
+          encoding: {
+            x: { field: 'diff', type: 'quantitative', bin: { maxbins: 15 }, title: 'Spot − Max Pain ($)' },
+            y: { aggregate: 'count', type: 'quantitative', title: 'Count' },
+            color: { value: '#6366f1' },
+            tooltip: [
+              { field: 'diff', type: 'quantitative', bin: { maxbins: 15 }, title: 'Spot − MP Range' },
+              { aggregate: 'count', type: 'quantitative', title: 'Count' },
+            ],
+          },
+        },
+        {
+          mark: { type: 'rule', strokeDash: [4, 3], strokeWidth: 2 },
+          encoding: { x: { datum: 0 }, color: { value: '#f59e0b' } },
+        },
+      ],
+    };
+  }, [maxPainHistory]);
+
+  const volSmileEvolutionSpec = useMemo(() => {
+    if (!volSmileHistory?.smiles?.length || !selectedExpiration) return null;
+
+    const expDate = new Date(selectedExpiration + 'T00:00:00');
+    const allPoints: { strike: number; iv: number; label: string; dte: number; type: string }[] = [];
+    const hues = ['#6366f1', '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6'];
+
+    // Sort smiles chronologically — earlier snapshots first (higher DTE)
+    const sorted = [...volSmileHistory.smiles].sort((a, b) =>
+      a.snapshot_date.localeCompare(b.snapshot_date) || a.snapshot_time.localeCompare(b.snapshot_time)
+    );
+
+    for (const smile of sorted) {
+      const snapDate = new Date(smile.snapshot_date + 'T00:00:00');
+      const dte = Math.max(0, Math.round((expDate.getTime() - snapDate.getTime()) / 86400000));
+      const label = `${dte}d`;
+      for (const c of smile.calls) {
+        allPoints.push({ strike: c.strike, iv: +(c.iv * 100).toFixed(2), label, dte, type: 'call' });
+      }
+      for (const p of smile.puts) {
+        allPoints.push({ strike: p.strike, iv: +(p.iv * 100).toFixed(2), label, dte, type: 'put' });
+      }
+    }
+
+    if (allPoints.length === 0) return null;
+
+    const labels = [...new Set(allPoints.map(p => p.label))];
+    const colorDomain = labels;
+    const colorRange = labels.map((_, i) => hues[i % hues.length]);
+
+    const layers: any[] = [
+      {
+        mark: { type: 'line', interpolate: 'monotone', strokeWidth: 1.5, opacity: 0.85 },
+        encoding: {
+          x: { field: 'strike', type: 'quantitative', title: 'Strike Price' },
+          y: { field: 'iv', type: 'quantitative', title: 'Implied Volatility (%)', scale: { zero: false } },
+          color: {
+            field: 'label', type: 'nominal', title: 'Snapshot (DTE)',
+            scale: { domain: colorDomain, range: colorRange },
+          },
+          strokeDash: {
+            field: 'type', type: 'nominal',
+            scale: { domain: ['call', 'put'], range: [[1, 0], [4, 4]] },
+            legend: { title: 'Type' },
+          },
+          strokeWidth: {
+            field: 'dte', type: 'quantitative',
+            scale: { range: [2.5, 0.8] },
+            legend: null,
+          },
+          tooltip: [
+            { field: 'label', type: 'nominal', title: 'Snapshot' },
+            { field: 'dte', type: 'quantitative', title: 'DTE' },
+            { field: 'type', type: 'nominal', title: 'Type' },
+            { field: 'strike', type: 'quantitative', title: 'Strike', format: '.2f' },
+            { field: 'iv', type: 'quantitative', title: 'IV (%)', format: '.1f' },
+          ],
+        },
+      },
+    ];
+
+    // Spot price rule from latest snapshot
+    const latestSmile = sorted[sorted.length - 1];
+    if (latestSmile?.underlying_price != null) {
+      layers.push({
+        mark: { type: 'rule', strokeDash: [6, 4], strokeWidth: 1.5 },
+        encoding: {
+          x: { datum: latestSmile.underlying_price },
+          color: { value: 'var(--muted-text, #888)' },
+        },
+      });
+      layers.push({
+        mark: { type: 'text', align: 'left', dx: 4, dy: -8, fontSize: 10 },
+        encoding: {
+          x: { datum: latestSmile.underlying_price },
+          text: { value: `Spot $${latestSmile.underlying_price.toFixed(0)}` },
+          color: { value: 'var(--muted-text, #888)' },
+        },
+      });
+    }
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      width: 'container',
+      height: 300,
+      autosize: { type: 'fit', contains: 'padding' },
+      data: { values: allPoints },
+      layer: layers,
+    };
+  }, [volSmileHistory, selectedExpiration]);
 
   const ivTermSpec = useMemo(() => {
     if (!optionChain?.analytics?.iv_term_structure?.length) return null;
@@ -1082,289 +1313,307 @@ const InvestingOverview: React.FC = () => {
       {/* Option Chain Detail */}
       {optionChain && optionChain.contracts.length > 0 && (
         <Box>
-          <HStack mb={3} justify="space-between" flexWrap="wrap" gap={2}>
-            <HStack gap={3}>
-              <Heading size="md" color="var(--heading-color)">{optionChain.symbol} Options</Heading>
-              {optionChain.underlying_price != null && (
-                <Text fontSize="md" fontWeight="semibold" color="var(--muted-text)">
-                  Underlying: ${optionChain.underlying_price.toFixed(2)}
-                </Text>
-              )}
-            </HStack>
-            <HStack gap={1} flexWrap="wrap">
-              {optionChain.expirations.map(exp => {
-                const dteForExp = optionChain.contracts.find(c => c.expiration === exp)?.days_to_expiration;
-                const dteStr = dteForExp != null ? ` (${dteForExp}d)` : '';
-                return (
-                  <Button
-                    key={exp}
-                    size="xs"
-                    variant={selectedExpiration === exp ? 'solid' : 'outline'}
-                    colorPalette={selectedExpiration === exp ? 'blue' : 'gray'}
-                    onClick={() => setSelectedExpiration(exp)}
-                  >
-                    {exp}{dteStr}
-                  </Button>
-                );
-              })}
-            </HStack>
+          <HStack mb={3} gap={3}>
+            <Heading size="md" color="var(--heading-color)">{optionChain.symbol} Options</Heading>
+            {optionChain.underlying_price != null && (
+              <Text fontSize="md" fontWeight="semibold" color="var(--muted-text)">
+                Underlying: ${optionChain.underlying_price.toFixed(2)}
+              </Text>
+            )}
           </HStack>
 
-          {optionChain.sentiment && (() => {
-            const expSentiment = selectedExpiration && optionChain.sentiment_by_expiration?.[selectedExpiration];
-            const activeSentiment = expSentiment || optionChain.sentiment;
-            const dteForSelected = selectedExpiration
-              ? optionChain.contracts.find(c => c.expiration === selectedExpiration)?.days_to_expiration
-              : null;
-            const label = expSentiment
-              ? `${selectedExpiration}${dteForSelected != null ? ` (${dteForSelected}d)` : ''}`
-              : 'All Expirations';
-            return (
+          {/* ═══════ Section A: Market Structure (All Expirations) ═══════ */}
+          <Box mb={4}>
+            <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" letterSpacing="wide" color="var(--muted-text)" mb={3} borderBottom="1px solid" borderColor="var(--border-color)" pb={1}>
+              Market Structure (All Expirations)
+            </Text>
+
+            {optionChain.sentiment && (
+              <Box mb={2}>
+                <Text fontSize="xs" color="var(--muted-text)" mb={1}>Overall Sentiment</Text>
+                <SentimentPanel sentiment={optionChain.sentiment} />
+              </Box>
+            )}
+
+            {pcrSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={2} color="var(--heading-color)">
+                  Put/Call Ratio by Maturity
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={pcrSpec} height="220px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            {oiWallsSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  OI Distribution (Puts negative)
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Mirrored view — puts shown negative. The yellow line marks Max Pain — the strike where most options expire worthless.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={oiWallsSpec} height="260px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
+              {maxPainHistorySpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    Max Pain vs Spot Over Time
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    Purple line = spot price over time. Amber dots = max pain at each expiration date. As expirations accumulate, reveals whether spot converges toward max pain.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={maxPainHistorySpec} height="280px" />
+                  </VegaProvider>
+                </Box>
+              )}
+
+              {maxPainByExpirationSpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    Max Pain by Expiration
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    Latest max pain strike for each expiration date. Purple line = current spot price.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={maxPainByExpirationSpec} height="280px" />
+                  </VegaProvider>
+                </Box>
+              )}
+            </Grid>
+
+            {maxPainDistributionSpec && (
+              <Box p={3} mb={2} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Max Pain Convergence Distribution
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Distribution of (Spot − Max Pain) at past expirations. Clustering near zero suggests spot gravitates toward max pain. Yellow line = perfect convergence.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={maxPainDistributionSpec} height="240px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
+              {ivTermSpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    IV Term Structure
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    ATM IV across expirations. Downward slope (backwardation) signals near-term fear; upward slope (contango) is normal/calm.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={ivTermSpec} height="220px" />
+                  </VegaProvider>
+                </Box>
+              )}
+              {ivSkewSpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    IV Skew by Maturity
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    OTM put IV minus OTM call IV (~5% from spot). Positive (red) = demand for downside protection; negative (green) = call demand dominates.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={ivSkewSpec} height="220px" />
+                  </VegaProvider>
+                </Box>
+              )}
+            </Grid>
+
+            {volOiSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Unusual Activity (Volume / OI)
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Top contracts by volume relative to open interest. Ratio above 1 (dashed line) suggests new positions being opened — potential smart money signal.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={volOiSpec} height="240px" />
+                </VegaProvider>
+              </Box>
+            )}
+          </Box>
+
+          {/* ═══════ Section B: Expiration-Specific Analysis ═══════ */}
+          <Box>
+            <HStack mb={3} justify="space-between" flexWrap="wrap" gap={2} borderBottom="1px solid" borderColor="var(--border-color)" pb={1}>
+              <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" letterSpacing="wide" color="var(--muted-text)">
+                Expiration: {selectedExpiration}
+              </Text>
+              <HStack gap={1} flexWrap="wrap">
+                {optionChain.expirations.map(exp => {
+                  const dteForExp = optionChain.contracts.find(c => c.expiration === exp)?.days_to_expiration;
+                  const dteStr = dteForExp != null ? ` (${dteForExp}d)` : '';
+                  return (
+                    <Button
+                      key={exp}
+                      size="xs"
+                      variant={selectedExpiration === exp ? 'solid' : 'outline'}
+                      colorPalette={selectedExpiration === exp ? 'blue' : 'gray'}
+                      onClick={() => setSelectedExpiration(exp)}
+                    >
+                      {exp}{dteStr}
+                    </Button>
+                  );
+                })}
+              </HStack>
+            </HStack>
+
+            {smileSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={2} color="var(--heading-color)">
+                  Volatility Smile
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={smileSpec} height="280px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            {volSmileEvolutionSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Volatility Smile Evolution — {selectedExpiration}
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  How the IV smile reshapes as this contract approaches maturity. Thicker lines = more recent (lower DTE). Solid = calls, dashed = puts.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={volSmileEvolutionSpec} height="300px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
+              {volumeByStrikeSpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    Volume by Strike
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    Today's trading activity per strike. High volume at a strike signals active positioning. Purple line = spot price.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={volumeByStrikeSpec} height="260px" />
+                  </VegaProvider>
+                </Box>
+              )}
+
+              {oiByStrikeSpec && (
+                <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
+                  <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                    Open Interest by Strike
+                  </Text>
+                  <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                    Accumulated positions per strike. Large OI clusters act as support/resistance walls. Purple line = spot price.
+                  </Text>
+                  <VegaProvider>
+                    <VegaPlot spec={oiByStrikeSpec} height="260px" />
+                  </VegaProvider>
+                </Box>
+              )}
+            </Grid>
+
+            {volOiRatioByStrikeSpec && (
+              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
+                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
+                  Volume / OI Ratio by Strike
+                </Text>
+                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
+                  Ratio &gt; 1 (above yellow line) means new positions opening — fresh money flowing in. Ratio &lt; 1 means mostly existing positions.
+                </Text>
+                <VegaProvider>
+                  <VegaPlot spec={volOiRatioByStrikeSpec} height="260px" />
+                </VegaProvider>
+              </Box>
+            )}
+
+            <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={4}>
+              {/* Calls */}
               <Box>
-                <Text fontSize="xs" color="var(--muted-text)" mb={1}>Sentiment: {label}</Text>
-                <SentimentPanel sentiment={activeSentiment} />
-              </Box>
-            );
-          })()}
-
-          {pcrSpec && (
-            <Box
-              p={3}
-              bg="var(--card-bg)"
-              border="1px solid"
-              borderColor="var(--border-color)"
-              borderRadius="lg"
-              mb={2}
-            >
-              <Text fontSize="sm" fontWeight="semibold" mb={2} color="var(--heading-color)">
-                Put/Call Ratio by Maturity
-              </Text>
-              <VegaProvider>
-                <VegaPlot spec={pcrSpec} height="220px" />
-              </VegaProvider>
-            </Box>
-          )}
-
-          {smileSpec && (
-            <Box
-              p={3}
-              bg="var(--card-bg)"
-              border="1px solid"
-              borderColor="var(--border-color)"
-              borderRadius="lg"
-              mb={2}
-            >
-              <Text fontSize="sm" fontWeight="semibold" mb={2} color="var(--heading-color)">
-                Volatility Smile
-              </Text>
-              <VegaProvider>
-                <VegaPlot spec={smileSpec} height="280px" />
-              </VegaProvider>
-            </Box>
-          )}
-
-          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
-            {volumeByStrikeSpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  Volume by Strike
+                <Text fontSize="sm" fontWeight="bold" mb={2} color="var(--panel-green-text, #22c55e)">
+                  Calls ({calls.length})
                 </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  Today's trading activity per strike. High volume at a strike signals active positioning. Purple line = spot price.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={volumeByStrikeSpec} height="260px" />
-                </VegaProvider>
-              </Box>
-            )}
-
-            {oiByStrikeSpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  Open Interest by Strike
-                </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  Accumulated positions per strike. Large OI clusters act as support/resistance walls. Purple line = spot price.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={oiByStrikeSpec} height="260px" />
-                </VegaProvider>
-              </Box>
-            )}
-          </Grid>
-
-          {volOiRatioByStrikeSpec && (
-            <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
-              <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                Volume / OI Ratio by Strike
-              </Text>
-              <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                Ratio &gt; 1 (above yellow line) means new positions opening — fresh money flowing in. Ratio &lt; 1 means mostly existing positions.
-              </Text>
-              <VegaProvider>
-                <VegaPlot spec={volOiRatioByStrikeSpec} height="260px" />
-              </VegaProvider>
-            </Box>
-          )}
-
-          {oiWallsSpec && (
-            <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
-              <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                OI Distribution (Puts negative)
-              </Text>
-              <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                Mirrored view — puts shown negative. The yellow line marks Max Pain — the strike where most options expire worthless.
-              </Text>
-              <VegaProvider>
-                <VegaPlot spec={oiWallsSpec} height="260px" />
-              </VegaProvider>
-            </Box>
-          )}
-
-          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
-            {maxPainHistorySpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  Max Pain vs Spot Over Time
-                </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  How max pain evolves as each expiration approaches. Diamonds = spot, circles = max pain per expiry.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={maxPainHistorySpec} height="280px" />
-                </VegaProvider>
-              </Box>
-            )}
-
-            {maxPainByExpirationSpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  Max Pain by Expiration
-                </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  Latest max pain strike for each expiration date. Purple line = current spot price.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={maxPainByExpirationSpec} height="280px" />
-                </VegaProvider>
-              </Box>
-            )}
-          </Grid>
-
-          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3} mb={2}>
-            {ivTermSpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  IV Term Structure
-                </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  ATM IV across expirations. Downward slope (backwardation) signals near-term fear; upward slope (contango) is normal/calm.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={ivTermSpec} height="220px" />
-                </VegaProvider>
-              </Box>
-            )}
-            {ivSkewSpec && (
-              <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                  IV Skew by Maturity
-                </Text>
-                <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                  OTM put IV minus OTM call IV (~5% from spot). Positive (red) = demand for downside protection; negative (green) = call demand dominates.
-                </Text>
-                <VegaProvider>
-                  <VegaPlot spec={ivSkewSpec} height="220px" />
-                </VegaProvider>
-              </Box>
-            )}
-          </Grid>
-
-          {volOiSpec && (
-            <Box p={3} bg="var(--card-bg)" border="1px solid" borderColor="var(--border-color)" borderRadius="lg" mb={2}>
-              <Text fontSize="sm" fontWeight="semibold" mb={1} color="var(--heading-color)">
-                Unusual Activity (Volume / OI)
-              </Text>
-              <Text fontSize="2xs" color="var(--muted-text)" mb={2}>
-                Top contracts by volume relative to open interest. Ratio above 1 (dashed line) suggests new positions being opened — potential smart money signal.
-              </Text>
-              <VegaProvider>
-                <VegaPlot spec={volOiSpec} height="240px" />
-              </VegaProvider>
-            </Box>
-          )}
-
-          <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={4}>
-            {/* Calls */}
-            <Box>
-              <Text fontSize="sm" fontWeight="bold" mb={2} color="var(--panel-green-text, #22c55e)">
-                Calls ({calls.length})
-              </Text>
-              <Box overflowX="auto">
-                <Box as="table" w="100%" fontSize="xs">
-                  <Box as="thead">
-                    <Box as="tr" borderBottom="1px solid" borderColor="var(--border-color)">
-                      <Box as="th" p={1} textAlign="right">Strike</Box>
-                      <Box as="th" p={1} textAlign="right">Last</Box>
-                      <Box as="th" p={1} textAlign="right">Bid</Box>
-                      <Box as="th" p={1} textAlign="right">Ask</Box>
-                      <Box as="th" p={1} textAlign="right">Vol</Box>
-                      <Box as="th" p={1} textAlign="right">OI</Box>
-                      <Box as="th" p={1} textAlign="right">IV</Box>
-                    </Box>
-                  </Box>
-                  <Box as="tbody">
-                    {calls.map((c, i) => (
-                      <Box as="tr" key={i} _hover={{ bg: 'var(--hover-bg)' }}>
-                        <Box as="td" p={1} textAlign="right" fontWeight="semibold">{c.strike}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.last?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.bid?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.ask?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.volume ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.open_interest ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.implied_volatility ? (c.implied_volatility * 100).toFixed(1) + '%' : '-'}</Box>
+                <Box overflowX="auto">
+                  <Box as="table" w="100%" fontSize="xs">
+                    <Box as="thead">
+                      <Box as="tr" borderBottom="1px solid" borderColor="var(--border-color)">
+                        <Box as="th" p={1} textAlign="right">Strike</Box>
+                        <Box as="th" p={1} textAlign="right">Last</Box>
+                        <Box as="th" p={1} textAlign="right">Bid</Box>
+                        <Box as="th" p={1} textAlign="right">Ask</Box>
+                        <Box as="th" p={1} textAlign="right">Vol</Box>
+                        <Box as="th" p={1} textAlign="right">OI</Box>
+                        <Box as="th" p={1} textAlign="right">IV</Box>
                       </Box>
-                    ))}
+                    </Box>
+                    <Box as="tbody">
+                      {calls.map((c, i) => (
+                        <Box as="tr" key={i} _hover={{ bg: 'var(--hover-bg)' }}>
+                          <Box as="td" p={1} textAlign="right" fontWeight="semibold">{c.strike}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.last?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.bid?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.ask?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.volume ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.open_interest ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.implied_volatility ? (c.implied_volatility * 100).toFixed(1) + '%' : '-'}</Box>
+                        </Box>
+                      ))}
+                    </Box>
                   </Box>
                 </Box>
               </Box>
-            </Box>
 
-            {/* Puts */}
-            <Box>
-              <Text fontSize="sm" fontWeight="bold" mb={2} color="var(--panel-red-text, #ef4444)">
-                Puts ({puts.length})
-              </Text>
-              <Box overflowX="auto">
-                <Box as="table" w="100%" fontSize="xs">
-                  <Box as="thead">
-                    <Box as="tr" borderBottom="1px solid" borderColor="var(--border-color)">
-                      <Box as="th" p={1} textAlign="right">Strike</Box>
-                      <Box as="th" p={1} textAlign="right">Last</Box>
-                      <Box as="th" p={1} textAlign="right">Bid</Box>
-                      <Box as="th" p={1} textAlign="right">Ask</Box>
-                      <Box as="th" p={1} textAlign="right">Vol</Box>
-                      <Box as="th" p={1} textAlign="right">OI</Box>
-                      <Box as="th" p={1} textAlign="right">IV</Box>
-                    </Box>
-                  </Box>
-                  <Box as="tbody">
-                    {puts.map((c, i) => (
-                      <Box as="tr" key={i} _hover={{ bg: 'var(--hover-bg)' }}>
-                        <Box as="td" p={1} textAlign="right" fontWeight="semibold">{c.strike}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.last?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.bid?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.ask?.toFixed(2) ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.volume ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.open_interest ?? '-'}</Box>
-                        <Box as="td" p={1} textAlign="right">{c.implied_volatility ? (c.implied_volatility * 100).toFixed(1) + '%' : '-'}</Box>
+              {/* Puts */}
+              <Box>
+                <Text fontSize="sm" fontWeight="bold" mb={2} color="var(--panel-red-text, #ef4444)">
+                  Puts ({puts.length})
+                </Text>
+                <Box overflowX="auto">
+                  <Box as="table" w="100%" fontSize="xs">
+                    <Box as="thead">
+                      <Box as="tr" borderBottom="1px solid" borderColor="var(--border-color)">
+                        <Box as="th" p={1} textAlign="right">Strike</Box>
+                        <Box as="th" p={1} textAlign="right">Last</Box>
+                        <Box as="th" p={1} textAlign="right">Bid</Box>
+                        <Box as="th" p={1} textAlign="right">Ask</Box>
+                        <Box as="th" p={1} textAlign="right">Vol</Box>
+                        <Box as="th" p={1} textAlign="right">OI</Box>
+                        <Box as="th" p={1} textAlign="right">IV</Box>
                       </Box>
-                    ))}
+                    </Box>
+                    <Box as="tbody">
+                      {puts.map((c, i) => (
+                        <Box as="tr" key={i} _hover={{ bg: 'var(--hover-bg)' }}>
+                          <Box as="td" p={1} textAlign="right" fontWeight="semibold">{c.strike}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.last?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.bid?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.ask?.toFixed(2) ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.volume ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.open_interest ?? '-'}</Box>
+                          <Box as="td" p={1} textAlign="right">{c.implied_volatility ? (c.implied_volatility * 100).toFixed(1) + '%' : '-'}</Box>
+                        </Box>
+                      ))}
+                    </Box>
                   </Box>
                 </Box>
               </Box>
-            </Box>
-          </Grid>
+            </Grid>
+          </Box>
         </Box>
       )}
     </VStack>

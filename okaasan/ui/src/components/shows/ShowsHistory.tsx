@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Button, Input, Badge } from '@chakra-ui/react';
-import { Film, Tv, Search, Trash2, Heart, Layers } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Film, Tv, Search, Trash2, Heart, Layers, Eye } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../../services/api';
 import MediaCard from './MediaCard';
 import TMDBAttribution from './TMDBAttribution';
@@ -167,10 +168,17 @@ const ShowsHistory: React.FC = () => {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loading, loadingMore, page, filter, searchQuery, fetchPage, updateURL]);
 
+  const navigate = useNavigate();
+
   return (
     <VStack gap={6} align="stretch" p={4}>
       <HStack justify="space-between" flexWrap="wrap" gap={2}>
-        <Heading size="lg" color="var(--heading-color)">Watch History</Heading>
+        <HStack gap={2}>
+          <Heading size="lg" color="var(--heading-color)">Watch History</Heading>
+          <Button size="sm" variant="outline" onClick={() => navigate('/shows-seen')}>
+            <Eye size={14} /> Seen
+          </Button>
+        </HStack>
         <HStack gap={2} flexWrap="wrap">
           <TMDBAttribution />
           <FilterButton label="All" active={!filter} onClick={() => setFilter(null)} />

@@ -108,7 +108,7 @@ def fetch_heart_rate(client, day: date_type, config_dir: Path, *, replay: bool =
         return []
 
     metrics: list[dict] = []
-    for entry in (data or {}).get("heartRateValues", []):
+    for entry in (data or {}).get("heartRateValues") or []:
         ts_ms, value = entry
         if value is None:
             continue

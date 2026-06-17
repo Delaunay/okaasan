@@ -11,7 +11,7 @@ import {
     IconButton,
     Portal,
 } from '@chakra-ui/react';
-import { Settings, AlertTriangle, ArrowUp, Trash2 } from 'lucide-react';
+import { Settings, AlertTriangle, ArrowUp, Trash2, Share2, Check } from 'lucide-react';
 
 
 import { BlockBase, newBlock, ArticleDef, BlockDef, PendingAction, InsertBlockGap, BlockPickerDialog } from './base'
@@ -282,10 +282,12 @@ export type EditTrigger = "hover" | "click";
 
 export interface ArticleOptions {
     editTrigger: EditTrigger;
+    readonly?: boolean;
 }
 
 const defaultArticleOptions: ArticleOptions = {
     editTrigger: "click",
+    readonly: false,
 };
 
 export class ArticleInstance implements ArticleBlock {
@@ -939,8 +941,35 @@ import { VegaProvider } from '../../contexts/VegaContext';
 
 const ARTICLE_KINDS = ["", "blog", "tutorial", "project-log", "note", "recipe"];
 
+const ShareButton: React.FC<{ articleId: number }> = ({ articleId }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleShare = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const base = window.location.origin + window.location.pathname;
+        const shareUrl = `${base}#/share/article?id=${articleId}`;
+        navigator.clipboard.writeText(shareUrl).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    return (
+        <IconButton
+            aria-label="Copy share link"
+            size="sm"
+            variant="ghost"
+            onClick={handleShare}
+            flexShrink={0}
+            title="Copy standalone share link"
+        >
+            {copied ? <Check size={16} color="green" /> : <Share2 size={16} />}
+        </IconButton>
+    );
+};
+
 const TitleDisplay: React.FC<{ article: ArticleInstance }> = ({ article }) => {
-    if (isStaticMode()) {
+    if (isStaticMode() || article.options?.readonly) {
         return <Heading mb={4}>{article.def.title}</Heading>;
     }
 
@@ -1048,6 +1077,8 @@ const TitleDisplay: React.FC<{ article: ArticleInstance }> = ({ article }) => {
                 >
                     {isPublic ? "published" : "draft"}
                 </Badge>
+
+                <ShareButton articleId={article.def.id} />
 
                 <IconButton
                     ref={gearRef}
@@ -1237,42 +1268,48 @@ const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
         };
     }, [article]);
 
+    const readonly = article.options?.readonly;
+
     return (
         <Flex gap={6} align="start" overflowX="auto" width="100%">
             <Box flex="1" minW="0">
                 <TitleDisplay article={article} />
-                <InsertBlockGap article={article} after={null} />
+                {!readonly && <InsertBlockGap article={article} after={null} />}
                 {article.children.map((block) => (
                     <React.Fragment key={block.key}>
                         <Box mb="12px">
                             {block.react()}
                         </Box>
-                        <InsertBlockGap article={article} after={block} />
+                        {!readonly && <InsertBlockGap article={article} after={block} />}
                     </React.Fragment>
                 ))}
-                {article.inputBlock.react()}
+                {!readonly && article.inputBlock.react()}
 
-                {article.orphans.length > 0 && (
+                {!readonly && article.orphans.length > 0 && (
                     <OrphanPanel article={article} />
                 )}
             </Box>
 
-            <Box width="300px" flexShrink={0} pl={4} borderLeft="1px solid" borderColor="gray.100">
-                <SubPageList articleDef={article.def} />
-            </Box>
+            {!readonly && (
+                <Box width="300px" flexShrink={0} pl={4} borderLeft="1px solid" borderColor="gray.100">
+                    <SubPageList articleDef={article.def} />
+                </Box>
+            )}
 
-            <BlockPickerDialog
-                open={!!article.blockPickerCallback}
-                onOpenChange={(open) => { if (!open) article.closeBlockPicker(); }}
-                onSelect={(entry) => {
-                    console.log("[Picker] selected:", entry.kind, entry);
-                    const cb = article.blockPickerCallback;
-                    article.closeBlockPicker();
-                    cb?.(entry);
-                }}
-                selectedCategory={selectedCategory}
-                onCategoryChange={setSelectedCategory}
-            />
+            {!readonly && (
+                <BlockPickerDialog
+                    open={!!article.blockPickerCallback}
+                    onOpenChange={(open) => { if (!open) article.closeBlockPicker(); }}
+                    onSelect={(entry) => {
+                        console.log("[Picker] selected:", entry.kind, entry);
+                        const cb = article.blockPickerCallback;
+                        article.closeBlockPicker();
+                        cb?.(entry);
+                    }}
+                    selectedCategory={selectedCategory}
+                    onCategoryChange={setSelectedCategory}
+                />
+            )}
         </Flex>
     );
 };

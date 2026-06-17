@@ -200,6 +200,9 @@ def create_app() -> FastAPI:
     from .news import router as news_router
     from .computers import router as computers_router
     from .investing import router as investing_router
+    from .smarthome import router as smarthome_router
+    from .alerts import router as alerts_router
+    from .proxy import router as proxy_router
 
     app.include_router(kv_router)
     app.include_router(calendar_router)
@@ -223,6 +226,64 @@ def create_app() -> FastAPI:
     app.include_router(news_router)
     app.include_router(computers_router)
     app.include_router(investing_router)
+    app.include_router(smarthome_router)
+    app.include_router(alerts_router)
+    app.include_router(proxy_router)
+
+    # Dedicated DB for smart home sensor history
+    from .smarthome.models import SmartHomeBase
+    smarthome_db_path = os.path.join(str(private_folder()), "smarthome.db")
+    smarthome_engine = create_engine(
+        f"sqlite:///{smarthome_db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(smarthome_engine, "connect", _set_sqlite_pragmas)
+    SmartHomeBase.metadata.create_all(bind=smarthome_engine)
+    SmartHomeSessionLocal = sessionmaker(bind=smarthome_engine)
+    app.state.SmartHomeSessionLocal = SmartHomeSessionLocal
+
+    from .smarthome import routes as _smarthome_routes
+    _smarthome_routes._SessionLocal = SmartHomeSessionLocal
+
+    # Dedicated DB for alerts
+    from .alerts.models import AlertsBase
+    alerts_db_path = os.path.join(str(private_folder()), "alerts.db")
+    alerts_engine = create_engine(
+        f"sqlite:///{alerts_db_path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+    )
+    event.listen(alerts_engine, "connect", _set_sqlite_pragmas)
+    AlertsBase.metadata.create_all(bind=alerts_engine)
+    AlertsSessionLocal = sessionmaker(bind=alerts_engine)
+    app.state.AlertsSessionLocal = AlertsSessionLocal
+
+    from .alerts import routes as _alerts_routes
+    _alerts_routes._SessionLocal = AlertsSessionLocal
+
+    # Register alert metric sources
+    from .alerts.sources import register as _register_source
+    from .alerts.sources.sensors import SensorMetricSource
+    _register_source(SensorMetricSource())
+
+    from .alerts.sources.calendar import CalendarMetricSource
+    _register_source(CalendarMetricSource(SessionLocal))
+
+    from .alerts.sources.tasks import TasksMetricSource
+    _register_source(TasksMetricSource(SessionLocal))
+
+    from .alerts.sources.downloads import DownloadsMetricSource
+    _register_source(DownloadsMetricSource())
+
+    PrivateSessionLocal = sessionmaker(bind=private_engine)
+    from .alerts.sources.health import HealthMetricSource
+    _register_source(HealthMetricSource(PrivateSessionLocal))
+
+    # Register alert broadcaster types
+    from .alerts.broadcasters import register_type as _register_broadcaster
+    from .alerts.broadcasters.telegram import TelegramBroadcaster
+    _register_broadcaster(TelegramBroadcaster())
 
     # Auto-import Trakt data if shows tables are empty
     from .shows.models import Media as _ShowsMedia
@@ -259,6 +320,57 @@ def create_app() -> FastAPI:
 
         threading.Thread(target=_run_kitsu_import, name="kitsu-import", daemon=True).start()
         log.info("Kitsu import started in background thread")
+
+    # Backfill missing show/movie posters from TMDB in the background
+    import threading as _threading
+
+    def _run_poster_backfill():
+        import time as _time
+        _time.sleep(30)  # let imports finish first
+        _poster_db = SessionLocal()
+        try:
+            from .shows.models import Media as _PosterMedia
+            from .shows.routes import _get_tmdb_client_for_import
+            from .shows.posters import PosterStore as _PosterStore
+
+            tmdb = _get_tmdb_client_for_import(STATIC_FOLDER)
+            if not tmdb.available:
+                return
+            posters = _PosterStore(Path(STATIC_FOLDER))
+
+            missing = _poster_db.query(_PosterMedia).filter(
+                _PosterMedia.poster_path.is_(None),
+                _PosterMedia.tmdb_id.isnot(None),
+            ).all()
+
+            if not missing:
+                return
+
+            fetched = 0
+            for media in missing:
+                try:
+                    if media.media_type == "show":
+                        info = tmdb.get_show(media.tmdb_id)
+                    else:
+                        info = tmdb.get_movie(media.tmdb_id)
+                    if info and info.get("poster_path"):
+                        path = posters.save_from_tmdb(
+                            media.media_type, media.tmdb_id, info["poster_path"], media.trakt_id
+                        )
+                        if path:
+                            media.poster_path = path
+                            fetched += 1
+                except Exception:
+                    continue
+
+            _poster_db.commit()
+            log.info("Poster backfill complete: %d/%d fetched", fetched, len(missing))
+        except Exception as e:
+            log.warning("Poster backfill failed: %s", e)
+        finally:
+            _poster_db.close()
+
+    _threading.Thread(target=_run_poster_backfill, name="poster-backfill", daemon=True).start()
 
     # Start media library background scanner
     from .shows.library import LibraryScanner
@@ -382,6 +494,50 @@ def create_app() -> FastAPI:
         if "underlying_price" not in cols:
             conn.execute(text("ALTER TABLE option_chain_snapshots ADD COLUMN underlying_price FLOAT"))
             conn.commit()
+        if "snapshot_time" not in cols:
+            conn.execute(text("ALTER TABLE option_chain_snapshots ADD COLUMN snapshot_time VARCHAR(10)"))
+            conn.execute(text("UPDATE option_chain_snapshots SET snapshot_time = 'close' WHERE snapshot_time IS NULL"))
+            conn.commit()
+
+        # Migrate: replace old unique constraint (without snapshot_time) with new one that includes it.
+        indices = [r[1] for r in conn.execute(text("PRAGMA index_list(option_chain_snapshots)"))]
+        if "sqlite_autoindex_option_chain_snapshots_1" in indices:
+            conn.execute(text("DROP TABLE IF EXISTS _ocs_old"))
+            conn.execute(text("ALTER TABLE option_chain_snapshots RENAME TO _ocs_old"))
+            conn.execute(text("""
+                CREATE TABLE option_chain_snapshots (
+                    id INTEGER PRIMARY KEY,
+                    symbol VARCHAR(20) NOT NULL,
+                    snapshot_date DATE NOT NULL,
+                    snapshot_time VARCHAR(10),
+                    underlying_price FLOAT,
+                    expiration DATE NOT NULL,
+                    strike FLOAT NOT NULL,
+                    option_type VARCHAR(4) NOT NULL,
+                    bid FLOAT, ask FLOAT, last FLOAT,
+                    volume FLOAT, open_interest FLOAT, implied_volatility FLOAT,
+                    delta FLOAT, gamma FLOAT, theta FLOAT, vega FLOAT, rho FLOAT,
+                    CONSTRAINT uq_option_snap_v2 UNIQUE (symbol, snapshot_date, snapshot_time, expiration, strike, option_type)
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO option_chain_snapshots
+                SELECT id, symbol, snapshot_date, snapshot_time, underlying_price, expiration, strike, option_type,
+                       bid, ask, last, volume, open_interest, implied_volatility,
+                       delta, gamma, theta, vega, rho
+                FROM _ocs_old
+            """))
+            conn.execute(text("DROP TABLE _ocs_old"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_ocs_sym_date ON option_chain_snapshots(symbol, snapshot_date)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_option_chain_snapshots_snapshot_date ON option_chain_snapshots(snapshot_date)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_option_chain_snapshots_symbol ON option_chain_snapshots(symbol)"
+            ))
+            conn.commit()
     InvestingSessionLocal = sessionmaker(bind=investing_engine)
     app.state.InvestingSessionLocal = InvestingSessionLocal
 
@@ -459,6 +615,21 @@ def create_app() -> FastAPI:
             if settings.get("auto_update"):
                 updater.start_update_loop(settings.get("update_interval_hours", 24))
 
+        from .smarthome.mqtt_client import start as _start_mqtt
+        _start_mqtt()
+
+        from .smarthome.recorder import SensorRecorder
+        app.state._sensor_recorder = SensorRecorder(app.state.SmartHomeSessionLocal)
+        app.state._sensor_recorder.start()
+
+        from .alerts.yaml_loader import load_yaml_config
+        _alerts_yaml_path = public_folder() / "data" / "_config" / "_alerts.yaml"
+        load_yaml_config(_alerts_yaml_path, app.state.AlertsSessionLocal)
+
+        from .alerts.engine import AlertEngine
+        app.state._alert_engine = AlertEngine(app.state.AlertsSessionLocal)
+        app.state._alert_engine.start()
+
     # ── Update API ─────────────────────────────────────────────
 
     @app.post("/update")
@@ -475,6 +646,50 @@ def create_app() -> FastAPI:
     @app.get("/version")
     def get_version():
         return {"version": _recipes_pkg.__version__}
+
+    @app.get("/debug-info")
+    def get_debug_info():
+        import platform
+        import sys
+        import subprocess
+
+        git_commit = "unknown"
+        git_branch = "unknown"
+        try:
+            git_commit = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=STATIC_FOLDER, stderr=subprocess.DEVNULL
+            ).decode().strip()
+            git_branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=STATIC_FOLDER, stderr=subprocess.DEVNULL
+            ).decode().strip()
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+        db_path = Path(STATIC_FOLDER) / "database.db"
+        db_size = f"{db_path.stat().st_size / (1024*1024):.1f} MB" if db_path.exists() else "not found"
+
+        return {
+            "version": _recipes_pkg.__version__,
+            "git_commit": git_commit,
+            "git_branch": git_branch,
+            "python": {
+                "version": platform.python_version(),
+                "implementation": platform.python_implementation(),
+            },
+            "system": {
+                "os": platform.system(),
+                "os_version": platform.release(),
+                "arch": platform.machine(),
+                "hostname": platform.node(),
+            },
+            "server": {
+                "data_dir": STATIC_FOLDER,
+                "db_size": db_size,
+                "pid": os.getpid(),
+            },
+        }
 
     # ── Sidebar configuration API ─────────────────────────────
 

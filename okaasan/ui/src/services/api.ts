@@ -1286,6 +1286,56 @@ class RecipeAPI {
     return this.request(`/computers/${computerId}/tasks/${taskId}`, { method: 'DELETE' });
   }
 
+  async getComputerServices(id: string): Promise<any[]> {
+    return this.request(`/computers/${id}/services`);
+  }
+
+  async getZfsStatus(id: string): Promise<any[]> {
+    return this.request(`/computers/${id}/zfs`);
+  }
+
+  async getRustDeskConfig(id: string): Promise<any> {
+    return this.request(`/computers/${id}/services/rustdesk/config`);
+  }
+
+  // ==========================================================================
+  // VPN
+  // ==========================================================================
+
+  async getVpnStatus(): Promise<any> {
+    return this.request('/vpn/status');
+  }
+
+  async vpnConnect(options: { country?: string; city?: string; server?: string; p2p?: boolean } = {}): Promise<{ status: string; message: string }> {
+    const params = new URLSearchParams();
+    if (options.country) params.set('country', options.country);
+    if (options.city) params.set('city', options.city);
+    if (options.server) params.set('server', options.server);
+    if (options.p2p) params.set('p2p', 'true');
+    const query = params.toString();
+    return this.request(`/vpn/connect${query ? `?${query}` : ''}`, { method: 'POST' });
+  }
+
+  async vpnDisconnect(): Promise<{ status: string; message: string }> {
+    return this.request('/vpn/disconnect', { method: 'POST' });
+  }
+
+  async vpnLogin(token: string): Promise<{ success: boolean; message?: string; error?: string; login_url?: string }> {
+    return this.request(`/vpn/login?token=${encodeURIComponent(token)}`, { method: 'POST' });
+  }
+
+  async vpnLogout(): Promise<{ status: string; message: string }> {
+    return this.request('/vpn/logout', { method: 'POST' });
+  }
+
+  async getVpnAccount(): Promise<{ logged_in: boolean; [key: string]: any }> {
+    return this.request('/vpn/account');
+  }
+
+  async vpnBindQbt(): Promise<{ status: string; interface: string }> {
+    return this.request('/vpn/bind-qbt', { method: 'POST' });
+  }
+
 }
 
 // Export a singleton instance

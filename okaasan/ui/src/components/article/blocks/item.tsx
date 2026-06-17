@@ -1,3 +1,4 @@
+import { Box } from '@chakra-ui/react';
 import {BlockBase, BlockDef, MarkdownGeneratorContext, EmptyBlockPlaceholder} from "../base";
 
 
@@ -21,6 +22,13 @@ export class ItemBlock extends BlockBase {
 
     component(_mode: string) {
         if (this.children.length > 0) {
+            if (this.def.data?.listItem) {
+                return (
+                    <Box display="inline-flex" alignItems="center" flexWrap="wrap">
+                        {this.children.map(child => child.component("view"))}
+                    </Box>
+                );
+            }
             return <>{this.children.map(child => child.react())}</>
         }
         return <EmptyBlockPlaceholder icon="📝" label="Empty block" hint="Click to add content" />

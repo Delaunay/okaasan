@@ -51,7 +51,7 @@ class StaticWebsite(Command):
     @staticmethod
     def execute(args):
         self = StaticWebsite(output_dir=getattr(args, 'output', None))
-        return self.run(args)
+        return self.run(a rgs)
 
     def run(self, args):
         from okaasan.server.server import create_app, STATIC_FOLDER

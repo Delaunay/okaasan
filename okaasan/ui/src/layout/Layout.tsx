@@ -108,8 +108,8 @@ const getStaticSidebarSections = () => [
     items: [
       { name: 'Computers', href: '/computers' },
       { name: 'Home', href: '/home' },
-      { name: 'Sensors', href: "/sensors" },
-      { name: 'Switches', href: "/switches" },
+      { name: 'Connected Devices', href: "/sensors" },
+      { name: 'Alerts', href: "/alerts" },
       { name: 'AI', href: "/ai" }
     ]
   },
@@ -138,6 +138,8 @@ const getStaticSidebarSections = () => [
       { name: 'Retirement', href: '/investing/retirement' },
       { name: 'Mortgage', href: '/investing/mortgage' },
       { name: 'Options', href: '/investing/options' },
+      { name: 'Microstructure', href: '/investing/microstructure' },
+      { name: 'Simulation', href: '/investing/simulation' },
     ]
   },
   {
@@ -157,6 +159,8 @@ const getStaticSidebarSections = () => [
     items: [
       { name: 'Discover', href: '/shows-discover' },
       { name: 'Schedule', href: '/shows-schedule' },
+      { name: 'Seen', href: '/shows-seen' },
+      { name: 'Favorites', href: '/shows-favorites' },
       { name: 'History', href: '/shows-history' },
       { name: 'Watchlist', href: '/shows-watchlist' },
       { name: 'Stats', href: '/shows-stats' },
@@ -255,6 +259,7 @@ const getStaticSidebarSections = () => [
       { name: 'Brainstorm', href: '/scratch/brainstorm' },
       { name: 'Print Cost', href: '/scratch/print-cost' },
       { name: 'PyTorch Wheels', href: '/scratch/pytorch-wheels' },
+      { name: 'Machine Designer', href: '/scratch/machine-designer' },
     ]
   },
   {
@@ -286,13 +291,22 @@ export const sidebarSections = getStaticSidebarSections();
 const STATIC_HIDDEN_SECTIONS = new Set(['Settings']);
 const STATIC_HIDDEN_HREFS = new Set([
   '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
-  '/shows-discover', '/shows-schedule', '/music-discover', '/music-schedule',
+  '/shows-discover', '/shows-schedule', '/shows-watchlist', '/shows-collections', '/shows-library', '/shows-history',
+  '/music-discover', '/music-schedule',
   '/torrents',
+]);
+const DYNAMIC_HIDDEN_HREFS = new Set([
+  '/shows-seen', '/shows-favorites',
 ]);
 
 export function getRouteSections() {
   const all = getStaticSidebarSections();
-  if (!isStaticMode()) return all;
+  if (!isStaticMode()) {
+    return all.map(s => ({
+      ...s,
+      items: s.items.filter((item: { href: string }) => !DYNAMIC_HIDDEN_HREFS.has(item.href)),
+    }));
+  }
   return all
     .filter(s => !STATIC_HIDDEN_SECTIONS.has(s.title))
     .map(s => ({
@@ -348,7 +362,11 @@ const Layout: FC<LayoutProps> = ({ children }) => {
       const alwaysShow = ALWAYS_VISIBLE.has(s.title) || (!isStaticMode() && s.title === 'Settings');
       return alwaysShow || !hiddenSections.has(s.title);
     });
-    if (!isStaticMode()) return filtered;
+    if (!isStaticMode()) {
+      return filtered.map(s =>
+        Object.assign({}, s, { items: s.items.filter((item: { href: string }) => !DYNAMIC_HIDDEN_HREFS.has(item.href)) })
+      );
+    }
     return filtered.map(s => {
       let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_HREFS.has(item.href));
       if (s.title === 'Home') items = items.filter((item: { href: string }) => !item.href.startsWith('/day/'));
@@ -474,11 +492,66 @@ const Layout: FC<LayoutProps> = ({ children }) => {
           <TaskStatusIndicator />
           <div className="nav-section" style={{ borderTop: '1px solid var(--chakra-colors-border)', paddingTop: '0.5rem' }}>
             <a
-              href={`${GITHUB_REPO}/issues/new?labels=bug&title=Bug+Report`}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#"
               className="nav-section-title"
-              onClick={closeMobileMenu}
+              onClick={async (e) => {
+                e.preventDefault();
+                closeMobileMenu();
+
+                let serverInfo = '(could not fetch)';
+                try {
+                  const info = await recipeAPI.request<any>('/debug-info');
+                  serverInfo = [
+                    `Version: ${info.version}`,
+                    `Git: ${info.git_branch}@${info.git_commit}`,
+                    `Python: ${info.python?.version} (${info.python?.implementation})`,
+                    `OS: ${info.system?.os} ${info.system?.os_version} (${info.system?.arch})`,
+                    `Host: ${info.system?.hostname}`,
+                    `DB size: ${info.server?.db_size}`,
+                  ].join('\n');
+                } catch {}
+
+                const frontendInfo = [
+                  `URL: ${window.location.href}`,
+                  `Route: ${window.location.hash}`,
+                  `Viewport: ${window.innerWidth}x${window.innerHeight}`,
+                  `User-Agent: ${navigator.userAgent}`,
+                  `Static mode: ${isStaticMode()}`,
+                  `Timestamp: ${new Date().toISOString()}`,
+                ].join('\n');
+
+                const body = [
+                  '## Description',
+                  '',
+                  '<!-- Describe the bug here -->',
+                  '',
+                  '## Steps to Reproduce',
+                  '',
+                  '1. ',
+                  '',
+                  '## Expected Behavior',
+                  '',
+                  '',
+                  '## Environment',
+                  '',
+                  '### Frontend',
+                  '```',
+                  frontendInfo,
+                  '```',
+                  '',
+                  '### Server',
+                  '```',
+                  serverInfo,
+                  '```',
+                ].join('\n');
+
+                const params = new URLSearchParams({
+                  labels: 'bug',
+                  title: 'Bug Report',
+                  body,
+                });
+                window.open(`${GITHUB_REPO}/issues/new?${params.toString()}`, '_blank');
+              }}
             >
               <Flex align="center" gap={2}><Bug size={16} /> Report a Bug</Flex>
             </a>

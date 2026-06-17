@@ -4,7 +4,7 @@ import {
   Button, Table, Input,
 } from '@chakra-ui/react';
 import {
-  Search, Download,
+  Search, Download, Copy, Check, ExternalLink,
 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
@@ -81,6 +81,7 @@ const SearchPanel: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  const [copied, setCopied] = useState<number | null>(null);
   const [completedIndexers, setCompletedIndexers] = useState<string[]>([]);
   const abortRef = React.useRef<AbortController | null>(null);
 
@@ -182,6 +183,33 @@ const SearchPanel: React.FC = () => {
     }
   };
 
+  const copyRowData = async (item: SearchResultItem, index: number) => {
+    const lines: string[] = [item.title];
+    if (item.magnet) lines.push(item.magnet);
+    else if (item.infohash) lines.push(`magnet:?xt=urn:btih:${item.infohash}&dn=${encodeURIComponent(item.title)}`);
+    else if (item.download_url) lines.push(item.download_url);
+    if (item.size) lines.push(`Size: ${formatBytes(item.size)}`);
+    if (item.seeders != null) lines.push(`Seeders: ${item.seeders}`);
+    if (item.category) lines.push(`Category: ${item.category}`);
+    if (item.indexer) lines.push(`Indexer: ${item.indexer}`);
+    if (item.infohash) lines.push(`Hash: ${item.infohash}`);
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(index);
+    setTimeout(() => setCopied(prev => prev === index ? null : prev), 2000);
+  };
+
   return (
     <Box>
       <Flex gap={2} mb={4}>
@@ -244,9 +272,10 @@ const SearchPanel: React.FC = () => {
                 <Table.ColumnHeader textAlign="center">S</Table.ColumnHeader>
                 <Table.ColumnHeader textAlign="center">L</Table.ColumnHeader>
                 <Table.ColumnHeader textAlign="right">Size</Table.ColumnHeader>
+                <Table.ColumnHeader>Cat</Table.ColumnHeader>
                 <Table.ColumnHeader>Indexer</Table.ColumnHeader>
                 <Table.ColumnHeader>Age</Table.ColumnHeader>
-                <Table.ColumnHeader textAlign="center" width="80px"></Table.ColumnHeader>
+                <Table.ColumnHeader textAlign="center" width="100px"></Table.ColumnHeader>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -265,21 +294,52 @@ const SearchPanel: React.FC = () => {
                     <Text fontSize="sm" color={mutedText}>{formatBytes(r.size || 0)}</Text>
                   </Table.Cell>
                   <Table.Cell>
+                    {r.category ? <Badge fontSize="xs" variant="outline">{r.category}</Badge> : <Text fontSize="xs" color={mutedText}>—</Text>}
+                  </Table.Cell>
+                  <Table.Cell>
                     <Badge fontSize="xs" variant="subtle">{r.indexer || '—'}</Badge>
                   </Table.Cell>
                   <Table.Cell>
                     <Text fontSize="xs" color={mutedText}>{timeAgo(r.published_at)}</Text>
                   </Table.Cell>
                   <Table.Cell textAlign="center">
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      disabled={adding === r.title || (!r.magnet && !r.download_url && !r.details_url)}
-                      onClick={() => addTorrent(r)}
-                      title="Add to qBittorrent"
-                    >
-                      {adding === r.title ? <Spinner size="xs" /> : <Download size={14} />}
-                    </Button>
+                    <HStack gap={0} justify="center">
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => copyRowData(r, i)}
+                        title="Copy torrent info"
+                      >
+                        {copied === i ? <Check size={14} color="green" /> : <Copy size={14} />}
+                      </Button>
+                      {(r.download_url || r.magnet) && (
+                        <Box
+                          as="a"
+                          href={r.download_url || r.magnet || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          display="inline-flex"
+                          alignItems="center"
+                          justifyContent="center"
+                          w="24px"
+                          h="24px"
+                          borderRadius="sm"
+                          _hover={{ bg: 'var(--hover-bg)' }}
+                          title="Download .torrent file"
+                        >
+                          <ExternalLink size={14} />
+                        </Box>
+                      )}
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        disabled={adding === r.title || (!r.magnet && !r.download_url && !r.details_url)}
+                        onClick={() => addTorrent(r)}
+                        title="Add to qBittorrent"
+                      >
+                        {adding === r.title ? <Spinner size="xs" /> : <Download size={14} />}
+                      </Button>
+                    </HStack>
                   </Table.Cell>
                 </Table.Row>
               ))}

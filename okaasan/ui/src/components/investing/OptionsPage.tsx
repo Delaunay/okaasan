@@ -123,13 +123,29 @@ function NumInput({ label, value, onChange, step, min, max, width = '100px' }: {
   label: string; value: number; onChange: (v: number) => void;
   step?: number; min?: number; max?: number; width?: string;
 }) {
+  const [draft, setDraft] = useState<string>(String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [value, focused]);
+
+  const commit = (s: string) => {
+    const n = Number(s);
+    if (!isNaN(n)) onChange(n);
+    else setDraft(String(value));
+  };
+
   return (
     <VStack gap={0} align="start">
       <Text fontSize="xs" color="gray.400">{label}</Text>
       <Input
         type="number" size="sm" width={width}
-        value={value} step={step} min={min} max={max}
-        onChange={e => onChange(Number(e.target.value))}
+        value={focused ? draft : value} step={step} min={min} max={max}
+        onFocus={() => setFocused(true)}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={e => { setFocused(false); commit(e.target.value); }}
+        onKeyDown={e => { if (e.key === 'Enter') commit(draft); }}
       />
     </VStack>
   );
@@ -501,6 +517,12 @@ interface HedgeResult {
   residuals: Record<GreekKey, number>;
 }
 
+interface GreekTargets {
+  delta: number;
+  gamma: number;
+  vega: number;
+}
+
 function solveHedge(
   totals: Record<GreekKey, number>,
   target: HedgeTarget,
@@ -508,80 +530,86 @@ function solveHedge(
   h1Name: string,
   h2Greeks: ComputedGreeks,
   h2Name: string,
+  desired: GreekTargets = { delta: 0, gamma: 0, vega: 0 },
 ): HedgeResult | null {
   const residuals = { ...totals };
 
-  // Portfolio totals are already in "total" units (per-option * qty * 100).
-  // Hedge instrument Greeks are per-option. One contract = 100 options.
-  // So per-contract Greek = per-option Greek * 100.
   const M = 100;
   const g1 = { delta: h1Greeks.delta * M, gamma: h1Greeks.gamma * M, vega: h1Greeks.vega * M };
   const g2 = { delta: h2Greeks.delta * M, gamma: h2Greeks.gamma * M, vega: h2Greeks.vega * M };
 
+  // Gap = what we need to add to reach the desired exposure
+  const gapDelta = desired.delta - totals.delta;
+  const gapGamma = desired.gamma - totals.gamma;
+  const gapVega = desired.vega - totals.vega;
+
+  const tgtLabel = (greek: string, val: number) =>
+    val === 0 ? `zero ${greek}` : `target ${greek}=${val.toFixed(0)}`;
+
   if (target === 'delta') {
-    const shares = -totals.delta;
-    residuals.delta = 0;
+    const shares = gapDelta;
+    residuals.delta = desired.delta;
     return {
       target,
       actions: [{ label: 'Shares of underlying', qty: Math.abs(shares), side: shares >= 0 ? 'Buy' : 'Sell' }],
-      formula: String.raw`n_{\text{shares}} = -\Delta_{\text{portfolio}} = ${shares >= 0 ? '' : '-'}${Math.abs(shares).toFixed(0)}`,
+      formula: String.raw`n_{\text{shares}} = \Delta_{\text{target}} - \Delta_{\text{port}} = ${desired.delta.toFixed(0)} - (${totals.delta.toFixed(0)}) = ${shares >= 0 ? '' : '-'}${Math.abs(shares).toFixed(0)}`,
       residuals,
     };
   }
 
   if (target === 'gamma') {
     if (Math.abs(g1.gamma) < 1e-12) return null;
-    const n = -totals.gamma / g1.gamma;
-    residuals.gamma = 0;
+    const n = gapGamma / g1.gamma;
+    residuals.gamma = desired.gamma;
     residuals.delta += n * g1.delta;
     residuals.vega += n * g1.vega;
-    const sharesToFix = -residuals.delta;
-    residuals.delta = 0;
+    const sharesToFix = desired.delta - residuals.delta;
+    residuals.delta = desired.delta;
     return {
       target,
       actions: [
         { label: `${h1Name} (contracts)`, qty: Math.abs(n), side: n >= 0 ? 'Buy' : 'Sell' },
-        { label: 'Shares (delta cleanup)', qty: Math.abs(sharesToFix), side: sharesToFix >= 0 ? 'Buy' : 'Sell' },
+        { label: 'Shares (delta adjust)', qty: Math.abs(sharesToFix), side: sharesToFix >= 0 ? 'Buy' : 'Sell' },
       ],
-      formula: String.raw`n_1 = -\frac{\Gamma_{\text{port}}}{\Gamma_1 \times 100} = -\frac{${totals.gamma.toFixed(2)}}{${g1.gamma.toFixed(2)}} = ${n.toFixed(1)} \text{ contracts}`,
+      formula: String.raw`n_1 = \frac{\Gamma_{\text{target}} - \Gamma_{\text{port}}}{\Gamma_1 \times 100} = \frac{${gapGamma.toFixed(2)}}{${g1.gamma.toFixed(2)}} = ${n.toFixed(1)} \;\text{contracts → ${tgtLabel('Δ', desired.delta)}}`,
       residuals,
     };
   }
 
   if (target === 'vega') {
     if (Math.abs(g2.vega) < 1e-12) return null;
-    const n = -totals.vega / g2.vega;
-    residuals.vega = 0;
+    const n = gapVega / g2.vega;
+    residuals.vega = desired.vega;
     residuals.delta += n * g2.delta;
     residuals.gamma += n * g2.gamma;
-    const sharesToFix = -residuals.delta;
-    residuals.delta = 0;
+    const sharesToFix = desired.delta - residuals.delta;
+    residuals.delta = desired.delta;
     return {
       target,
       actions: [
         { label: `${h2Name} (contracts)`, qty: Math.abs(n), side: n >= 0 ? 'Buy' : 'Sell' },
-        { label: 'Shares (delta cleanup)', qty: Math.abs(sharesToFix), side: sharesToFix >= 0 ? 'Buy' : 'Sell' },
+        { label: 'Shares (delta adjust)', qty: Math.abs(sharesToFix), side: sharesToFix >= 0 ? 'Buy' : 'Sell' },
       ],
-      formula: String.raw`n_2 = -\frac{\mathcal{V}_{\text{port}}}{\mathcal{V}_2 \times 100} = -\frac{${totals.vega.toFixed(2)}}{${g2.vega.toFixed(2)}} = ${n.toFixed(1)} \text{ contracts}`,
+      formula: String.raw`n_2 = \frac{\mathcal{V}_{\text{target}} - \mathcal{V}_{\text{port}}}{\mathcal{V}_2 \times 100} = \frac{${gapVega.toFixed(2)}}{${g2.vega.toFixed(2)}} = ${n.toFixed(1)} \;\text{contracts → ${tgtLabel('Δ', desired.delta)}}`,
       residuals,
     };
   }
 
   if (target === 'delta+gamma') {
     if (Math.abs(g1.gamma) < 1e-12) return null;
-    const nOpt = -totals.gamma / g1.gamma;
-    residuals.gamma = 0;
+    const nOpt = gapGamma / g1.gamma;
+    residuals.gamma = desired.gamma;
     residuals.delta += nOpt * g1.delta;
     residuals.vega += nOpt * g1.vega;
-    const nShares = -residuals.delta;
-    residuals.delta = 0;
+    const nShares = desired.delta - residuals.delta;
+    residuals.delta = desired.delta;
     return {
       target,
       actions: [
         { label: `${h1Name} (contracts)`, qty: Math.abs(nOpt), side: nOpt >= 0 ? 'Buy' : 'Sell' },
         { label: 'Shares of underlying', qty: Math.abs(nShares), side: nShares >= 0 ? 'Buy' : 'Sell' },
       ],
-      formula: String.raw`\Gamma\text{: } n_1 = ${nOpt.toFixed(1)} \text{ contracts} \quad\to\quad \Delta\text{-hedge: } ${nShares.toFixed(0)} \text{ shares}`,
+      formula: String.raw`\Gamma\text{: } n_1 = ${nOpt.toFixed(1)} \text{ contracts} \;\to\; \Delta\text{: } ${nShares.toFixed(0)} \text{ shares → ${tgtLabel('Δ', desired.delta)}, ${tgtLabel('Γ', desired.gamma)}}`,
       residuals,
     };
   }
@@ -589,13 +617,13 @@ function solveHedge(
   if (target === 'all') {
     const det = g1.gamma * g2.vega - g1.vega * g2.gamma;
     if (Math.abs(det) < 1e-12) return null;
-    const n1 = (-totals.gamma * g2.vega - (-totals.vega) * g2.gamma) / det;
-    const n2 = (g1.gamma * (-totals.vega) - g1.vega * (-totals.gamma)) / det;
+    const n1 = (gapGamma * g2.vega - gapVega * g2.gamma) / det;
+    const n2 = (g1.gamma * gapVega - g1.vega * gapGamma) / det;
     residuals.gamma += n1 * g1.gamma + n2 * g2.gamma;
     residuals.vega += n1 * g1.vega + n2 * g2.vega;
     residuals.delta += n1 * g1.delta + n2 * g2.delta;
-    const nShares = -residuals.delta;
-    residuals.delta = 0;
+    const nShares = desired.delta - residuals.delta;
+    residuals.delta = desired.delta;
     return {
       target,
       actions: [
@@ -603,7 +631,7 @@ function solveHedge(
         { label: `${h2Name} (contracts)`, qty: Math.abs(n2), side: n2 >= 0 ? 'Buy' : 'Sell' },
         { label: 'Shares of underlying', qty: Math.abs(nShares), side: nShares >= 0 ? 'Buy' : 'Sell' },
       ],
-      formula: String.raw`n_1=${n1.toFixed(1)},\; n_2=${n2.toFixed(1)} \text{ contracts},\; ${nShares.toFixed(0)} \text{ shares}`,
+      formula: String.raw`n_1=${n1.toFixed(1)},\; n_2=${n2.toFixed(1)} \text{ contracts},\; ${nShares.toFixed(0)} \text{ shares → ${tgtLabel('Δ', desired.delta)}, ${tgtLabel('Γ', desired.gamma)}, ${tgtLabel('V', desired.vega)}}`,
       residuals,
     };
   }
@@ -644,6 +672,7 @@ function PortfolioGreeksTab() {
   });
 
   const [hedgeResult, setHedgeResult] = useState<HedgeResult | null>(null);
+  const [desiredGreeks, setDesiredGreeks] = useState<GreekTargets>({ delta: 0, gamma: 0, vega: 0 });
 
   const addPosition = useCallback(() => {
     setPositions(prev => [...prev, {
@@ -699,9 +728,9 @@ function PortfolioGreeksTab() {
   [hedge2, spotPrice, T, r]);
 
   const runHedge = useCallback((target: HedgeTarget) => {
-    const result = solveHedge(totals, target, h1Greeks, hedge1.name, h2Greeks, hedge2.name);
+    const result = solveHedge(totals, target, h1Greeks, hedge1.name, h2Greeks, hedge2.name, desiredGreeks);
     setHedgeResult(result);
-  }, [totals, h1Greeks, hedge1.name, h2Greeks, hedge2.name]);
+  }, [totals, h1Greeks, hedge1.name, h2Greeks, hedge2.name, desiredGreeks]);
 
   const barData = useMemo(() => [
     { greek: 'Delta', value: totals.delta },
@@ -947,6 +976,24 @@ function PortfolioGreeksTab() {
           </Box>
         </Grid>
 
+        <Box mb={3}>
+          <Text fontSize="xs" fontWeight="bold" color={headingColor} mb={2}>Target Exposure (0 = fully neutral)</Text>
+          <Flex gap={3} wrap="wrap" align="end">
+            <NumInput label="Target Δ" value={desiredGreeks.delta}
+              onChange={v => setDesiredGreeks(prev => ({ ...prev, delta: v }))} step={10} min={-99999} width="90px" />
+            <NumInput label="Target Γ" value={desiredGreeks.gamma}
+              onChange={v => setDesiredGreeks(prev => ({ ...prev, gamma: v }))} step={1} min={-99999} width="90px" />
+            <NumInput label="Target V" value={desiredGreeks.vega}
+              onChange={v => setDesiredGreeks(prev => ({ ...prev, vega: v }))} step={10} min={-99999} width="90px" />
+            <Button size="sm" variant="ghost" onClick={() => setDesiredGreeks({ delta: 0, gamma: 0, vega: 0 })}>
+              Reset to 0
+            </Button>
+          </Flex>
+          <Text fontSize="2xs" color="gray.500" mt={1}>
+            Positive Δ = bullish, negative = bearish. Positive Γ = long gamma (benefits from moves). Positive V = long vega (benefits from IV rise).
+          </Text>
+        </Box>
+
         <Flex gap={2} wrap="wrap" mb={4}>
           {HEDGE_BUTTONS.map(hb => (
             <Button key={hb.target} size="sm" variant="outline" onClick={() => runHedge(hb.target)}
@@ -992,6 +1039,14 @@ function PortfolioGreeksTab() {
 
       {/* Sensitivity analysis charts — one per Greek */}
       <SensitivityCharts
+        positions={positions} spotPrice={spotPrice} T={T} r={r}
+        hedgeResult={hedgeResult}
+        h1Greeks={h1Greeks} h2Greeks={h2Greeks}
+        hedge1={hedge1} hedge2={hedge2}
+      />
+
+      {/* Scenario P&L table */}
+      <ScenarioTable
         positions={positions} spotPrice={spotPrice} T={T} r={r}
         hedgeResult={hedgeResult}
         h1Greeks={h1Greeks} h2Greeks={h2Greeks}
@@ -1833,6 +1888,57 @@ function SensitivityCharts({ positions, spotPrice, T, r, hedgeResult, h1Greeks, 
     'P&L vs. Rate Change (Rho)', rhoData, 'x', 'Rate Shift (%)', 'pnl', 'P&L ($)',
   ), [rhoData]);
 
+  // P&L Attribution: compute portfolio-level Greeks for original + hedged
+  const attribution = useMemo(() => {
+    const greekKeys = ['delta', 'gamma', 'theta', 'vega'] as const;
+    const orig = { delta: 0, gamma: 0, theta: 0, vega: 0 };
+    for (const p of positions) {
+      const g = bsGreeks(p.optType, spotPrice, p.K, T, r, p.sigma);
+      const dir = p.side === 'long' ? 1 : -1;
+      const mult = dir * p.qty * 100;
+      for (const k of greekKeys) orig[k] += g[k] * mult;
+    }
+
+    const hedged = { ...orig };
+    if (hasHedge) {
+      hedged.delta += hedge.sharesDir * hedge.sharesQty;
+      for (const leg of hedge.legs) {
+        const g = bsGreeks(leg.optType, spotPrice, leg.K, T, r, leg.sigma);
+        const mult = leg.contracts * 100;
+        for (const k of greekKeys) hedged[k] += g[k] * mult;
+      }
+    }
+
+    const pick = hasHedge ? hedged : orig;
+
+    // Daily theta income (theta is per-day, negative for long options)
+    // Positive theta = you earn per day (net short options)
+    const dailyTheta = pick.theta;
+
+    // Expected daily gamma cost: ½ × Γ × S² × σ² / 365
+    // This is the expected cost of delta-rehedging due to realized moves
+    const avgSigma = positions.reduce((s, p) => s + p.sigma, 0) / (positions.length || 1);
+    const dailyGammaCost = 0.5 * Math.abs(pick.gamma) * spotPrice * spotPrice * (avgSigma * avgSigma) / 365;
+
+    // Net daily P&L = theta income - gamma cost
+    // (theta is negative for shorts which means income, so -dailyTheta is income)
+    const thetaIncome = -dailyTheta;
+    const netDaily = thetaIncome - dailyGammaCost;
+
+    // Break-even realized vol: solve ½ Γ S² σ_be² / 365 = |Θ|
+    // σ_be = sqrt(2 |Θ| × 365 / (Γ × S²))
+    const absGamma = Math.abs(pick.gamma);
+    const breakEvenVol = absGamma > 1e-12
+      ? Math.sqrt(2 * Math.abs(dailyTheta) * 365 / (absGamma * spotPrice * spotPrice))
+      : 0;
+
+    return { orig, hedged: hasHedge ? hedged : null, dailyTheta, thetaIncome, dailyGammaCost, netDaily, breakEvenVol, avgSigma };
+  }, [positions, spotPrice, T, r, hasHedge, hedge]);
+
+  const fmtD = (v: number) => v >= 0
+    ? `+$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    : `-$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
   return (
     <Card>
       <Heading size="xs" color={headingColor} mb={1}>
@@ -1842,6 +1948,52 @@ function SensitivityCharts({ positions, spotPrice, T, r, hedgeResult, h1Greeks, 
         Each chart varies one factor while holding others constant.
         {hasHedge ? '' : ' Run a hedge to see the comparison.'}
       </Text>
+
+      {/* P&L Attribution */}
+      <Box bg="whiteAlpha.50" borderRadius="md" p={3} mb={4}>
+        <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>
+          Daily P&amp;L Attribution {hasHedge ? '(Hedged Portfolio)' : '(Current Portfolio)'}
+        </Text>
+        <Grid templateColumns={{ base: '1fr 1fr', md: '1fr 1fr 1fr 1fr' }} gap={4} mb={2}>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Theta Income / Day</Text>
+            <Text fontSize="lg" fontWeight="bold" color={attribution.thetaIncome >= 0 ? 'green.300' : 'red.300'}>
+              {fmtD(attribution.thetaIncome)}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">
+              {attribution.thetaIncome >= 0 ? 'net short options → earn from decay' : 'net long options → pay for decay'}
+            </Text>
+          </VStack>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Est. Gamma Cost / Day</Text>
+            <Text fontSize="lg" fontWeight="bold" color="red.300">
+              −${attribution.dailyGammaCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">½ Γ S² σ² / 365 (rehedge cost)</Text>
+          </VStack>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Net Expected P&amp;L / Day</Text>
+            <Text fontSize="lg" fontWeight="bold" color={attribution.netDaily >= 0 ? 'green.300' : 'red.300'}>
+              {fmtD(attribution.netDaily)}
+            </Text>
+            <Text fontSize="2xs" color="gray.500">theta − gamma cost</Text>
+          </VStack>
+          <VStack gap={0}>
+            <Text fontSize="xs" color="gray.400">Break-even Realized Vol</Text>
+            <Text fontSize="lg" fontWeight="bold" color={attribution.breakEvenVol <= attribution.avgSigma ? 'green.300' : 'red.300'}>
+              {(attribution.breakEvenVol * 100).toFixed(1)}%
+            </Text>
+            <Text fontSize="2xs" color="gray.500">
+              vs. IV ≈ {(attribution.avgSigma * 100).toFixed(1)}% — {attribution.breakEvenVol <= attribution.avgSigma ? 'profitable if vol stays below' : 'need vol below this to profit'}
+            </Text>
+          </VStack>
+        </Grid>
+        <Text fontSize="2xs" color="gray.500">
+          Theta income = −Θ (positive when net short). Gamma cost assumes continuous delta rehedging at current IV.
+          You profit when realized vol &lt; break-even vol. The theta chart below shows the time decay P&amp;L path.
+        </Text>
+      </Box>
+
       <Grid templateColumns={{ base: '1fr', lg: '1fr 1fr' }} gap={4}>
         <VegaProvider><VegaPlot spec={priceSpec} height="260px" /></VegaProvider>
         <VegaProvider><VegaPlot spec={gammaSpec} height="260px" /></VegaProvider>
@@ -1849,6 +2001,188 @@ function SensitivityCharts({ positions, spotPrice, T, r, hedgeResult, h1Greeks, 
         <VegaProvider><VegaPlot spec={thetaSpec} height="260px" /></VegaProvider>
         <VegaProvider><VegaPlot spec={rhoSpec} height="260px" /></VegaProvider>
       </Grid>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario P&L Table
+// ---------------------------------------------------------------------------
+const SCENARIO_PCTS = [-30, -10, 0, 10, 30];
+const IV_SHIFTS = [-10, -5, 0, 5, 10]; // in percentage points
+const TIME_DAYS = [0, 7, 14, 30];
+
+function ScenarioTable({ positions, spotPrice, T, r, hedgeResult, h1Greeks, h2Greeks, hedge1, hedge2 }: {
+  positions: BSPosition[];
+  spotPrice: number;
+  T: number;
+  r: number;
+  hedgeResult: HedgeResult | null;
+  h1Greeks: ComputedGreeks;
+  h2Greeks: ComputedGreeks;
+  hedge1: { name: string; optType: 'call' | 'put'; K: number; sigma: number };
+  hedge2: { name: string; optType: 'call' | 'put'; K: number; sigma: number };
+}) {
+  const hasHedge = hedgeResult !== null;
+  const hedge = useMemo(() =>
+    parseHedgeActions(hedgeResult, hedge1, hedge2, h1Greeks, h2Greeks, spotPrice),
+  [hedgeResult, hedge1, hedge2, h1Greeks, h2Greeks, spotPrice]);
+
+  const baselines = useMemo(() => {
+    const origBase = evalPortfolio(positions, spotPrice, T, r, 0);
+    const hedgedBase = hasHedge
+      ? evalHedged(origBase, hedge.legs, hedge.sharesDir, hedge.sharesQty, spotPrice, T, r, 0)
+      : 0;
+    return { origBase, hedgedBase };
+  }, [positions, spotPrice, T, r, hasHedge, hedge]);
+
+  // Price × IV matrix
+  const priceIvGrid = useMemo(() => {
+    const rows: { priceShift: number; price: number; cells: { ivShift: number; origPnl: number; hedgedPnl: number }[] }[] = [];
+    for (const pPct of SCENARIO_PCTS) {
+      const S = spotPrice * (1 + pPct / 100);
+      const cells = IV_SHIFTS.map(ivPct => {
+        const dSigma = ivPct / 100;
+        const origVal = evalPortfolio(positions, S, T, r, dSigma);
+        const origPnl = origVal - baselines.origBase;
+        let hedgedPnl = 0;
+        if (hasHedge) {
+          const hedgedVal = evalHedged(origVal, hedge.legs, hedge.sharesDir, hedge.sharesQty, S, T, r, dSigma);
+          hedgedPnl = hedgedVal - baselines.hedgedBase;
+        }
+        return { ivShift: ivPct, origPnl, hedgedPnl };
+      });
+      rows.push({ priceShift: pPct, price: S, cells });
+    }
+    return rows;
+  }, [positions, spotPrice, T, r, baselines, hasHedge, hedge]);
+
+  // Time decay table
+  const timeGrid = useMemo(() => {
+    const maxDays = Math.floor(T * 365) - 1;
+    const days = TIME_DAYS.filter(d => d <= maxDays);
+    const rows: { priceShift: number; price: number; cells: { days: number; origPnl: number; hedgedPnl: number }[] }[] = [];
+    for (const pPct of SCENARIO_PCTS) {
+      const S = spotPrice * (1 + pPct / 100);
+      const cells = days.map(d => {
+        const newT = Math.max(T - d / 365, 1 / 365);
+        const origVal = evalPortfolio(positions, S, newT, r, 0);
+        const origPnl = origVal - baselines.origBase;
+        let hedgedPnl = 0;
+        if (hasHedge) {
+          const hedgedVal = evalHedged(origVal, hedge.legs, hedge.sharesDir, hedge.sharesQty, S, newT, r, 0);
+          hedgedPnl = hedgedVal - baselines.hedgedBase;
+        }
+        return { days: d, origPnl, hedgedPnl };
+      });
+      rows.push({ priceShift: pPct, price: S, cells });
+    }
+    return { rows, days };
+  }, [positions, spotPrice, T, r, baselines, hasHedge, hedge]);
+
+  const fmtPnl = (v: number) => {
+    const s = v >= 0
+      ? `+$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+      : `-$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    return s;
+  };
+
+  const pnlColor = (v: number) => v > 0 ? 'green.300' : v < 0 ? 'red.300' : 'gray.400';
+
+  return (
+    <Card>
+      <Heading size="xs" color={headingColor} mb={1}>
+        Scenario Analysis {hasHedge ? '(Original / Hedged)' : ''}
+      </Heading>
+      <Text fontSize="xs" color="gray.400" mb={3}>
+        P&amp;L at various combinations of price move and IV / time changes.
+      </Text>
+
+      {/* Price × IV table */}
+      <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>
+        Price Move × IV Change
+      </Text>
+      <Box overflowX="auto" mb={4}>
+        <Table.Root size="sm" variant="outline">
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeader fontSize="xs" rowSpan={2}>Price Move</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs" rowSpan={2}>Price</Table.ColumnHeader>
+              {IV_SHIFTS.map(iv => (
+                <Table.ColumnHeader key={iv} fontSize="xs" textAlign="center">
+                  IV {iv >= 0 ? '+' : ''}{iv}%
+                </Table.ColumnHeader>
+              ))}
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {priceIvGrid.map(row => (
+              <Table.Row key={row.priceShift} bg={row.priceShift === 0 ? 'whiteAlpha.100' : undefined}>
+                <Table.Cell fontSize="xs" fontWeight={row.priceShift === 0 ? 'bold' : 'normal'}>
+                  {row.priceShift >= 0 ? '+' : ''}{row.priceShift}%
+                </Table.Cell>
+                <Table.Cell fontSize="xs" color="gray.400">
+                  ${row.price.toFixed(0)}
+                </Table.Cell>
+                {row.cells.map(c => (
+                  <Table.Cell key={c.ivShift} fontSize="xs" textAlign="right">
+                    <Text color={pnlColor(c.origPnl)}>{fmtPnl(c.origPnl)}</Text>
+                    {hasHedge && (
+                      <Text fontSize="2xs" color={pnlColor(c.hedgedPnl)}>{fmtPnl(c.hedgedPnl)}</Text>
+                    )}
+                  </Table.Cell>
+                ))}
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+        {hasHedge && (
+          <Text fontSize="2xs" color="gray.500" mt={1}>Top: Original | Bottom: Hedged</Text>
+        )}
+      </Box>
+
+      {/* Price × Time table */}
+      <Text fontSize="sm" fontWeight="bold" color={headingColor} mb={2}>
+        Price Move × Days Elapsed
+      </Text>
+      <Box overflowX="auto">
+        <Table.Root size="sm" variant="outline">
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeader fontSize="xs">Price Move</Table.ColumnHeader>
+              <Table.ColumnHeader fontSize="xs">Price</Table.ColumnHeader>
+              {timeGrid.days.map(d => (
+                <Table.ColumnHeader key={d} fontSize="xs" textAlign="center">
+                  {d === 0 ? 'Today' : `+${d}d`}
+                </Table.ColumnHeader>
+              ))}
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {timeGrid.rows.map(row => (
+              <Table.Row key={row.priceShift} bg={row.priceShift === 0 ? 'whiteAlpha.100' : undefined}>
+                <Table.Cell fontSize="xs" fontWeight={row.priceShift === 0 ? 'bold' : 'normal'}>
+                  {row.priceShift >= 0 ? '+' : ''}{row.priceShift}%
+                </Table.Cell>
+                <Table.Cell fontSize="xs" color="gray.400">
+                  ${row.price.toFixed(0)}
+                </Table.Cell>
+                {row.cells.map(c => (
+                  <Table.Cell key={c.days} fontSize="xs" textAlign="right">
+                    <Text color={pnlColor(c.origPnl)}>{fmtPnl(c.origPnl)}</Text>
+                    {hasHedge && (
+                      <Text fontSize="2xs" color={pnlColor(c.hedgedPnl)}>{fmtPnl(c.hedgedPnl)}</Text>
+                    )}
+                  </Table.Cell>
+                ))}
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+        {hasHedge && (
+          <Text fontSize="2xs" color="gray.500" mt={1}>Top: Original | Bottom: Hedged</Text>
+        )}
+      </Box>
     </Card>
   );
 }

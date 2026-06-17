@@ -308,7 +308,7 @@ export const BlockPickerDialog: React.FC<BlockPickerDialogProps> = ({
 
 
 const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
-  if (isStaticMode()) {
+  if (isStaticMode() || block.article.options?.readonly) {
     return <>{block.component("view")}</>;
   }
 

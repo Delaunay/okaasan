@@ -6,6 +6,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Server, Cpu, HardDrive, Clock, Network, Thermometer,
   ArrowLeft, Play, X, FolderOpen, CheckCircle, AlertCircle, FileVideo,
+  Activity, Shield, Monitor, Tv, Copy, RefreshCw, ExternalLink, FolderSync, Database,
 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
@@ -95,6 +96,26 @@ interface ComputerInfo {
   temps: Record<string, { label: string; current: number }[]> | null;
 }
 
+interface ServiceInfo {
+  id: string;
+  name: string;
+  description: string;
+  status: 'running' | 'stopped' | 'error' | 'unknown';
+  url: string | null;
+}
+
+interface ZfsPool {
+  name: string;
+  total: number;
+  used: number;
+  free: number;
+  capacity_pct: number;
+  health: string;
+  fragmentation_pct: number;
+  scrub_status: string;
+  errors: string;
+}
+
 interface ManifestEntry {
   path: string;
   size_before: number;
@@ -134,6 +155,8 @@ const ComputerDetail: FC = () => {
   const navigate = useNavigate();
   const [info, setInfo] = useState<ComputerInfo | null>(null);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
+  const [services, setServices] = useState<ServiceInfo[]>([]);
+  const [zfsPools, setZfsPools] = useState<ZfsPool[]>([]);
   const [loading, setLoading] = useState(true);
 
   // New task form
@@ -153,12 +176,16 @@ const ComputerDetail: FC = () => {
   const fetchData = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [infoData, taskData] = await Promise.all([
+      const [infoData, taskData, serviceData, zfsData] = await Promise.all([
         recipeAPI.getComputer(computerId),
         recipeAPI.getComputerTasks(computerId),
+        recipeAPI.getComputerServices(computerId),
+        recipeAPI.getZfsStatus(computerId),
       ]);
       setInfo(infoData);
       setTasks(taskData);
+      setServices(serviceData);
+      setZfsPools(zfsData);
     } catch (err) {
       console.error('Failed to fetch computer data:', err);
     } finally {
@@ -356,6 +383,12 @@ const ComputerDetail: FC = () => {
         )}
       </Grid>
 
+      {/* ZFS Pools */}
+      {zfsPools.length > 0 && <ZfsPanel pools={zfsPools} />}
+
+      {/* Services Section */}
+      <ServicesPanel services={services} computerId={computerId} onRefresh={() => fetchData(true)} />
+
       {/* Tasks Section */}
       <Box>
         <HStack justify="space-between" mb={4}>
@@ -484,6 +517,232 @@ const ComputerDetail: FC = () => {
         )}
       </Box>
     </VStack>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// ZFS sub-component
+// ---------------------------------------------------------------------------
+
+const ZfsPanel: FC<{ pools: ZfsPool[] }> = ({ pools }) => {
+  const healthColor = (h: string) =>
+    h === 'ONLINE' ? 'green' : h === 'DEGRADED' ? 'orange' : 'red';
+
+  return (
+    <Box>
+      <HStack mb={4}>
+        <HardDrive size={20} color="var(--icon-color)" />
+        <Heading size="md" color="var(--heading-color)">ZFS Pools</Heading>
+      </HStack>
+
+      <VStack gap={3} align="stretch">
+        {pools.map((pool) => (
+          <Box
+            key={pool.name}
+            p={4}
+            borderRadius="lg"
+            border="1px solid"
+            borderColor={pool.health !== 'ONLINE' ? 'orange.400' : 'var(--border-color)'}
+            bg="var(--card-bg)"
+          >
+            <HStack justify="space-between" mb={3}>
+              <HStack gap={3}>
+                <Text fontWeight="bold">{pool.name}</Text>
+                <Badge colorPalette={healthColor(pool.health)} variant="subtle">
+                  {pool.health}
+                </Badge>
+              </HStack>
+              <Text fontSize="sm" color="var(--muted-text)">
+                {formatBytes(pool.used)} / {formatBytes(pool.total)}
+              </Text>
+            </HStack>
+
+            <Box mb={3}>
+              <HStack justify="space-between" mb={1}>
+                <Text fontSize="xs" color="var(--muted-text)">Capacity</Text>
+                <Text fontSize="xs" fontWeight="semibold">{pool.capacity_pct}%</Text>
+              </HStack>
+              <UsageBar pct={pool.capacity_pct} />
+            </Box>
+
+            <Grid templateColumns={{ base: '1fr', sm: '1fr 1fr 1fr' }} gap={3}>
+              <Box>
+                <Text fontSize="xs" color="var(--muted-text)">Free</Text>
+                <Text fontSize="sm" fontWeight="semibold">{formatBytes(pool.free)}</Text>
+              </Box>
+              <Box>
+                <Text fontSize="xs" color="var(--muted-text)">Fragmentation</Text>
+                <Text fontSize="sm" fontWeight="semibold">{pool.fragmentation_pct}%</Text>
+              </Box>
+              <Box>
+                <Text fontSize="xs" color="var(--muted-text)">Errors</Text>
+                <Text
+                  fontSize="sm"
+                  fontWeight="semibold"
+                  color={pool.errors === 'No known data errors' || pool.errors === 'none' ? 'green.500' : 'red.500'}
+                >
+                  {pool.errors === 'No known data errors' ? 'None' : pool.errors}
+                </Text>
+              </Box>
+            </Grid>
+
+            {pool.scrub_status && pool.scrub_status !== 'none' && (
+              <Box mt={3} pt={3} borderTop="1px solid" borderColor="var(--border-color)">
+                <Text fontSize="xs" color="var(--muted-text)" mb={1}>Last Scrub</Text>
+                <Text fontSize="sm">{pool.scrub_status}</Text>
+              </Box>
+            )}
+          </Box>
+        ))}
+      </VStack>
+    </Box>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Services sub-components
+// ---------------------------------------------------------------------------
+
+const SERVICE_ICONS: Record<string, FC<{ size?: number; color?: string }>> = {
+  pihole: Shield,
+  rustdesk: Monitor,
+  plex: Tv,
+  stash: Activity,
+  samba: FolderSync,
+  nfs: Database,
+};
+
+const ServicesPanel: FC<{ services: ServiceInfo[]; computerId: string; onRefresh: () => void }> = ({
+  services, computerId, onRefresh,
+}) => {
+  const [rustdeskConfig, setRustdeskConfig] = useState<{
+    relay_server: string; id_server: string; api_server: string; public_key: string;
+  } | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleShowConfig = async () => {
+    if (showConfig) {
+      setShowConfig(false);
+      return;
+    }
+    try {
+      const config = await recipeAPI.getRustDeskConfig(computerId);
+      setRustdeskConfig(config);
+      setShowConfig(true);
+    } catch (err) {
+      console.error('Failed to get RustDesk config:', err);
+    }
+  };
+
+  const handleCopyConfig = () => {
+    if (!rustdeskConfig) return;
+    const text = [
+      `ID Server: ${rustdeskConfig.id_server}`,
+      `Relay Server: ${rustdeskConfig.relay_server}`,
+      `Public Key: ${rustdeskConfig.public_key}`,
+      rustdeskConfig.api_server ? `API Server: ${rustdeskConfig.api_server}` : '',
+    ].filter(Boolean).join('\n');
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const statusColor = (s: string) =>
+    s === 'running' ? 'green' : s === 'stopped' ? 'red' : s === 'error' ? 'orange' : 'gray';
+
+  return (
+    <Box>
+      <HStack justify="space-between" mb={4}>
+        <HStack>
+          <Activity size={20} color="var(--icon-color)" />
+          <Heading size="md" color="var(--heading-color)">Services</Heading>
+        </HStack>
+        <Button size="sm" variant="outline" onClick={onRefresh}>
+          <RefreshCw size={14} />
+          Refresh
+        </Button>
+      </HStack>
+
+      <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={3}>
+        {services.map((svc) => {
+          const Icon = SERVICE_ICONS[svc.id] || Activity;
+          return (
+            <Box
+              key={svc.id}
+              p={4}
+              borderRadius="lg"
+              border="1px solid"
+              borderColor="var(--border-color)"
+              bg="var(--card-bg)"
+            >
+              <HStack justify="space-between" mb={2}>
+                <HStack gap={3}>
+                  <Icon size={20} color="var(--icon-color)" />
+                  <Box>
+                    <Text fontWeight="bold" fontSize="sm">{svc.name}</Text>
+                    <Text fontSize="xs" color="var(--muted-text)">{svc.description}</Text>
+                  </Box>
+                </HStack>
+                <Badge colorPalette={statusColor(svc.status)} variant="subtle">
+                  {svc.status}
+                </Badge>
+              </HStack>
+
+              <HStack mt={2} pt={2} borderTop="1px solid" borderColor="var(--border-color)" gap={2}>
+                {svc.url && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    asChild
+                  >
+                    <a href={svc.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink size={12} />
+                      Open
+                    </a>
+                  </Button>
+                )}
+                {svc.id === 'rustdesk' && svc.status === 'running' && (
+                  <Button size="xs" variant="outline" onClick={handleShowConfig}>
+                    {showConfig ? 'Hide Config' : 'Client Config'}
+                  </Button>
+                )}
+              </HStack>
+            </Box>
+          );
+        })}
+      </Grid>
+
+      {showConfig && rustdeskConfig && (
+        <Box mt={3} p={4} borderRadius="lg" border="1px solid" borderColor="var(--panel-border)" bg="var(--card-bg)">
+          <HStack justify="space-between" mb={3}>
+            <Text fontWeight="bold" fontSize="sm">RustDesk Client Configuration</Text>
+            <Button size="xs" variant="outline" onClick={handleCopyConfig}>
+              <Copy size={12} />
+              {copied ? 'Copied!' : 'Copy'}
+            </Button>
+          </HStack>
+          <VStack gap={2} align="stretch">
+            <HStack justify="space-between">
+              <Text fontSize="sm" color="var(--muted-text)">ID Server</Text>
+              <Text fontSize="sm" fontFamily="mono">{rustdeskConfig.id_server}</Text>
+            </HStack>
+            <HStack justify="space-between">
+              <Text fontSize="sm" color="var(--muted-text)">Relay Server</Text>
+              <Text fontSize="sm" fontFamily="mono">{rustdeskConfig.relay_server}</Text>
+            </HStack>
+            {rustdeskConfig.public_key && (
+              <Box>
+                <Text fontSize="sm" color="var(--muted-text)" mb={1}>Public Key</Text>
+                <Box p={2} borderRadius="md" bg="var(--surface-muted)" fontFamily="mono" fontSize="xs" wordBreak="break-all">
+                  {rustdeskConfig.public_key}
+                </Box>
+              </Box>
+            )}
+          </VStack>
+        </Box>
+      )}
+    </Box>
   );
 };
 

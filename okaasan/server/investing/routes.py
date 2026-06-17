@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from sqlalchemy import func, desc
@@ -113,9 +113,11 @@ def _compute_analytics(contracts, underlying_price) -> dict:
         dte = (exp_date - today).days if exp_date else None
 
         calls_with_iv = [(c.strike, c.implied_volatility) for c in clist
-                         if c.option_type == "call" and c.implied_volatility and c.implied_volatility > 0.001]
+                         if c.option_type == "call" and c.implied_volatility and c.implied_volatility > 0.005
+                         and ((c.bid or 0) > 0 or (c.ask or 0) > 0)]
         puts_with_iv = [(c.strike, c.implied_volatility) for c in clist
-                        if c.option_type == "put" and c.implied_volatility and c.implied_volatility > 0.001]
+                        if c.option_type == "put" and c.implied_volatility and c.implied_volatility > 0.005
+                        and ((c.bid or 0) > 0 or (c.ask or 0) > 0)]
 
         if not calls_with_iv and not puts_with_iv:
             continue
@@ -272,6 +274,82 @@ def backfill_prices(symbol: str, request: Request, db: Session = Depends(_get_in
     return result
 
 
+# ── Intraday Prices ───────────────────────────────────────────────────
+
+
+@router.get("/intraday/{symbol}")
+def get_intraday_prices(
+    symbol: str,
+    date_str: str | None = Query(None, alias="date"),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    interval: str | None = Query(None),
+    db: Session = Depends(_get_inv_db),
+):
+    """Get stored intraday price bars.
+
+    Filters: date (single day), start/end (range), interval (e.g. 5m).
+    """
+    from .models import IntradayPrice
+    symbol = symbol.upper()
+
+    q = db.query(IntradayPrice).filter(IntradayPrice.symbol == symbol)
+
+    if interval:
+        q = q.filter(IntradayPrice.interval == interval)
+
+    if date_str:
+        day = date.fromisoformat(date_str)
+        day_start = datetime(day.year, day.month, day.day)
+        day_end = day_start + timedelta(days=1)
+        q = q.filter(IntradayPrice.timestamp >= day_start, IntradayPrice.timestamp < day_end)
+    else:
+        if start:
+            q = q.filter(IntradayPrice.timestamp >= start)
+        if end:
+            q = q.filter(IntradayPrice.timestamp <= end)
+
+    rows = q.order_by(IntradayPrice.timestamp).limit(10000).all()
+
+    return {
+        "symbol": symbol,
+        "count": len(rows),
+        "bars": [r.to_json() for r in rows],
+    }
+
+
+@router.get("/intraday/{symbol}/dates")
+def get_intraday_dates(
+    symbol: str,
+    db: Session = Depends(_get_inv_db),
+):
+    """List dates with available intraday data for a symbol."""
+    from .models import IntradayPrice
+    from sqlalchemy import cast, Date as SqlDate
+    symbol = symbol.upper()
+
+    rows = (
+        db.query(
+            cast(IntradayPrice.timestamp, SqlDate).label("day"),
+            func.count(IntradayPrice.id).label("bars"),
+            func.min(IntradayPrice.interval).label("interval"),
+        )
+        .filter(IntradayPrice.symbol == symbol)
+        .group_by("day")
+        .order_by(func.desc("day"))
+        .limit(90)
+        .all()
+    )
+
+    return {
+        "symbol": symbol,
+        "dates": [
+            {"date": r.day.isoformat() if hasattr(r.day, "isoformat") else str(r.day), "bars": r.bars, "interval": r.interval}
+            for r in rows
+        ],
+    }
+
+
 # ── Ticker Detail ────────────────────────────────────────────────────
 
 
@@ -340,11 +418,12 @@ def get_ticker_detail(symbol: str, db: Session = Depends(_get_inv_db)):
 def get_option_chain(
     symbol: str,
     snapshot_date: str | None = Query(None),
+    snapshot_time: str | None = Query(None),
     expiration: str | None = Query(None),
     option_type: str | None = Query(None),
     db: Session = Depends(_get_inv_db),
 ):
-    """Get option chain snapshot (latest or specific date)."""
+    """Get option chain snapshot (latest or specific date/time)."""
     symbol = symbol.upper()
 
     if snapshot_date:
@@ -356,10 +435,48 @@ def get_option_chain(
         if not snap_date:
             return {"symbol": symbol, "snapshot_date": None, "expirations": [], "contracts": []}
 
+    # Pick session: explicit > latest available for that date
+    # Logical ordering: close > midday > open (not alphabetical)
+    _SESSION_ORDER = {"close": 3, "midday": 2, "open": 1}
+    if not snapshot_time:
+        available_times = [
+            r[0] for r in db.query(OptionChainSnapshot.snapshot_time).filter(
+                OptionChainSnapshot.symbol == symbol,
+                OptionChainSnapshot.snapshot_date == snap_date,
+            ).distinct().all()
+            if r[0]
+        ]
+        if available_times:
+            best = max(available_times, key=lambda t: _SESSION_ORDER.get(t, 0))
+            # "open" session often has stale/zero quotes; prefer previous day's "close" if available
+            if best == "open" and len(available_times) == 1 and not snapshot_date:
+                prev_date = db.query(func.max(OptionChainSnapshot.snapshot_date)).filter(
+                    OptionChainSnapshot.symbol == symbol,
+                    OptionChainSnapshot.snapshot_date < snap_date,
+                ).scalar()
+                if prev_date:
+                    prev_times = [
+                        r[0] for r in db.query(OptionChainSnapshot.snapshot_time).filter(
+                            OptionChainSnapshot.symbol == symbol,
+                            OptionChainSnapshot.snapshot_date == prev_date,
+                        ).distinct().all()
+                        if r[0]
+                    ]
+                    prev_best = max(prev_times, key=lambda t: _SESSION_ORDER.get(t, 0)) if prev_times else None
+                    if prev_best and _SESSION_ORDER.get(prev_best, 0) > _SESSION_ORDER.get("open", 1):
+                        snap_date = prev_date
+                        best = prev_best
+            snapshot_time = best
+
+    today = date.today()
+
     q = db.query(OptionChainSnapshot).filter(
         OptionChainSnapshot.symbol == symbol,
         OptionChainSnapshot.snapshot_date == snap_date,
+        OptionChainSnapshot.expiration >= today,
     )
+    if snapshot_time:
+        q = q.filter(OptionChainSnapshot.snapshot_time == snapshot_time)
     if expiration:
         q = q.filter(OptionChainSnapshot.expiration == date.fromisoformat(expiration))
     if option_type:
@@ -439,7 +556,10 @@ def get_max_pain_history(
     expiration: str | None = Query(None),
     db: Session = Depends(_get_inv_db),
 ):
-    """Compute max pain per (snapshot_date, expiration) from stored snapshots."""
+    """Compute max pain per (snapshot_date, expiration) from stored snapshots.
+
+    Uses the latest session per day to avoid duplicates from intraday snapshots.
+    """
     sym = symbol.upper()
 
     q = db.query(
@@ -457,23 +577,44 @@ def get_max_pain_history(
         OptionChainSnapshot.expiration,
     ).all()
 
+    # Deduplicate to latest session per (date, expiration)
+    seen: set[tuple] = set()
+    unique_pairs = []
+    for snap_date, exp in pairs:
+        key = (snap_date, exp)
+        if key not in seen:
+            seen.add(key)
+            unique_pairs.append((snap_date, exp))
+
     spot_cache: dict[date, float | None] = {}
     contracts_cache: dict[tuple, list] = {}
 
-    for snap_date, exp in pairs:
+    for snap_date, exp in unique_pairs:
         key = (snap_date, exp)
         if key not in contracts_cache:
+            # Get latest session for this date (logical order: close > midday > open)
+            _SO = {"close": 3, "midday": 2, "open": 1}
+            avail = [
+                r[0] for r in db.query(OptionChainSnapshot.snapshot_time).filter(
+                    OptionChainSnapshot.symbol == sym,
+                    OptionChainSnapshot.snapshot_date == snap_date,
+                    OptionChainSnapshot.expiration == exp,
+                ).distinct().all()
+                if r[0]
+            ]
+            latest_time = max(avail, key=lambda t: _SO.get(t, 0)) if avail else None
             rows = db.query(OptionChainSnapshot).filter(
                 OptionChainSnapshot.symbol == sym,
                 OptionChainSnapshot.snapshot_date == snap_date,
                 OptionChainSnapshot.expiration == exp,
+                OptionChainSnapshot.snapshot_time == latest_time,
             ).all()
             contracts_cache[key] = rows
             if snap_date not in spot_cache and rows:
                 spot_cache[snap_date] = rows[0].underlying_price
 
     series = []
-    for snap_date, exp in pairs:
+    for snap_date, exp in unique_pairs:
         contracts = contracts_cache.get((snap_date, exp), [])
         mp = _compute_max_pain(contracts)
         if mp is None:
@@ -488,6 +629,85 @@ def get_max_pain_history(
         })
 
     return {"symbol": sym, "series": series}
+
+
+@router.get("/options/{symbol}/vol-smile-history")
+def get_vol_smile_history(
+    symbol: str,
+    expiration: str | None = Query(None),
+    db: Session = Depends(_get_inv_db),
+):
+    """Volatility smile evolution: IV by strike across multiple snapshots.
+
+    Returns IV curves for each (snapshot_date, snapshot_time) pair,
+    enabling visualization of how the smile shifts over time.
+    """
+    sym = symbol.upper()
+
+    q = db.query(
+        OptionChainSnapshot.snapshot_date,
+        OptionChainSnapshot.snapshot_time,
+    ).filter(
+        OptionChainSnapshot.symbol == sym,
+        OptionChainSnapshot.implied_volatility.isnot(None),
+    ).distinct().order_by(
+        OptionChainSnapshot.snapshot_date,
+        OptionChainSnapshot.snapshot_time,
+    )
+
+    pairs = q.all()
+    if not pairs:
+        return {"symbol": sym, "smiles": []}
+
+    # If no expiration specified, use the nearest active one from the latest snapshot
+    if not expiration:
+        latest_date = pairs[-1][0]
+        nearest_exp = db.query(func.min(OptionChainSnapshot.expiration)).filter(
+            OptionChainSnapshot.symbol == sym,
+            OptionChainSnapshot.snapshot_date == latest_date,
+            OptionChainSnapshot.expiration > latest_date,
+        ).scalar()
+        if nearest_exp:
+            expiration = nearest_exp.isoformat()
+
+    smiles = []
+    for snap_date, snap_time in pairs:
+        filt = db.query(OptionChainSnapshot).filter(
+            OptionChainSnapshot.symbol == sym,
+            OptionChainSnapshot.snapshot_date == snap_date,
+            OptionChainSnapshot.snapshot_time == snap_time,
+            OptionChainSnapshot.implied_volatility.isnot(None),
+        )
+        if expiration:
+            filt = filt.filter(OptionChainSnapshot.expiration == expiration)
+
+        rows = filt.order_by(OptionChainSnapshot.strike).all()
+        if not rows:
+            continue
+
+        underlying = rows[0].underlying_price
+        calls = [
+            {"strike": r.strike, "iv": r.implied_volatility}
+            for r in rows if r.option_type == "call" and r.implied_volatility
+        ]
+        puts = [
+            {"strike": r.strike, "iv": r.implied_volatility}
+            for r in rows if r.option_type == "put" and r.implied_volatility
+        ]
+
+        if not calls and not puts:
+            continue
+
+        smiles.append({
+            "snapshot_date": snap_date.isoformat(),
+            "snapshot_time": snap_time or "close",
+            "expiration": expiration,
+            "underlying_price": underlying,
+            "calls": calls,
+            "puts": puts,
+        })
+
+    return {"symbol": sym, "expiration": expiration, "smiles": smiles}
 
 
 # ── Overview ──────────────────────────────────────────────────────────

@@ -25,21 +25,49 @@ const RANGE_PRESETS = [
     { label: 'All', days: 365 * 3 },
 ];
 
-const TYPE_COLORS: Record<string, string> = {
+const KNOWN_COLORS: Record<string, string> = {
+    running: '#e45756',
     cycling: '#ff7f0e',
-    lap_swimming: '#e45756',
+    lap_swimming: '#17becf',
     badminton: '#4c78a8',
     yoga: '#54a24b',
+    walking: '#8c564b',
+    hiking: '#2ca02c',
+    strength_training: '#d62728',
     other: '#9467bd',
 };
+
+const FALLBACK_PALETTE = [
+    '#17becf', '#bcbd22', '#7f7f7f', '#e377c2', '#f7b6d2',
+    '#c5b0d5', '#aec7e8', '#ffbb78', '#98df8a', '#ff9896',
+];
+
+function buildColorScale(types: string[]): { domain: string[]; range: string[] } {
+    const domain: string[] = [];
+    const range: string[] = [];
+    let fallbackIdx = 0;
+    for (const t of types) {
+        domain.push(t);
+        if (KNOWN_COLORS[t]) {
+            range.push(KNOWN_COLORS[t]);
+        } else {
+            range.push(FALLBACK_PALETTE[fallbackIdx % FALLBACK_PALETTE.length]);
+            fallbackIdx++;
+        }
+    }
+    return { domain, range };
+}
 
 function fmt(d: Date): string {
     return d.toISOString().slice(0, 10);
 }
 
+const PAGE_SIZE = 20;
+
 const HealthActivities: React.FC = () => {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(0);
 
     const today = useMemo(() => new Date(), []);
     const [startDate, setStartDate] = useState(() => fmt(new Date(today.getTime() - 365 * 86400000)));
@@ -56,7 +84,7 @@ const HealthActivities: React.FC = () => {
         setLoading(true);
         fetch(healthDataUrl('activities-detail', { start: startDate, end: endDate }))
             .then(r => r.json())
-            .then(data => { setActivities(data); setLoading(false); })
+            .then(data => { setActivities(data); setPage(0); setLoading(false); })
             .catch(() => setLoading(false));
     }, [startDate, endDate]);
 
@@ -64,6 +92,8 @@ const HealthActivities: React.FC = () => {
         const types = new Set(activities.map(a => a.type));
         return Array.from(types).sort();
     }, [activities]);
+
+    const colorScale = useMemo(() => buildColorScale(activityTypes), [activityTypes]);
 
     const summaryByType = useMemo(() => {
         const map: Record<string, { count: number; totalMin: number; totalDist: number; totalCal: number }> = {};
@@ -87,14 +117,14 @@ const HealthActivities: React.FC = () => {
         encoding: {
             x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: [startDate, endOfDay(endDate)] } },
             y: { field: 'duration_min', type: 'quantitative', title: 'Duration (min)' },
-            color: { field: 'type', type: 'nominal', legend: { title: null }, scale: { domain: Object.keys(TYPE_COLORS), range: Object.values(TYPE_COLORS) } },
+            color: { field: 'type', type: 'nominal', legend: null, scale: colorScale },
             tooltip: [
                 { field: 'date', type: 'temporal', title: 'Date' },
                 { field: 'type', title: 'Activity' },
                 { field: 'duration_min', type: 'quantitative', title: 'Minutes', format: '.0f' },
             ],
         },
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
     const distanceProgressSpec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
@@ -107,14 +137,14 @@ const HealthActivities: React.FC = () => {
         encoding: {
             x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: [startDate, endOfDay(endDate)] } },
             y: { field: 'distance_km', type: 'quantitative', title: 'Distance (km)' },
-            color: { field: 'type', type: 'nominal', legend: { title: null }, scale: { domain: Object.keys(TYPE_COLORS), range: Object.values(TYPE_COLORS) } },
+            color: { field: 'type', type: 'nominal', legend: null, scale: colorScale },
             tooltip: [
                 { field: 'date', type: 'temporal', title: 'Date' },
                 { field: 'type', title: 'Activity' },
                 { field: 'distance_km', type: 'quantitative', title: 'km', format: '.1f' },
             ],
         },
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
     const caloriesProgressSpec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
@@ -127,14 +157,14 @@ const HealthActivities: React.FC = () => {
         encoding: {
             x: { field: 'date', type: 'temporal', title: null, scale: { type: 'time', domain: [startDate, endOfDay(endDate)] } },
             y: { field: 'calories', type: 'quantitative', title: 'Calories', stack: true },
-            color: { field: 'type', type: 'nominal', legend: { title: null }, scale: { domain: Object.keys(TYPE_COLORS), range: Object.values(TYPE_COLORS) } },
+            color: { field: 'type', type: 'nominal', legend: null, scale: colorScale },
             tooltip: [
                 { field: 'date', type: 'temporal', title: 'Date' },
                 { field: 'type', title: 'Activity' },
                 { field: 'calories', type: 'quantitative', title: 'kcal' },
             ],
         },
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
     const weeklyFreqSpec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
@@ -150,16 +180,16 @@ const HealthActivities: React.FC = () => {
         encoding: {
             x: { field: 'week', type: 'temporal', title: null },
             y: { field: 'sessions', type: 'quantitative', title: 'Sessions / Week', stack: true },
-            color: { field: 'type', type: 'nominal', legend: { title: null }, scale: { domain: Object.keys(TYPE_COLORS), range: Object.values(TYPE_COLORS) } },
+            color: { field: 'type', type: 'nominal', legend: { title: null }, scale: colorScale },
             tooltip: [
                 { field: 'week', type: 'temporal', title: 'Week' },
                 { field: 'type', title: 'Activity' },
                 { field: 'sessions', type: 'quantitative', title: 'Sessions' },
             ],
         },
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
-    const colorEnc = { field: 'type', type: 'nominal' as const, legend: { title: null }, scale: { domain: Object.keys(TYPE_COLORS), range: Object.values(TYPE_COLORS) } };
+    const colorEnc = { field: 'type', type: 'nominal' as const, legend: null, scale: colorScale };
     const xEnc = { field: 'date', type: 'temporal' as const, title: null, axis: { tickCount: 'month' as const }, scale: { type: 'time' as const, domain: [startDate, endOfDay(endDate)] } };
 
     const speedSpec = useMemo(() => ({
@@ -180,7 +210,7 @@ const HealthActivities: React.FC = () => {
                 { field: 'speed_kmh', type: 'quantitative', title: 'km/h', format: '.1f' },
             ],
         },
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
     const hrSpec = useMemo(() => ({
         $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
@@ -215,7 +245,7 @@ const HealthActivities: React.FC = () => {
                 },
             },
         ],
-    }), [startDate, endDate]);
+    }), [startDate, endDate, colorScale]);
 
     return (
         <VegaProvider>
@@ -238,7 +268,7 @@ const HealthActivities: React.FC = () => {
                         const s = summaryByType[type];
                         if (!s) return null;
                         return (
-                            <Box key={type} p={3} borderRadius="md" borderWidth="1px" borderColor={TYPE_COLORS[type] || '#888'}>
+                            <Box key={type} p={3} borderRadius="md" borderWidth="1px" borderColor={KNOWN_COLORS[type] || FALLBACK_PALETTE[activityTypes.indexOf(type) % FALLBACK_PALETTE.length] || '#888'}>
                                 <Text fontWeight="bold" textTransform="capitalize" fontSize="sm">{type.replace('_', ' ')}</Text>
                                 <Text fontSize="2xl" fontWeight="bold">{s.count}</Text>
                                 <Text fontSize="xs" color="fg.muted">
@@ -284,7 +314,10 @@ const HealthActivities: React.FC = () => {
 
                         {/* Activity log table */}
                         <Box>
-                            <Heading size="sm" mb={2}>Activity Log</Heading>
+                            <HStack justify="space-between" mb={2}>
+                                <Heading size="sm">Activity Log</Heading>
+                                <Text fontSize="xs" color="fg.muted">{activities.length} activities</Text>
+                            </HStack>
                             <Box overflowX="auto">
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                     <thead>
@@ -301,11 +334,11 @@ const HealthActivities: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {activities.map(a => (
+                                        {activities.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(a => (
                                             <tr key={a.id} style={{ borderBottom: '1px solid var(--chakra-colors-border)' }}>
                                                 <td style={{ padding: '4px 8px' }}>{new Date(a.date).toLocaleDateString()}</td>
                                                 <td style={{ padding: '4px 8px', textTransform: 'capitalize' }}>
-                                                    <span style={{ color: TYPE_COLORS[a.type] || '#888' }}>{a.type.replace('_', ' ')}</span>
+                                                    <span style={{ color: KNOWN_COLORS[a.type] || FALLBACK_PALETTE[activityTypes.indexOf(a.type) % FALLBACK_PALETTE.length] || '#888' }}>{a.type.replace('_', ' ')}</span>
                                                 </td>
                                                 <td style={{ textAlign: 'right', padding: '4px 8px' }}>{a.duration_min.toFixed(0)} min</td>
                                                 <td style={{ textAlign: 'right', padding: '4px 8px' }}>{a.distance_km > 0 ? `${a.distance_km.toFixed(1)} km` : '-'}</td>
@@ -319,6 +352,19 @@ const HealthActivities: React.FC = () => {
                                     </tbody>
                                 </table>
                             </Box>
+                            {activities.length > PAGE_SIZE && (
+                                <HStack justify="center" mt={3} gap={2}>
+                                    <Button size="xs" variant="outline" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                                        Previous
+                                    </Button>
+                                    <Text fontSize="xs" color="fg.muted">
+                                        {page + 1} / {Math.ceil(activities.length / PAGE_SIZE)}
+                                    </Text>
+                                    <Button size="xs" variant="outline" disabled={(page + 1) * PAGE_SIZE >= activities.length} onClick={() => setPage(p => p + 1)}>
+                                        Next
+                                    </Button>
+                                </HStack>
+                            )}
                         </Box>
                     </VStack>
                 )}

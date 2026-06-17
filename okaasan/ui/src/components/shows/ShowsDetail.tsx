@@ -358,6 +358,7 @@ const ShowsDetail: React.FC = () => {
           {data.media_type === 'show' && tmdb?.seasons && tmdb.seasons.length > 0 && (
             <SeasonsBreakdown
               tmdbId={data.tmdb_id}
+              mediaId={data.trakt?.id}
               seasons={tmdb.seasons}
               watchedSeasons={(data as any).watched_seasons || {}}
               libraryFiles={libraryFiles}
@@ -432,14 +433,31 @@ interface WatchedSeasonInfo {
 
 const SeasonsBreakdown: React.FC<{
   tmdbId: number;
+  mediaId?: number;
   seasons: SeasonInfo[];
   watchedSeasons: Record<number, WatchedSeasonInfo>;
   libraryFiles: LibraryFile[];
   onPlay: () => void;
-}> = ({ tmdbId, seasons, watchedSeasons, libraryFiles, onPlay }) => {
+}> = ({ tmdbId, mediaId, seasons, watchedSeasons, libraryFiles, onPlay }) => {
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<Record<number, EpisodeDetail[]>>({});
   const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
+  const [localWatched, setLocalWatched] = useState<Record<string, boolean>>({});
+
+  const markEpisodeWatched = useCallback(async (seasonNum: number, episodeNum: number) => {
+    if (!mediaId || isStaticMode()) return;
+    const key = `${seasonNum}-${episodeNum}`;
+    try {
+      await recipeAPI.request('/shows/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_id: mediaId, season: seasonNum, episode: episodeNum }),
+      });
+      setLocalWatched(prev => ({ ...prev, [key]: true }));
+    } catch (e) {
+      console.error('Failed to mark episode watched:', e);
+    }
+  }, [mediaId]);
 
   const toggleSeason = useCallback(async (seasonNumber: number) => {
     if (expandedSeason === seasonNumber) {
@@ -514,7 +532,9 @@ const SeasonsBreakdown: React.FC<{
                   <Spinner size="sm" />
                 ) : (episodes[season.season_number] || []).length > 0 ? (
                   <VStack align="stretch" gap={2}>
-                    {episodes[season.season_number].map(ep => (
+                    {episodes[season.season_number].map(ep => {
+                      const isWatched = ep.watched || localWatched[`${season.season_number}-${ep.episode_number}`];
+                      return (
                       <HStack
                         key={ep.episode_number}
                         gap={3}
@@ -525,11 +545,18 @@ const SeasonsBreakdown: React.FC<{
                         bg="var(--card-bg)"
                         align="center"
                       >
-                        {ep.watched ? (
-                          <CheckCircle size={16} color="green" />
-                        ) : (
-                          <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
-                        )}
+                        <Box
+                          cursor={!isWatched && mediaId && !isStaticMode() ? 'pointer' : undefined}
+                          onClick={() => !isWatched && markEpisodeWatched(season.season_number, ep.episode_number)}
+                          title={isWatched ? 'Watched' : 'Mark as watched'}
+                          _hover={!isWatched && mediaId ? { opacity: 0.7 } : undefined}
+                        >
+                          {isWatched ? (
+                            <CheckCircle size={16} color="green" />
+                          ) : (
+                            <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
+                          )}
+                        </Box>
                         <Text fontSize="xs" fontWeight="bold" color="var(--muted-text)" minW="28px">
                           E{String(ep.episode_number).padStart(2, '0')}
                         </Text>
@@ -556,7 +583,8 @@ const SeasonsBreakdown: React.FC<{
                           </Button>
                         )}
                       </HStack>
-                    ))}
+                      );
+                    })}
                   </VStack>
                 ) : (
                   <Text fontSize="xs" color="var(--muted-text)">No episode data available</Text>

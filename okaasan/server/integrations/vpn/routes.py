@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from ...paths import private_folder
 from .base import VPNProvider
@@ -32,7 +31,7 @@ def _load_config() -> dict[str, Any]:
         except (json.JSONDecodeError, OSError):
             pass
     return {
-        "provider": "protonvpn",
+        "provider": "nordvpn",
         "auto_connect": False,
         "kill_qbt_on_disconnect": True,
         "monitor_interval": 10,
@@ -50,10 +49,13 @@ def _get_provider() -> VPNProvider:
     global _provider
     if _provider is None:
         cfg = _load_config()
-        name = cfg.get("provider", "protonvpn")
+        name = cfg.get("provider", "nordvpn")
         if name == "protonvpn":
             from .protonvpn import ProtonVPN
             _provider = ProtonVPN()
+        elif name == "nordvpn":
+            from .nordvpn import NordVPN
+            _provider = NordVPN()
         else:
             raise RuntimeError(f"Unknown VPN provider: {name}")
     return _provider
@@ -90,21 +92,20 @@ def create_router() -> APIRouter:
             "extra": st.extra,
         }
 
-    class ConnectRequest(BaseModel):
-        country: str | None = None
-        city: str | None = None
-        server: str | None = None
-        p2p: bool = False
-
     @router.post("/connect")
-    async def connect(body: ConnectRequest):
+    async def connect(
+        country: str | None = None,
+        city: str | None = None,
+        server: str | None = None,
+        p2p: bool = False,
+    ):
         provider = _get_provider()
         try:
             msg = await provider.connect(
-                country=body.country,
-                city=body.city,
-                server=body.server,
-                p2p=body.p2p,
+                country=country,
+                city=city,
+                server=server,
+                p2p=p2p,
             )
 
             cfg = _load_config()
@@ -175,6 +176,41 @@ def create_router() -> APIRouter:
             return {"status": "ok", "interface": iface}
         except Exception as e:
             raise HTTPException(status_code=502, detail=str(e))
+
+    @router.post("/login")
+    async def login(token: str = ""):
+        """Log in to VPN service. Pass token as query param: POST /vpn/login?token=..."""
+        provider = _get_provider()
+        if not hasattr(provider, "login"):
+            raise HTTPException(status_code=400, detail=f"{provider.name} does not support login")
+        try:
+            result = await provider.login(token=token or None)  # type: ignore[attr-defined]
+            return result
+        except Exception as e:
+            log.error("VPN login failed: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/logout")
+    async def logout():
+        provider = _get_provider()
+        if not hasattr(provider, "logout"):
+            raise HTTPException(status_code=400, detail=f"{provider.name} does not support logout")
+        try:
+            msg = await provider.logout()  # type: ignore[attr-defined]
+            return {"status": "ok", "message": msg}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get("/account")
+    async def account():
+        """Check login/account status."""
+        provider = _get_provider()
+        if not hasattr(provider, "account_info"):
+            return {"logged_in": True, "provider": provider.name}
+        try:
+            return await provider.account_info()  # type: ignore[attr-defined]
+        except Exception as e:
+            return {"logged_in": False, "error": str(e)}
 
     @router.get("/config")
     def get_config():

@@ -123,10 +123,10 @@ class TMDBClient:
             log.warning("TMDB %s failed after %.0fms: %s", endpoint, elapsed, e)
             return None
 
-    def get_show(self, tmdb_id: int) -> dict | None:
-        """Get TV show details, using cache first."""
+    def get_show(self, tmdb_id: int, max_age: int | None = None) -> dict | None:
+        """Get TV show details, using cache first. max_age overrides default TTL (seconds)."""
         cache_key = f"tv-{tmdb_id}"
-        cached = self._read_cache("tv", cache_key)
+        cached = self._read_cache("tv", cache_key, ttl=max_age)
         if cached is not None:
             return cached
 

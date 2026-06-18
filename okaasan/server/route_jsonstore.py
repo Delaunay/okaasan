@@ -20,7 +20,24 @@ def _store_dir(request: Request) -> str:
     return str(public_folder() / "data")
 
 
+_STATIC_COLLECTIONS = ["brainstorm"]
+
+
+def _static_keys():
+    """Return all keys across exposed collections."""
+    from .paths import public_folder
+    keys = []
+    for collection in _STATIC_COLLECTIONS:
+        folder = os.path.join(str(public_folder() / "data"), collection)
+        if os.path.isdir(folder):
+            for f in sorted(os.listdir(folder)):
+                if f.endswith('.json') and not f.startswith('_'):
+                    keys.append(os.path.splitext(f)[0])
+    return keys
+
+
 @router.get("/store/{collection}")
+@expose(collection=lambda: _STATIC_COLLECTIONS)
 def jsonstore_list(collection: str, request: Request):
     folder = os.path.join(_store_dir(request), safe_name(collection))
     if not os.path.isdir(folder):
@@ -34,6 +51,7 @@ def jsonstore_list(collection: str, request: Request):
 
 
 @router.get("/store/{collection}/{key}")
+@expose(collection=lambda: _STATIC_COLLECTIONS, key=_static_keys)
 def jsonstore_get(collection: str, key: str, request: Request):
     path = os.path.join(_store_dir(request), safe_name(collection), safe_name(key) + '.json')
     if not os.path.isfile(path):

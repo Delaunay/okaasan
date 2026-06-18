@@ -167,10 +167,24 @@ class StaticWebsite(Command):
         count = 0
         seen_paths = set()
 
-        for route in self.fastapi_app.routes:
-            if not isinstance(route, Route):
-                continue
+        def _collect_routes(routes):
+            """Recursively collect all Route objects from app.routes."""
+            collected = []
+            for item in routes:
+                if isinstance(item, Route):
+                    collected.append(item)
+                else:
+                    orig_router = getattr(item, 'original_router', None)
+                    if orig_router and hasattr(orig_router, 'routes'):
+                        collected.extend(_collect_routes(orig_router.routes))
+                    elif hasattr(item, 'routes'):
+                        collected.extend(_collect_routes(item.routes))
+            return collected
+
+        for route in _collect_routes(self.fastapi_app.routes):
             if "GET" not in (route.methods or set()):
+                continue
+            if route.path in seen_paths:
                 continue
 
             endpoint = route.endpoint
@@ -182,24 +196,6 @@ class StaticWebsite(Command):
                 logger.info(f"Found exposed route: {route.path}")
                 seen_paths.add(route.path)
                 count += self.save_route_data(route, static_args or (), static_kwargs or {})
-
-        for router in getattr(self.fastapi_app, 'routes', []):
-            if hasattr(router, 'routes'):
-                for route in router.routes:
-                    if not isinstance(route, Route):
-                        continue
-                    if "GET" not in (route.methods or set()):
-                        continue
-                    if route.path in seen_paths:
-                        continue
-                    endpoint = route.endpoint
-                    if not endpoint:
-                        continue
-                    static_args, static_kwargs = self._get_expose_attrs(endpoint)
-                    if static_args is not None or static_kwargs is not None:
-                        logger.info(f"Found exposed route (nested): {route.path}")
-                        seen_paths.add(route.path)
-                        count += self.save_route_data(route, static_args or (), static_kwargs or {})
 
         logger.info(f"Crawled {count} endpoints from {len(seen_paths)} exposed routes")
 

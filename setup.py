@@ -49,6 +49,7 @@ setup(
         "uvicorn[standard]",
         "python-multipart",
         "httpx",
+        "httpx2",
         "pillow",
         "appdirs",
         "python-telegram-bot",

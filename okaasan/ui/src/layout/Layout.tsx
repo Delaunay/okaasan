@@ -133,7 +133,7 @@ const getStaticSidebarSections = () => [
     href: '/investing',
     isSelected: (location: Location) => location.pathname.startsWith('/investing'),
     items: [
-      { name: 'Investing', href: '/investing' },
+      { name: 'Overview', href: '/investing' },
       { name: 'Economics', href: '/investing/economics' },
       { name: 'Retirement', href: '/investing/retirement' },
       { name: 'Mortgage', href: '/investing/mortgage' },
@@ -280,6 +280,7 @@ const getStaticSidebarSections = () => [
       { name: 'Google Calendar', href: '/settings/google-calendar' },
       { name: 'Software Update', href: '/settings/updates' },
       { name: 'Health', href: '/health-settings' },
+      { name: 'Money', href: '/settings/investing' },
       { name: 'API Tester', href: '/api-tester' },
     ]
   },

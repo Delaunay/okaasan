@@ -136,29 +136,10 @@ def create_app() -> FastAPI:
         from .integrations.qbittorrent.models import CompletedDownload  # noqa: F401
     except Exception:
         pass
+    from .news.models import NewsSource, NewsArticle, NewsGroup  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
-
-    # Lightweight schema migration: add missing columns to existing tables
-    from sqlalchemy import inspect as sa_inspect, text
-    for _engine in (engine, private_engine):
-        insp = sa_inspect(_engine)
-        for table_name in Base.metadata.tables:
-            if not insp.has_table(table_name):
-                continue
-            existing_cols = {c["name"] for c in insp.get_columns(table_name)}
-            model_table = Base.metadata.tables[table_name]
-            for col in model_table.columns:
-                if col.name not in existing_cols:
-                    col_type = col.type.compile(dialect=_engine.dialect)
-                    default = ""
-                    if col.server_default is not None:
-                        default = f" DEFAULT {col.server_default.arg}"
-                    with _engine.begin() as conn:
-                        conn.execute(text(
-                            f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default}"
-                        ))
 
     public_folder()  # ensure uploads/ directory exists
     from .music.listening_db import _listening_dir
@@ -466,13 +447,6 @@ def create_app() -> FastAPI:
     TaskBase.metadata.create_all(bind=tasks_engine)
     TasksSessionLocal = sessionmaker(bind=tasks_engine)
 
-    # Drop legacy computer_tasks from the main and private DBs
-    for _eng in (engine, private_engine):
-        _insp = sa_inspect(_eng)
-        if _insp.has_table("computer_tasks"):
-            with _eng.begin() as conn:
-                conn.execute(text("DROP TABLE computer_tasks"))
-            log.info("Dropped legacy computer_tasks table from %s", _eng.url)
 
     def get_tasks_db():
         db = TasksSessionLocal()
@@ -497,55 +471,6 @@ def create_app() -> FastAPI:
     )
     event.listen(investing_engine, "connect", _set_sqlite_pragmas)
     InvestingBase.metadata.create_all(bind=investing_engine)
-    with investing_engine.connect() as conn:
-        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(option_chain_snapshots)"))]
-        if "underlying_price" not in cols:
-            conn.execute(text("ALTER TABLE option_chain_snapshots ADD COLUMN underlying_price FLOAT"))
-            conn.commit()
-        if "snapshot_time" not in cols:
-            conn.execute(text("ALTER TABLE option_chain_snapshots ADD COLUMN snapshot_time VARCHAR(10)"))
-            conn.execute(text("UPDATE option_chain_snapshots SET snapshot_time = 'close' WHERE snapshot_time IS NULL"))
-            conn.commit()
-
-        # Migrate: replace old unique constraint (without snapshot_time) with new one that includes it.
-        indices = [r[1] for r in conn.execute(text("PRAGMA index_list(option_chain_snapshots)"))]
-        if "sqlite_autoindex_option_chain_snapshots_1" in indices:
-            conn.execute(text("DROP TABLE IF EXISTS _ocs_old"))
-            conn.execute(text("ALTER TABLE option_chain_snapshots RENAME TO _ocs_old"))
-            conn.execute(text("""
-                CREATE TABLE option_chain_snapshots (
-                    id INTEGER PRIMARY KEY,
-                    symbol VARCHAR(20) NOT NULL,
-                    snapshot_date DATE NOT NULL,
-                    snapshot_time VARCHAR(10),
-                    underlying_price FLOAT,
-                    expiration DATE NOT NULL,
-                    strike FLOAT NOT NULL,
-                    option_type VARCHAR(4) NOT NULL,
-                    bid FLOAT, ask FLOAT, last FLOAT,
-                    volume FLOAT, open_interest FLOAT, implied_volatility FLOAT,
-                    delta FLOAT, gamma FLOAT, theta FLOAT, vega FLOAT, rho FLOAT,
-                    CONSTRAINT uq_option_snap_v2 UNIQUE (symbol, snapshot_date, snapshot_time, expiration, strike, option_type)
-                )
-            """))
-            conn.execute(text("""
-                INSERT INTO option_chain_snapshots
-                SELECT id, symbol, snapshot_date, snapshot_time, underlying_price, expiration, strike, option_type,
-                       bid, ask, last, volume, open_interest, implied_volatility,
-                       delta, gamma, theta, vega, rho
-                FROM _ocs_old
-            """))
-            conn.execute(text("DROP TABLE _ocs_old"))
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_ocs_sym_date ON option_chain_snapshots(symbol, snapshot_date)"
-            ))
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_option_chain_snapshots_snapshot_date ON option_chain_snapshots(snapshot_date)"
-            ))
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_option_chain_snapshots_symbol ON option_chain_snapshots(symbol)"
-            ))
-            conn.commit()
     InvestingSessionLocal = sessionmaker(bind=investing_engine)
     app.state.InvestingSessionLocal = InvestingSessionLocal
 
@@ -708,7 +633,7 @@ def create_app() -> FastAPI:
         {"title": "Inventory & Shopping",   "href": "/inventory-shopping",  "items": ["Receipts", "Pantry", "Budget"]},
         {"title": "Planning",              "href": "/planning-section",    "items": ["Calendar", "Routine", "Tasks", "Projects"]},
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
-        {"title": "Investing",             "href": "/investing",           "items": ["Overview"]},
+        {"title": "Money",                 "href": "/investing",           "items": ["Overview", "Economics", "Retirement", "Mortgage", "Options", "Microstructure", "Simulation"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
         {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections", "Library"]},
         {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Playlists", "Stats", "Schedule"]},

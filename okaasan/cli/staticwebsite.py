@@ -87,6 +87,7 @@ class StaticWebsite(Command):
             self.crawl_exposed_routes()
             self.generate_recipe_slug_files()
             self.generate_sidebar_json()
+            self._verify_critical_files()
 
         if not skip_frontend:
             self.build_frontend(base_path=base_path, api_url=api_url)
@@ -98,7 +99,65 @@ class StaticWebsite(Command):
         self.create_build_info()
 
         logger.info(f"Static site generated at {self.output_dir}")
+        self._log_api_contents()
         return 0
+
+    def _verify_critical_files(self):
+        """Check that essential API files were generated, warn loudly if not."""
+        critical = ['recipes', 'sidebar', 'articles/public']
+        missing = []
+        for name in critical:
+            path = self.output_dir / "api" / f"{name}.json"
+            if not path.exists():
+                missing.append(f"api/{name}.json")
+        if missing:
+            logger.warning("MISSING critical API files: %s", ', '.join(missing))
+            logger.warning("The static site may not work correctly!")
+
+    def _log_api_contents(self):
+        """Log all generated API files for debugging."""
+        api_dir = self.output_dir / "api"
+        if not api_dir.exists():
+            logger.warning("No api/ directory generated!")
+            return
+        files = sorted(api_dir.rglob("*.json"))
+        logger.info(f"Generated {len(files)} API JSON files:")
+        for f in files[:50]:
+            logger.info(f"  {f.relative_to(self.output_dir)}")
+        if len(files) > 50:
+            logger.info(f"  ... and {len(files) - 50} more")
+
+    def _get_expose_attrs(self, endpoint):
+        """Extract @expose attrs from an endpoint, checking wrappers and global registry."""
+        from okaasan.server.decorators import _EXPOSED_ROUTES
+
+        candidates = set()
+
+        def _collect(fn):
+            if fn is None or id(fn) in candidates:
+                return
+            candidates.add(id(fn))
+            if hasattr(fn, '_static_kwargs') or hasattr(fn, '_static_args'):
+                return fn
+            qualname = getattr(fn, '__qualname__', None)
+            if qualname and qualname in _EXPOSED_ROUTES:
+                fn._static_args, fn._static_kwargs = _EXPOSED_ROUTES[qualname]
+                return fn
+            for attr in ('__wrapped__', 'func', '__func__'):
+                result = _collect(getattr(fn, attr, None))
+                if result:
+                    return result
+            dep = getattr(fn, 'dependant', None)
+            if dep:
+                result = _collect(getattr(dep, 'call', None))
+                if result:
+                    return result
+            return None
+
+        fn = _collect(endpoint)
+        if fn:
+            return getattr(fn, '_static_args', ()), getattr(fn, '_static_kwargs', {})
+        return None, None
 
     def crawl_exposed_routes(self):
         """Find all routes with @expose and fetch their data."""
@@ -106,6 +165,8 @@ class StaticWebsite(Command):
 
         from starlette.routing import Route
         count = 0
+        seen_paths = set()
+
         for route in self.fastapi_app.routes:
             if not isinstance(route, Route):
                 continue
@@ -116,10 +177,11 @@ class StaticWebsite(Command):
             if not endpoint:
                 continue
 
-            if hasattr(endpoint, '_static_kwargs') or hasattr(endpoint, '_static_args'):
-                static_args = getattr(endpoint, '_static_args', ())
-                static_kwargs = getattr(endpoint, '_static_kwargs', {})
-                count += self.save_route_data(route, static_args, static_kwargs)
+            static_args, static_kwargs = self._get_expose_attrs(endpoint)
+            if static_args is not None or static_kwargs is not None:
+                logger.info(f"Found exposed route: {route.path}")
+                seen_paths.add(route.path)
+                count += self.save_route_data(route, static_args or (), static_kwargs or {})
 
         for router in getattr(self.fastapi_app, 'routes', []):
             if hasattr(router, 'routes'):
@@ -128,15 +190,18 @@ class StaticWebsite(Command):
                         continue
                     if "GET" not in (route.methods or set()):
                         continue
+                    if route.path in seen_paths:
+                        continue
                     endpoint = route.endpoint
                     if not endpoint:
                         continue
-                    if hasattr(endpoint, '_static_kwargs') or hasattr(endpoint, '_static_args'):
-                        static_args = getattr(endpoint, '_static_args', ())
-                        static_kwargs = getattr(endpoint, '_static_kwargs', {})
-                        count += self.save_route_data(route, static_args, static_kwargs)
+                    static_args, static_kwargs = self._get_expose_attrs(endpoint)
+                    if static_args is not None or static_kwargs is not None:
+                        logger.info(f"Found exposed route (nested): {route.path}")
+                        seen_paths.add(route.path)
+                        count += self.save_route_data(route, static_args or (), static_kwargs or {})
 
-        logger.info(f"Crawled {count} endpoints total")
+        logger.info(f"Crawled {count} endpoints from {len(seen_paths)} exposed routes")
 
     def _build_url(self, route, kwargs):
         """Build a URL from a Starlette route and parameter dict."""

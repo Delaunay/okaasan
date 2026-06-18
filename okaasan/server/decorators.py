@@ -1,5 +1,9 @@
 from functools import wraps
 
+_EXPOSED_ROUTES: dict[str, tuple[tuple, dict]] = {}
+"""Global registry mapping function qualname → (args, kwargs) for static generation."""
+
+
 def expose(*args, **kwargs):
     """
     Decorator to expose a route for static website generation.
@@ -14,8 +18,8 @@ def expose(*args, **kwargs):
                   These will be combined using Cartesian product.
     """
     def decorator(f):
-        # Store the parameter generators on the function object itself
         f._static_args = args
         f._static_kwargs = kwargs
+        _EXPOSED_ROUTES[f.__qualname__] = (args, kwargs)
         return f
     return decorator

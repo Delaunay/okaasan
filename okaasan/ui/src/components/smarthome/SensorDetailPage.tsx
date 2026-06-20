@@ -7,7 +7,7 @@ import {
 } from '@chakra-ui/react';
 import {
   ArrowLeft, Activity, Thermometer, Droplets, Battery, Lightbulb,
-  Zap, Wifi, Settings, RefreshCw, X,
+  Zap, Wifi, Settings, RefreshCw, X, Sprout,
 } from 'lucide-react';
 import embed from 'vega-embed';
 import { recipeAPI } from '../../services/api';
@@ -51,7 +51,7 @@ interface SensorConfigEntry {
 const METRIC_ICON_MAP: Record<string, React.ReactNode> = {
   temperature: <Thermometer size={14} />,
   humidity: <Droplets size={14} />,
-  soil_moisture: <Droplets size={14} />,
+  soil_moisture: <Sprout size={14} />,
   battery: <Battery size={14} />,
   brightness: <Lightbulb size={14} />,
   power: <Zap size={14} />,

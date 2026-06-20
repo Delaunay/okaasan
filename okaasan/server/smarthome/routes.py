@@ -104,10 +104,34 @@ async def list_devices():
     all_reporting = mqtt_client.get_all_reporting()
     availability = mqtt_client.get_all_availability()
 
+    # Fallback: fill empty MQTT states from the latest DB readings
+    db_fallback: dict[str, dict[str, float]] = {}
+    empty_names = [d.get("friendly_name", "") for d in devices if not states.get(d.get("friendly_name", ""))]
+    if empty_names:
+        from .models import SensorReading
+        db = _get_db()
+        try:
+            for name in empty_names:
+                readings = (
+                    db.query(SensorReading)
+                    .filter(SensorReading.device_name == name)
+                    .order_by(SensorReading.recorded_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                if readings:
+                    fallback: dict[str, float] = {}
+                    for r in readings:
+                        if r.metric not in fallback:
+                            fallback[r.metric] = r.value
+                    db_fallback[name] = fallback
+        finally:
+            db.close()
+
     result = []
     for dev in devices:
         friendly_name = dev.get("friendly_name", "")
-        state = states.get(friendly_name, {})
+        state = states.get(friendly_name, {}) or db_fallback.get(friendly_name, {})
 
         # Determine availability: prefer MQTT availability topic,
         # fall back to "online" if we have state data, else "offline"

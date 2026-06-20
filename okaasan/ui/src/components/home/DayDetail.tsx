@@ -97,6 +97,12 @@ function WeatherSection({ weather, isToday, cardBg, border, mutedText }: {
               High {Math.round(daily.temperature_2m_max[0])}° / Low {Math.round(daily.temperature_2m_min[0])}°
             </Text>
           </VStack>
+          {daily.relative_humidity_2m_mean?.[0] != null && (
+            <HStack gap={1}>
+              <Droplets size={14} />
+              <Text fontSize="sm">{Math.round(daily.relative_humidity_2m_mean[0])}% humidity</Text>
+            </HStack>
+          )}
           {daily.precipitation_sum[0] > 0 && (
             <HStack gap={1}>
               <Droplets size={14} color="#63b3ed" />

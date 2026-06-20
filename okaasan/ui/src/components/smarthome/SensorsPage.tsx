@@ -4,7 +4,7 @@ import {
   Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge, SimpleGrid,
 } from '@chakra-ui/react';
 import {
-  Activity, Thermometer, Droplets, Battery, Lightbulb, Zap, Wifi, Radio,
+  Activity, Thermometer, Droplets, Battery, Lightbulb, Zap, Wifi, Radio, Sprout,
 } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 
@@ -33,7 +33,7 @@ interface SensorConfigEntry {
 const METRIC_ICON_MAP: Record<string, React.ReactNode> = {
   temperature: <Thermometer size={14} />,
   humidity: <Droplets size={14} />,
-  soil_moisture: <Droplets size={14} />,
+  soil_moisture: <Sprout size={14} />,
   battery: <Battery size={14} />,
   brightness: <Lightbulb size={14} />,
   power: <Zap size={14} />,

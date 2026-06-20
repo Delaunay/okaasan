@@ -5,7 +5,7 @@ import {
 } from '@chakra-ui/react';
 import {
   Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudDrizzle,
-  CloudFog, Clock, ExternalLink, MapPin, X, Users, RefreshCw,
+  CloudFog, Clock, ExternalLink, MapPin, X, Users, RefreshCw, Droplets,
 } from 'lucide-react';
 import { recipeAPI, isStaticMode } from '../../services/api';
 import {
@@ -61,6 +61,7 @@ export interface WeatherData {
     time: string[];
     temperature_2m_max: number[];
     temperature_2m_min: number[];
+    relative_humidity_2m_mean: number[];
     weather_code: number[];
     sunrise: string[];
     sunset: string[];
@@ -116,6 +117,7 @@ interface DayData {
   weatherCode?: number;
   tempMax?: number;
   tempMin?: number;
+  humidity?: number;
   events: DayEvent[];
   meals: PlannedMeal[];
 }
@@ -302,6 +304,12 @@ function DayColumn({ day, cardBg, border, mutedText, isToday, onEventClick, onTa
               <Text fontSize="sm" fontWeight="medium">
                 {Math.round(day.tempMax)}° / {Math.round(day.tempMin)}°
               </Text>
+              {day.humidity != null && (
+                <HStack gap={1}>
+                  <Droplets size={14} />
+                  <Text fontSize="xs" color={mutedText}>{Math.round(day.humidity)}%</Text>
+                </HStack>
+              )}
             </HStack>
             <Text fontSize="xs" color={mutedText}>{weatherLabel}</Text>
           </Box>
@@ -543,6 +551,7 @@ const Home = () => {
             weatherCode: weather.daily!.weather_code[i],
             tempMax: weather.daily!.temperature_2m_max[i],
             tempMin: weather.daily!.temperature_2m_min[i],
+            humidity: weather.daily!.relative_humidity_2m_mean?.[i],
           })));
         }
       } catch {

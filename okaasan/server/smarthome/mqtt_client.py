@@ -183,7 +183,7 @@ def _on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> No
         # Request current state from each device to populate the cache
         for name in names:
             if _client and _client.is_connected():
-                _client.publish(f"{BASE_TOPIC}/{name}/get", json.dumps({"state": ""}))
+                _client.publish(f"{BASE_TOPIC}/{name}/get", json.dumps({}))
         return
 
     if topic == BRIDGE_STATE_TOPIC:

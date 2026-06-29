@@ -10,8 +10,9 @@ import {
     Badge,
     IconButton,
     Portal,
+    useBreakpointValue,
 } from '@chakra-ui/react';
-import { Settings, AlertTriangle, ArrowUp, Trash2, Share2, Check } from 'lucide-react';
+import { Settings, AlertTriangle, ArrowUp, Trash2, Share2, Check, PanelRight, X } from 'lucide-react';
 
 
 import { BlockBase, newBlock, ArticleDef, BlockDef, PendingAction, InsertBlockGap, BlockPickerDialog } from './base'
@@ -1252,6 +1253,8 @@ const OrphanPanel: React.FC<{ article: ArticleInstance }> = ({ article }) => (
 const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
     const [, setTick] = useState(0);
     const [selectedCategory, setSelectedCategory] = useState("Text");
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const isMobile = useBreakpointValue({ base: true, lg: false }) ?? false;
 
     useEffect(() => {
         const rerender = () => {
@@ -1269,10 +1272,31 @@ const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
     }, [article]);
 
     const readonly = article.options?.readonly;
+    const showSidePanel = !readonly && (!isMobile || sidebarOpen);
 
     return (
-        <Flex gap={6} align="start" overflowX="auto" width="100%">
+        <Flex gap={{ base: 0, lg: 6 }} align="start" overflowX="auto" width="100%">
             <Box flex="1" minW="0">
+                {!readonly && isMobile && (
+                    <IconButton
+                        aria-label="Toggle sub-pages panel"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSidebarOpen(v => !v)}
+                        position="fixed"
+                        bottom="16px"
+                        right="16px"
+                        zIndex={1300}
+                        bg="var(--card-bg)"
+                        boxShadow="md"
+                        borderRadius="full"
+                        border="1px solid"
+                        borderColor="var(--border-color)"
+                    >
+                        <PanelRight size={20} />
+                    </IconButton>
+                )}
+
                 <TitleDisplay article={article} />
                 {!readonly && <InsertBlockGap article={article} after={null} />}
                 {article.children.map((block) => (
@@ -1290,10 +1314,49 @@ const ArticleView: React.FC<{ article: ArticleInstance }> = ({ article }) => {
                 )}
             </Box>
 
-            {!readonly && (
-                <Box width="300px" flexShrink={0} pl={4} borderLeft="1px solid" borderColor="gray.100">
-                    <SubPageList articleDef={article.def} />
-                </Box>
+            {showSidePanel && (
+                isMobile ? (
+                    <Portal>
+                        <Box
+                            position="fixed"
+                            inset="0"
+                            bg="blackAlpha.400"
+                            zIndex={1399}
+                            onClick={() => setSidebarOpen(false)}
+                        />
+                        <Box
+                            position="fixed"
+                            top="0"
+                            right="0"
+                            bottom="0"
+                            width="300px"
+                            maxW="85vw"
+                            bg="var(--card-bg)"
+                            borderLeft="1px solid"
+                            borderColor="var(--border-color)"
+                            zIndex={1400}
+                            overflowY="auto"
+                            p={4}
+                            boxShadow="lg"
+                        >
+                            <Flex justify="flex-end" mb={2}>
+                                <IconButton
+                                    aria-label="Close sub-pages panel"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setSidebarOpen(false)}
+                                >
+                                    <X size={18} />
+                                </IconButton>
+                            </Flex>
+                            <SubPageList articleDef={article.def} />
+                        </Box>
+                    </Portal>
+                ) : (
+                    <Box width="300px" flexShrink={0} pl={4} borderLeft="1px solid" borderColor="var(--border-color)">
+                        <SubPageList articleDef={article.def} />
+                    </Box>
+                )
             )}
 
             {!readonly && (

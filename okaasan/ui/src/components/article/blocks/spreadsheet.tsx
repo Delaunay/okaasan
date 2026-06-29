@@ -654,11 +654,11 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({ data }) => {
 
         return (
             <Box>
-                {data.title && <Text fontWeight="bold" mb={2}>{data.title}</Text>}
+                {data.title && <Text fontWeight="bold" mb={1}>{data.title}</Text>}
                 <Box>
                     {/* Header row — no bullet, shifted right by the bullet column */}
                     {showHeaders && headers.length > 0 && (
-                        <Box display="grid" gridTemplateColumns={gridCols} columnGap={4} mb={1}>
+                        <Box display="grid" gridTemplateColumns={gridCols} columnGap={2} mb="2px" pl="2px">
                             <Box />
                             {headers.map((h, c) => (
                                 <Box key={c} fontWeight="semibold" fontSize="sm" color={formulaCellColor} textAlign={colFormats[c]?.align}>
@@ -669,7 +669,7 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({ data }) => {
                     )}
                     {/* Data rows — bullet + columns aligned under headers */}
                     {resolved.map((row, r) => (
-                        <Box key={r} display="grid" gridTemplateColumns={gridCols} columnGap={4} mb="2px">
+                        <Box key={r} display="grid" gridTemplateColumns={gridCols} columnGap={2} lineHeight="1.4" pl="2px">
                             <Box userSelect="none" color="inherit">•</Box>
                             {Array.from({ length: headers.length || row.length }, (_, c) => {
                                 const fmt = colFormats[c];

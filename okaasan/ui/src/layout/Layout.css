@@ -5,13 +5,14 @@
 
 .sidebar {
   width: 240px;
-  border-right: 1px solid var(--chakra-colors-border);
+  border-right: 1px solid var(--border-color);
   position: fixed;
   height: 100vh;
   left: 0;
   top: 0;
   z-index: 1000;
   overflow-x: clip;
+  background: var(--sidebar-bg);
 }
 
 .sidebar-header {
@@ -128,11 +129,19 @@
 
   .sidebar.mobile-open {
     transform: translateX(0);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
   }
 
   .main-content {
     margin-left: 0;
     max-width: 100vw;
+    padding: 0.25rem;
+  }
+
+  .content-wrapper {
+    padding: 0.5rem;
+    border-radius: 0;
+    box-shadow: none;
   }
 }
 

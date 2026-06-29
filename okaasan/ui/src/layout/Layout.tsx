@@ -438,26 +438,43 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     return hoveredSection === section.title || isSectionActive(section);
   };
 
+  const mobileMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const [menuButtonFloating, setMenuButtonFloating] = useState(false);
+
+  useEffect(() => {
+    const el = mobileMenuAnchorRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setMenuButtonFloating(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="layout" style={{ height: "100%", width: "100%" }}>
-      <Box
-        position="fixed"
-        top={4}
-        left={4}
-        zIndex={1001}
-        display={{ base: 'block', md: 'none' }}
-      >
-        <IconButton
-          aria-label="Toggle menu"
-          onClick={toggleMobileMenu}
-          colorScheme="orange"
-          size="lg"
-          borderRadius="full"
-          boxShadow="lg"
+      {menuButtonFloating && (
+        <Box
+          position="fixed"
+          bottom={4}
+          left={4}
+          zIndex={1001}
+          display={{ base: 'block', md: 'none' }}
         >
-          {isMobileMenuOpen ? <CloseIcon /> : <HamburgerIcon />}
-        </IconButton>
-      </Box>
+          <IconButton
+            aria-label="Toggle menu"
+            onClick={toggleMobileMenu}
+            colorPalette="orange"
+            variant="solid"
+            size="lg"
+            borderRadius="full"
+            boxShadow="lg"
+          >
+            {isMobileMenuOpen ? <CloseIcon /> : <HamburgerIcon />}
+          </IconButton>
+        </Box>
+      )}
 
       <div className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header">
@@ -562,6 +579,25 @@ const Layout: FC<LayoutProps> = ({ children }) => {
 
       <div className="main-content">
         <div className="content-wrapper">
+          <Flex
+            ref={mobileMenuAnchorRef}
+            display={{ base: 'flex', md: 'none' }}
+            align="center"
+            gap={2}
+            mb={1}
+          >
+            {!menuButtonFloating && (
+              <IconButton
+                aria-label="Toggle menu"
+                onClick={toggleMobileMenu}
+                colorPalette="orange"
+                variant="ghost"
+                size="xs"
+              >
+                {isMobileMenuOpen ? <CloseIcon /> : <HamburgerIcon />}
+              </IconButton>
+            )}
+          </Flex>
           {children}
         </div>
       </div>

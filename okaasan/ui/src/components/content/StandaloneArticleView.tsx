@@ -141,7 +141,7 @@ const StandaloneArticleView: React.FC = () => {
     }
 
     return (
-        <Box height="100vh" bg="var(--card-bg)" py={10} px={4} overflowY="auto">
+        <Box height="100vh" bg="var(--card-bg)" py={{ base: 4, md: 10 }} px={{ base: 2, md: 4 }} overflowY="auto">
             <Box maxW="800px" mx="auto">
                 <Article article={article} options={{ editTrigger: "click", readonly: true }} />
             </Box>

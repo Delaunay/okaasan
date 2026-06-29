@@ -350,7 +350,7 @@ const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
       key={`bx-${block.key}`}
       data-block-id={block.def.id}
       pl="5px"
-      pr="36px"
+      pr={{ base: "8px", md: "36px" }}
       py="5px"
       className="TOP_LEVEL_BLOCK"
       display="flex" flexDirection="column" flex="1" minH={0}
@@ -384,6 +384,7 @@ const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
         opacity={hovered ? "1" : "0.1"}
         cursor="grab"
         transition="opacity 0.15s ease"
+        display={{ base: "none", md: "block" }}
       >
         <GripVertical size={16} />
       </Box>
@@ -396,7 +397,7 @@ const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
               className="block-icon"
               position="absolute"
               insetBlockStart="0px"
-              insetInlineEnd="4px"
+              insetInlineEnd={{ base: "0px", md: "4px" }}
               size="xs"
               variant="ghost"
               aria-label="Configure block"
@@ -437,7 +438,7 @@ const BlockWrapper: React.FC<BlockWrapperProps> = ({ block }) => {
         className="block-icon"
         position="absolute"
         bottom="4px"
-        right="4px"
+        right={{ base: "0px", md: "4px" }}
         size="xs"
         variant="ghost"
         aria-label="Delete block"

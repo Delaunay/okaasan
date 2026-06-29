@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { BlockBase, BlockDef, MarkdownGeneratorContext, BlockSetting, EmptyBlockPlaceholder } from "../base";
-import { Box, Image, Text } from '@chakra-ui/react';
-import { recipeAPI } from '../../../services/api';
+import { Box, Image, Text, Portal } from '@chakra-ui/react';
+import { recipeAPI, isStaticMode } from '../../../services/api';
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
@@ -38,8 +38,8 @@ export class ImageBlock extends BlockBase {
             url:    { "type": "string", "required": false },
             alt:    { "type": "string", "required": false },
             caption:{ "type": "string", "required": false },
-            width:  { "type": "int"   , "required": false },
-            height: { "type": "int"   , "required": false },
+            width:  { "type": "string", "required": false },
+            height: { "type": "string", "required": false },
         }
     }
 
@@ -50,9 +50,60 @@ export class ImageBlock extends BlockBase {
     }
 }
 
+function normalizeSizeValue(value: string | number | undefined): string | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    const s = String(value);
+    if (s.endsWith('%') || s.endsWith('vw') || s.endsWith('vh') || s.endsWith('em') || s.endsWith('rem') || s.endsWith('px')) {
+        return s;
+    }
+    if (/^\d+(\.\d+)?$/.test(s)) {
+        return `${s}px`;
+    }
+    return s;
+}
+
+function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string; onClose: () => void }) {
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [onClose]);
+
+    return (
+        <Portal>
+            <Box
+                position="fixed"
+                inset="0"
+                zIndex={2000}
+                bg="blackAlpha.800"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                onClick={onClose}
+                cursor="zoom-out"
+                p={4}
+            >
+                <Image
+                    src={src}
+                    alt={alt}
+                    maxW="95vw"
+                    maxH="95vh"
+                    objectFit="contain"
+                    borderRadius="md"
+                    onClick={(e) => e.stopPropagation()}
+                />
+            </Box>
+        </Portal>
+    );
+}
+
 function ImageView({ block }: { block: ImageBlock }) {
     const [dragging, setDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [lightboxOpen, setLightboxOpen] = useState(false);
+    const readonly = isStaticMode() || block.article.options?.readonly;
 
     const handleDrop = useCallback(async (e: React.DragEvent) => {
         e.preventDefault();
@@ -91,7 +142,7 @@ function ImageView({ block }: { block: ImageBlock }) {
         setDragging(false);
     }, []);
 
-    const dropZoneProps = {
+    const dropZoneProps = readonly ? {} : {
         onDrop: handleDrop,
         onDragOver: handleDragOver,
         onDragLeave: handleDragLeave,
@@ -134,6 +185,8 @@ function ImageView({ block }: { block: ImageBlock }) {
     }
 
     const src = recipeAPI.imagePath(block.def.data.url);
+    const w = normalizeSizeValue(block.def.data.width);
+    const h = normalizeSizeValue(block.def.data.height);
 
     return (
         <Box {...dropZoneProps} position="relative">
@@ -152,10 +205,19 @@ function ImageView({ block }: { block: ImageBlock }) {
                 src={src}
                 alt={block.def.data.alt}
                 maxW="100%"
-                width={block.def.data.width}
-                height={block.def.data.height}
+                width={w}
+                height={h}
                 borderRadius="md"
+                cursor={readonly ? "zoom-in" : undefined}
+                onClick={readonly ? () => setLightboxOpen(true) : undefined}
             />
+            {lightboxOpen && (
+                <ImageLightbox
+                    src={src}
+                    alt={block.def.data.alt}
+                    onClose={() => setLightboxOpen(false)}
+                />
+            )}
         </Box>
     );
 }

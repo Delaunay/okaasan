@@ -55,6 +55,9 @@
   /* Settings */
   --icon-color: #2b6cb0;
 
+  /* Sidebar */
+  --sidebar-bg: #ffffff;
+
   /* Ingredient Detail panels */
   --panel-blue-bg: #ebf8ff;
   --panel-blue-border: #4299e1;
@@ -180,6 +183,9 @@
 
   /* Settings */
   --icon-color: #90cdf4;
+
+  /* Sidebar */
+  --sidebar-bg: #111827;
 
   /* Ingredient Detail panels */
   --panel-blue-bg: #1a365d;

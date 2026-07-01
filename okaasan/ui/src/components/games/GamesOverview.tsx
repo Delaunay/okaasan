@@ -90,14 +90,14 @@ const GamesOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/games-library')}
+              onClick={() => navigate('/games/library')}
             >
               View All
             </Text>
           </HStack>
           <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
             {data.recently_played.map((game) => (
-              <GameCard key={game.id} game={game} onClick={() => navigate(`/games-detail/${game.id}`)} />
+              <GameCard key={game.id} game={game} onClick={() => navigate(`/games/detail/${game.id}`)} />
             ))}
           </Grid>
         </Box>
@@ -113,7 +113,7 @@ const GamesOverview: React.FC = () => {
           </HStack>
           <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
             {data.favorites.map((game) => (
-              <GameCard key={game.id} game={game} onClick={() => navigate(`/games-detail/${game.id}`)} />
+              <GameCard key={game.id} game={game} onClick={() => navigate(`/games/detail/${game.id}`)} />
             ))}
           </Grid>
         </Box>

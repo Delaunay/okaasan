@@ -211,7 +211,7 @@ const PodcastCard: React.FC<{ podcast: PodcastSubscription; onUnsubscribe: () =>
       </Button>
     </Box>
 
-    <Link to={`/podcasts-detail/${podcast.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link to={`/podcasts/detail/${podcast.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
       {podcast.image ? (
         <Image src={podcast.image} alt={podcast.title} w="100%" h="180px" objectFit="cover" loading="lazy" />
       ) : (

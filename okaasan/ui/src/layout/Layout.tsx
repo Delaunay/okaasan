@@ -147,9 +147,9 @@ const getStaticSidebarSections = () => [
     href: '/health',
     isSelected: (location: Location) => location.pathname.startsWith('/health'),
     items: [
-      { name: 'Dashboard', href: '/health-dashboard' },
-      { name: 'Details', href: '/health-details' },
-      { name: 'Activities', href: '/health-activities' },
+      { name: 'Dashboard', href: '/health/dashboard' },
+      { name: 'Details', href: '/health/details' },
+      { name: 'Activities', href: '/health/activities' },
     ]
   },
   {
@@ -157,15 +157,15 @@ const getStaticSidebarSections = () => [
     href: '/shows',
     isSelected: (location: Location) => location.pathname.startsWith('/shows'),
     items: [
-      { name: 'Discover', href: '/shows-discover' },
-      { name: 'Schedule', href: '/shows-schedule' },
-      { name: 'Seen', href: '/shows-seen' },
-      { name: 'Favorites', href: '/shows-favorites' },
-      { name: 'History', href: '/shows-history' },
-      { name: 'Watchlist', href: '/shows-watchlist' },
-      { name: 'Stats', href: '/shows-stats' },
-      { name: 'Collections', href: '/shows-collections' },
-      { name: 'Library', href: '/shows-library' },
+      { name: 'Discover', href: '/shows/discover' },
+      { name: 'Schedule', href: '/shows/schedule' },
+      { name: 'Seen', href: '/shows/seen' },
+      { name: 'Favorites', href: '/shows/favorites' },
+      { name: 'History', href: '/shows/history' },
+      { name: 'Watchlist', href: '/shows/watchlist' },
+      { name: 'Stats', href: '/shows/stats' },
+      { name: 'Collections', href: '/shows/collections' },
+      { name: 'Library', href: '/shows/library' },
     ]
   },
   {
@@ -173,8 +173,8 @@ const getStaticSidebarSections = () => [
     href: '/audiobooks',
     isSelected: (location: Location) => location.pathname.startsWith('/audiobooks'),
     items: [
-      { name: 'Library', href: '/audiobooks-library' },
-      { name: 'Stats', href: '/audiobooks-stats' },
+      { name: 'Library', href: '/audiobooks/library' },
+      { name: 'Stats', href: '/audiobooks/stats' },
     ]
   },
   {
@@ -182,11 +182,11 @@ const getStaticSidebarSections = () => [
     href: '/music',
     isSelected: (location: Location) => location.pathname.startsWith('/music'),
     items: [
-      { name: 'Discover', href: '/music-discover' },
-      { name: 'Library', href: '/music-library' },
-      { name: 'Playlists', href: '/music-playlists' },
-      { name: 'Stats', href: '/music-stats' },
-      { name: 'Schedule', href: '/music-schedule' },
+      { name: 'Discover', href: '/music/discover' },
+      { name: 'Library', href: '/music/library' },
+      { name: 'Playlists', href: '/music/playlists' },
+      { name: 'Stats', href: '/music/stats' },
+      { name: 'Schedule', href: '/music/schedule' },
     ]
   },
   {
@@ -194,8 +194,8 @@ const getStaticSidebarSections = () => [
     href: '/games',
     isSelected: (location: Location) => location.pathname.startsWith('/games'),
     items: [
-      { name: 'Library', href: '/games-library' },
-      { name: 'Stats', href: '/games-stats' },
+      { name: 'Library', href: '/games/library' },
+      { name: 'Stats', href: '/games/stats' },
     ]
   },
   {
@@ -203,8 +203,8 @@ const getStaticSidebarSections = () => [
     href: '/podcasts',
     isSelected: (location: Location) => location.pathname.startsWith('/podcasts'),
     items: [
-      { name: 'Library', href: '/podcasts-library' },
-      { name: 'Stats', href: '/podcasts-stats' },
+      { name: 'Library', href: '/podcasts/library' },
+      { name: 'Stats', href: '/podcasts/stats' },
     ]
   },
   {
@@ -212,8 +212,8 @@ const getStaticSidebarSections = () => [
     href: '/books',
     isSelected: (location: Location) => location.pathname.startsWith('/books'),
     items: [
-      { name: 'Library', href: '/books-library' },
-      { name: 'Stats', href: '/books-stats' },
+      { name: 'Library', href: '/books/library' },
+      { name: 'Stats', href: '/books/stats' },
     ]
   },
   {
@@ -221,8 +221,8 @@ const getStaticSidebarSections = () => [
     href: '/comics',
     isSelected: (location: Location) => location.pathname.startsWith('/comics'),
     items: [
-      { name: 'Library', href: '/comics-library' },
-      { name: 'Stats', href: '/comics-stats' },
+      { name: 'Library', href: '/comics/library' },
+      { name: 'Stats', href: '/comics/stats' },
     ]
   },
   {
@@ -279,7 +279,7 @@ const getStaticSidebarSections = () => [
       { name: 'Git Backup', href: '/settings/git' },
       { name: 'Google Calendar', href: '/settings/google-calendar' },
       { name: 'Software Update', href: '/settings/updates' },
-      { name: 'Health', href: '/health-settings' },
+      { name: 'Health', href: '/health/settings' },
       { name: 'Money', href: '/settings/investing' },
       { name: 'API Tester', href: '/api-tester' },
     ]
@@ -292,12 +292,12 @@ export const sidebarSections = getStaticSidebarSections();
 const STATIC_HIDDEN_SECTIONS = new Set(['Settings']);
 const STATIC_HIDDEN_HREFS = new Set([
   '/settings/sidebar', '/settings/git', '/settings/google-calendar', '/settings/updates', '/api-tester',
-  '/shows-discover', '/shows-schedule', '/shows-watchlist', '/shows-collections', '/shows-library', '/shows-history',
-  '/music-discover', '/music-schedule',
+  '/shows/discover', '/shows/schedule', '/shows/watchlist', '/shows/collections', '/shows/library', '/shows/history',
+  '/music/discover', '/music/schedule',
   '/torrents',
 ]);
 const DYNAMIC_HIDDEN_HREFS = new Set([
-  '/shows-seen', '/shows-favorites',
+  '/shows/seen', '/shows/favorites',
 ]);
 
 export function getRouteSections() {

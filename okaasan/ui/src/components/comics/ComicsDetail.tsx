@@ -103,7 +103,7 @@ const ComicsDetail: React.FC = () => {
 
       <VStack gap={6} align="stretch" p={4}>
         <HStack>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/comics-library')}>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/comics/library')}>
             <ArrowLeft size={16} />
           </Button>
           <Layers size={24} />

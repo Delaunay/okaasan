@@ -65,7 +65,7 @@ const BooksDetail: React.FC = () => {
     return (
       <VStack p={4} gap={4}>
         <Text color="var(--muted-text)">Book not found.</Text>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/books-library')}>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/books/library')}>
           <ArrowLeft size={16} /> Back to Library
         </Button>
       </VStack>

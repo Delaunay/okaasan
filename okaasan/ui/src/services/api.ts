@@ -78,7 +78,7 @@ export function healthDataUrl(endpoint: string, params: Record<string, string | 
     if (v !== undefined) qs.set(k, String(v));
   }
   const query = qs.toString();
-  return `${API_BASE_URL}/health-data/data/${endpoint}${query ? `?${query}` : ''}`;
+  return `${API_BASE_URL}/health/data/data/${endpoint}${query ? `?${query}` : ''}`;
 }
 
 function formatApiError(data: any, status: number): string {
@@ -1169,7 +1169,7 @@ class RecipeAPI {
     if (params.start) qs.set('start', params.start);
     if (params.end) qs.set('end', params.end);
     if (params.resolution) qs.set('resolution', String(params.resolution));
-    return this.request(`/health-data/metrics?${qs}`);
+    return this.request(`/health/data/metrics?${qs}`);
   }
 
   async getHealthActivities(params: { type?: string; start?: string; end?: string } = {}): Promise<import('./type').HealthActivity[]> {
@@ -1178,20 +1178,20 @@ class RecipeAPI {
     if (params.start) qs.set('start', params.start);
     if (params.end) qs.set('end', params.end);
     const query = qs.toString();
-    return this.request(`/health-data/activities${query ? `?${query}` : ''}`);
+    return this.request(`/health/data/activities${query ? `?${query}` : ''}`);
   }
 
   async getHealthSummary(date?: string): Promise<import('./type').HealthSummary> {
     const qs = date ? `?date=${date}` : '';
-    return this.request(`/health-data/summary${qs}`);
+    return this.request(`/health/data/summary${qs}`);
   }
 
   async getHealthWeeklySummary(): Promise<import('./type').HealthWeeklySummary> {
-    return this.request('/health-data/weekly-summary');
+    return this.request('/health/data/weekly-summary');
   }
 
   async syncGarmin(params: { start?: string; end?: string; replay?: boolean; dup_threshold?: number }, onEvent: (data: any) => void): Promise<void> {
-    return this.requestSSE('/health-data/sync/garmin', {
+    return this.requestSSE('/health/data/sync/garmin', {
       method: 'POST',
       body: JSON.stringify(params),
     }, onEvent);
@@ -1200,51 +1200,51 @@ class RecipeAPI {
   async importFitFile(file: File): Promise<any> {
     const form = new FormData();
     form.append('file', file);
-    return this.requestRaw('/health-data/import/fit', { method: 'POST', body: form });
+    return this.requestRaw('/health/data/import/fit', { method: 'POST', body: form });
   }
 
   async importFitFromDir(sourceDir: string): Promise<any> {
-    return this.request('/health-data/import/fit-copy', {
+    return this.request('/health/data/import/fit-copy', {
       method: 'POST',
       body: JSON.stringify({ source_dir: sourceDir }),
     });
   }
 
   async reprocessFitFiles(): Promise<any> {
-    return this.request('/health-data/import/fit-reprocess', { method: 'POST' });
+    return this.request('/health/data/import/fit-reprocess', { method: 'POST' });
   }
 
   async getHealthConnectors(): Promise<import('./type').HealthConnector[]> {
-    return this.request('/health-data/connectors');
+    return this.request('/health/data/connectors');
   }
 
   async updateHealthConnector(name: string, data: { enabled?: boolean; config?: Record<string, any> }): Promise<import('./type').HealthConnector> {
-    return this.request(`/health-data/connectors/${name}`, {
+    return this.request(`/health/data/connectors/${name}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   async garminLogin(email: string, password: string): Promise<{ status: string; display_name: string }> {
-    return this.request('/health-data/connectors/garmin/login', {
+    return this.request('/health/data/connectors/garmin/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
   }
 
   async getSchedulerStatus(): Promise<{ enabled: boolean; running: boolean }> {
-    return this.request('/health-data/scheduler');
+    return this.request('/health/data/scheduler');
   }
 
   async setSchedulerEnabled(enabled: boolean): Promise<{ enabled: boolean; running: boolean; timezone: string }> {
-    return this.request('/health-data/scheduler', {
+    return this.request('/health/data/scheduler', {
       method: 'POST',
       body: JSON.stringify({ enabled, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
     });
   }
 
   async getUsbGarminStatus(): Promise<{ rule_installed: boolean; last_import: any }> {
-    return this.request('/health-data/usb-garmin/status');
+    return this.request('/health/data/usb-garmin/status');
   }
 
   // ==========================================================================

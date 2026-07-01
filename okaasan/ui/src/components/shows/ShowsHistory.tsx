@@ -175,7 +175,7 @@ const ShowsHistory: React.FC = () => {
       <HStack justify="space-between" flexWrap="wrap" gap={2}>
         <HStack gap={2}>
           <Heading size="lg" color="var(--heading-color)">Watch History</Heading>
-          <Button size="sm" variant="outline" onClick={() => navigate('/shows-seen')}>
+          <Button size="sm" variant="outline" onClick={() => navigate('/shows/seen')}>
             <Eye size={14} /> Seen
           </Button>
         </HStack>

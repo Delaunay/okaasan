@@ -97,7 +97,7 @@ const ShowsCollections: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await recipeAPI.request(`/shows/collections/${id}`, { method: 'DELETE' });
-      if (collectionId === id) navigate('/shows-collections');
+      if (collectionId === id) navigate('/shows/collections');
       fetchData();
     } catch (e) {
       console.error(e);
@@ -118,14 +118,14 @@ const ShowsCollections: React.FC = () => {
       return (
         <VStack p={4} gap={4}>
           <Text color="var(--muted-text)">Collection not found.</Text>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/shows-collections')}>Back</Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/shows/collections')}>Back</Button>
         </VStack>
       );
     }
     return (
       <VStack gap={6} align="stretch" p={4}>
         <HStack>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/shows-collections')}>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/shows/collections')}>
             Back
           </Button>
           <Heading size="md" color="var(--heading-color)">{selectedCollection.name}</Heading>
@@ -151,7 +151,7 @@ const ShowsCollections: React.FC = () => {
       <VStack gap={6} align="stretch" p={4}>
         <HStack justify="space-between">
           <HStack>
-            <Button size="sm" variant="ghost" onClick={() => navigate('/shows-collections')}>
+            <Button size="sm" variant="ghost" onClick={() => navigate('/shows/collections')}>
               Back
             </Button>
             <Library size={20} />
@@ -183,7 +183,7 @@ const ShowsCollections: React.FC = () => {
     return (
       <VStack gap={6} align="stretch" p={4}>
         <HStack>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/shows-collections')}>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/shows/collections')}>
             Back
           </Button>
           <Heart size={20} color="var(--panel-red-text)" />
@@ -248,7 +248,7 @@ const ShowsCollections: React.FC = () => {
           borderColor="var(--panel-blue-border)"
           borderRadius="lg"
           cursor="pointer"
-          onClick={() => navigate('/shows-collections/owned')}
+          onClick={() => navigate('/shows/collections/owned')}
           _hover={{ boxShadow: 'sm' }}
           transition="all 0.2s"
           bg="var(--panel-blue-bg)"
@@ -275,7 +275,7 @@ const ShowsCollections: React.FC = () => {
           borderColor="var(--panel-red-border)"
           borderRadius="lg"
           cursor="pointer"
-          onClick={() => navigate('/shows-collections/favorites')}
+          onClick={() => navigate('/shows/collections/favorites')}
           _hover={{ boxShadow: 'sm' }}
           transition="all 0.2s"
           bg="var(--panel-red-bg)"
@@ -303,7 +303,7 @@ const ShowsCollections: React.FC = () => {
               borderRadius="lg"
               bg="var(--card-bg)"
               cursor="pointer"
-              onClick={() => navigate(`/shows-collections/${col.id}`)}
+              onClick={() => navigate(`/shows/collections/${col.id}`)}
               _hover={{ borderColor: 'var(--panel-blue-border)', boxShadow: 'sm' }}
               transition="all 0.2s"
             >

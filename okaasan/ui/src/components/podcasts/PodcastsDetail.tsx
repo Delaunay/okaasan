@@ -115,7 +115,7 @@ const PodcastsDetail: React.FC = () => {
   return (
     <VStack gap={6} align="stretch" p={4}>
       <HStack>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/podcasts-library')}>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/podcasts/library')}>
           <ArrowLeft size={16} />
         </Button>
         <Heading size="lg" color="var(--heading-color)" lineClamp={1}>{data.title}</Heading>

@@ -83,7 +83,7 @@ const ShowsSeen = () => {
 
       <Grid templateColumns="repeat(auto-fill, minmax(140px, 1fr))" gap={3}>
         {filtered.map(item => (
-          <Link key={item.id} to={`/shows-detail/${item.media_type === 'show' ? 'tv' : 'movie'}/${item.tmdb_id}`}>
+          <Link key={item.id} to={`/shows/detail/${item.media_type === 'show' ? 'tv' : 'movie'}/${item.tmdb_id}`}>
             <SeenCard item={item} />
           </Link>
         ))}

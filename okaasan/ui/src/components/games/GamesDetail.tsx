@@ -92,7 +92,7 @@ const GamesDetail: React.FC = () => {
     return (
       <VStack p={4} gap={4}>
         <Text color="var(--muted-text)">Game not found.</Text>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/games-library')}>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/games/library')}>
           <ArrowLeft size={16} /> Back to Library
         </Button>
       </VStack>
@@ -110,7 +110,7 @@ const GamesDetail: React.FC = () => {
       )}
 
       <HStack>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/games-library')}>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/games/library')}>
           <ArrowLeft size={16} />
         </Button>
         <Gamepad2 size={24} color="var(--icon-color)" />

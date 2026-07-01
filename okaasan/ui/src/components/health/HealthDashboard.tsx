@@ -139,7 +139,7 @@ const HealthDashboard: React.FC = () => {
                             <RefreshCw size={14} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} />
                             {syncing ? 'Syncing…' : 'Sync'}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => navigate('/health-details')}>
+                        <Button size="sm" variant="outline" onClick={() => navigate('/health/details')}>
                             More metrics
                         </Button>
                     </HStack>

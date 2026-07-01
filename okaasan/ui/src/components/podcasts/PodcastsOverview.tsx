@@ -91,7 +91,7 @@ const PodcastsOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/podcasts-library')}
+              onClick={() => navigate('/podcasts/library')}
             >
               View All
             </Text>

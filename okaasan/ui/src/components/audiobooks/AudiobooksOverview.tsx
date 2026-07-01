@@ -92,14 +92,14 @@ const AudiobooksOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/audiobooks-library')}
+              onClick={() => navigate('/audiobooks/library')}
             >
               View All
             </Text>
           </HStack>
           <Grid templateColumns="repeat(auto-fill, minmax(200px, 1fr))" gap={4}>
             {data.continue_listening.map((book) => (
-              <ContinueCard key={book.id} book={book} onClick={() => navigate(`/audiobooks-detail/${book.id}`)} />
+              <ContinueCard key={book.id} book={book} onClick={() => navigate(`/audiobooks/detail/${book.id}`)} />
             ))}
           </Grid>
         </Box>
@@ -113,14 +113,14 @@ const AudiobooksOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/audiobooks-library')}
+              onClick={() => navigate('/audiobooks/library')}
             >
               View All
             </Text>
           </HStack>
           <Grid templateColumns="repeat(auto-fill, minmax(160px, 1fr))" gap={4}>
             {data.recently_added.map((book) => (
-              <BookCard key={book.id} book={book} onClick={() => navigate(`/audiobooks-detail/${book.id}`)} />
+              <BookCard key={book.id} book={book} onClick={() => navigate(`/audiobooks/detail/${book.id}`)} />
             ))}
           </Grid>
         </Box>

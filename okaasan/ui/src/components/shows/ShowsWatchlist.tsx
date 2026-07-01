@@ -98,7 +98,7 @@ const WatchlistCard: React.FC<{ item: any; onMarkWatched: () => void }> = ({ ite
   const year = item.year;
   const posterPath = item.poster_path;
   const mediaType = item.media_type === 'show' ? 'tv' : 'movie';
-  const to = item.tmdb_id ? `/shows-detail/${mediaType}/${item.tmdb_id}` : undefined;
+  const to = item.tmdb_id ? `/shows/detail/${mediaType}/${item.tmdb_id}` : undefined;
 
   const posterUrl = resolveMediaUrl(posterPath) || null;
 

@@ -200,7 +200,7 @@ const ShowsOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/shows-schedule')}
+              onClick={() => navigate('/shows/schedule')}
             >
               Full Schedule
             </Text>
@@ -228,7 +228,7 @@ const ShowsOverview: React.FC = () => {
                         bg="var(--card-bg)"
                         w="160px"
                         cursor="pointer"
-                        onClick={() => navigate(`/shows-detail/tv/${item.tmdb_id}`)}
+                        onClick={() => navigate(`/shows/detail/tv/${item.tmdb_id}`)}
                         _hover={{ transform: 'translateY(-2px)', boxShadow: 'sm' }}
                         transition="transform 0.2s"
                       >
@@ -260,7 +260,7 @@ const ShowsOverview: React.FC = () => {
       {showGroups.length > 0 && (
         <CarouselRow
           title="Recently Added Shows"
-          onViewAll={() => navigate('/shows-library')}
+          onViewAll={() => navigate('/shows/library')}
           groups={showGroups}
           favoriteIds={favoriteIds}
           onPlay={(g) => setPlayer({ title: g.title, files: g.files })}
@@ -273,7 +273,7 @@ const ShowsOverview: React.FC = () => {
       {movieGroups.length > 0 && (
         <CarouselRow
           title="Recently Added Movies"
-          onViewAll={() => navigate('/shows-library')}
+          onViewAll={() => navigate('/shows/library')}
           groups={movieGroups}
           favoriteIds={favoriteIds}
           onPlay={(g) => setPlayer({ title: g.title, files: g.files })}
@@ -286,7 +286,7 @@ const ShowsOverview: React.FC = () => {
       {data.watchlist_next.length > 0 && (
         <SimpleCarousel
           title="Up Next (Watchlist)"
-          onViewAll={() => navigate('/shows-watchlist')}
+          onViewAll={() => navigate('/shows/watchlist')}
         >
           {data.watchlist_next.map((item, idx) => (
             <Box key={idx} minW="160px" w="160px" flexShrink={0}>

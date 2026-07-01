@@ -371,7 +371,7 @@ const DiscoverCard: React.FC<DiscoverCardProps> = ({ item, isWatched, isOnWatchl
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const poster = item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
   const mediaType = item.media_type === 'tv' ? 'tv' : 'movie';
-  const to = `/shows-detail/${mediaType}/${item.id}`;
+  const to = `/shows/detail/${mediaType}/${item.id}`;
 
   return (
     <Box

@@ -57,7 +57,7 @@ const MusicDetail: React.FC = () => {
   if (!album) {
     return (
       <VStack p={4} gap={4}>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/music-library')}>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/music/library')}>
           <ArrowLeft size={16} />
           <Text ml={1}>Back to Library</Text>
         </Button>
@@ -71,7 +71,7 @@ const MusicDetail: React.FC = () => {
 
   return (
     <VStack gap={6} align="stretch" p={4}>
-      <Button size="sm" variant="ghost" onClick={() => navigate('/music-library')} alignSelf="flex-start">
+      <Button size="sm" variant="ghost" onClick={() => navigate('/music/library')} alignSelf="flex-start">
         <ArrowLeft size={16} />
         <Text ml={1}>Back to Library</Text>
       </Button>

@@ -165,7 +165,7 @@ const GamesLibrary: React.FC = () => {
             _hover={{ transform: 'translateY(-2px)', boxShadow: 'md' }}
             position="relative"
             cursor="pointer"
-            onClick={() => navigate(`/games-detail/${game.id}`)}
+            onClick={() => navigate(`/games/detail/${game.id}`)}
           >
             <Box
               position="absolute"

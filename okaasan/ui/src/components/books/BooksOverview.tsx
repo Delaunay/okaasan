@@ -97,7 +97,7 @@ const BooksOverview: React.FC = () => {
               fontSize="sm"
               color="var(--icon-color)"
               cursor="pointer"
-              onClick={() => navigate('/books-library')}
+              onClick={() => navigate('/books/library')}
             >
               View All
             </Text>
@@ -161,7 +161,7 @@ const ReadingCard: React.FC<{ book: Book }> = ({ book }) => {
   return (
     <Box
       as={Link}
-      to={`/books-detail/${book.id}`}
+      to={`/books/detail/${book.id}`}
       borderRadius="lg"
       overflow="hidden"
       border="1px solid"
@@ -216,7 +216,7 @@ const BookCard: React.FC<{ book: Book }> = ({ book }) => {
   return (
     <Box
       as={Link}
-      to={`/books-detail/${book.id}`}
+      to={`/books/detail/${book.id}`}
       borderRadius="lg"
       overflow="hidden"
       border="1px solid"

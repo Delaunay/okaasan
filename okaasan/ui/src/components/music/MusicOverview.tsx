@@ -98,9 +98,9 @@ const MusicOverview: React.FC = () => {
 
       {/* Stats */}
       <Grid templateColumns="repeat(auto-fit, minmax(140px, 1fr))" gap={4}>
-        <StatCard icon={<ListMusic size={18} />} label="Tracks" value={stats.total_tracks} onClick={() => navigate('/music-library')} />
-        <StatCard icon={<Disc3 size={18} />} label="Albums" value={stats.total_albums} onClick={() => navigate('/music-library')} />
-        <StatCard icon={<Users size={18} />} label="Artists" value={stats.total_artists} onClick={() => navigate('/music-library')} />
+        <StatCard icon={<ListMusic size={18} />} label="Tracks" value={stats.total_tracks} onClick={() => navigate('/music/library')} />
+        <StatCard icon={<Disc3 size={18} />} label="Albums" value={stats.total_albums} onClick={() => navigate('/music/library')} />
+        <StatCard icon={<Users size={18} />} label="Artists" value={stats.total_artists} onClick={() => navigate('/music/library')} />
       </Grid>
 
       {/* Random Picks */}

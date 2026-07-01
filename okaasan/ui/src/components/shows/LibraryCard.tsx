@@ -68,7 +68,7 @@ const LibraryCard: React.FC<{
     : !!isMovieWatched;
 
   const detailHref = group.tmdb_id
-    ? `/shows-detail/${group.media_type === 'movie' ? 'movie' : 'tv'}/${group.tmdb_id}`
+    ? `/shows/detail/${group.media_type === 'movie' ? 'movie' : 'tv'}/${group.tmdb_id}`
     : undefined;
 
   const nextFile = isShow && !fullyWatched ? getNextUnwatched() : null;

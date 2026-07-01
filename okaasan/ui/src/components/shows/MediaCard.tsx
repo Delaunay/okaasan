@@ -87,7 +87,7 @@ function getMediaInfo(item: any): MediaInfo {
 
 const MediaCard: React.FC<MediaCardProps> = ({ item, onClick }) => {
   const info = getMediaInfo(item);
-  const to = info.tmdbId ? `/shows-detail/${info.type}/${info.tmdbId}` : undefined;
+  const to = info.tmdbId ? `/shows/detail/${info.type}/${info.tmdbId}` : undefined;
 
   const cardContent = (
     <Box

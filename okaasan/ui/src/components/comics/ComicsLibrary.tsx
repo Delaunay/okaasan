@@ -155,7 +155,7 @@ const SeriesCard: React.FC<{ series: ComicSeries }> = ({ series }) => {
   return (
     <Box
       as={Link}
-      to={`/comics-detail/${series.id}`}
+      to={`/comics/detail/${series.id}`}
       borderRadius="lg"
       overflow="hidden"
       border="1px solid"

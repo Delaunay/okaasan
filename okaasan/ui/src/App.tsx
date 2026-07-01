@@ -196,62 +196,62 @@ function MainApp() {
         <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />
 
         {/* Health */}
-        <Route path="/health-dashboard" element={<HealthDashboard />} />
-        <Route path="/health-details" element={<HealthDetailView />} />
-        <Route path="/health-activities" element={<HealthActivities />} />
-        <Route path="/health-settings" element={<HealthSettings />} />
+        <Route path="/health/dashboard" element={<HealthDashboard />} />
+        <Route path="/health/details" element={<HealthDetailView />} />
+        <Route path="/health/activities" element={<HealthActivities />} />
+        <Route path="/health/settings" element={<HealthSettings />} />
 
         {/* Shows & Movies */}
-        <Route path="/shows-overview" element={<ShowsOverview />} />
-        <Route path="/shows-seen" element={<ShowsSeen />} />
-        <Route path="/shows-history" element={<ShowsHistory />} />
-        <Route path="/shows-favorites" element={<ShowsFavorites />} />
-        <Route path="/shows-watchlist" element={<ShowsWatchlist />} />
-        <Route path="/shows-stats" element={<ShowsStats />} />
-        <Route path="/shows-collections" element={<ShowsCollections />} />
-        <Route path="/shows-collections/:collectionId" element={<ShowsCollections />} />
-        <Route path="/shows-discover" element={<ShowsDiscover />} />
-        <Route path="/shows-schedule" element={<ShowsSchedule />} />
-        <Route path="/shows-library" element={<ShowsLibrary />} />
-        <Route path="/shows-detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
+        <Route path="/shows/overview" element={<ShowsOverview />} />
+        <Route path="/shows/seen" element={<ShowsSeen />} />
+        <Route path="/shows/history" element={<ShowsHistory />} />
+        <Route path="/shows/favorites" element={<ShowsFavorites />} />
+        <Route path="/shows/watchlist" element={<ShowsWatchlist />} />
+        <Route path="/shows/stats" element={<ShowsStats />} />
+        <Route path="/shows/collections" element={<ShowsCollections />} />
+        <Route path="/shows/collections/:collectionId" element={<ShowsCollections />} />
+        <Route path="/shows/discover" element={<ShowsDiscover />} />
+        <Route path="/shows/schedule" element={<ShowsSchedule />} />
+        <Route path="/shows/library" element={<ShowsLibrary />} />
+        <Route path="/shows/detail/:mediaType/:tmdbId" element={<ShowsDetail />} />
 
         {/* Retro Games */}
-        <Route path="/games-library" element={<GamesLibrary />} />
-        <Route path="/games-detail/:id" element={<GamesDetail />} />
-        <Route path="/games-stats" element={<GamesStats />} />
+        <Route path="/games/library" element={<GamesLibrary />} />
+        <Route path="/games/detail/:id" element={<GamesDetail />} />
+        <Route path="/games/stats" element={<GamesStats />} />
         <Route path="/settings/games" element={isStaticMode() ? <Navigate to="/settings" replace /> : <GamesSettings />} />
 
         {/* Comics & Manga */}
-        <Route path="/comics-library" element={<ComicsLibrary />} />
-        <Route path="/comics-detail/:id" element={<ComicsDetail />} />
-        <Route path="/comics-stats" element={<ComicsStats />} />
+        <Route path="/comics/library" element={<ComicsLibrary />} />
+        <Route path="/comics/detail/:id" element={<ComicsDetail />} />
+        <Route path="/comics/stats" element={<ComicsStats />} />
         <Route path="/settings/comics" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ComicsSettings />} />
 
         {/* Podcasts */}
-        <Route path="/podcasts-library" element={<PodcastsLibrary />} />
-        <Route path="/podcasts-detail/:id" element={<PodcastsDetail />} />
-        <Route path="/podcasts-stats" element={<PodcastsStats />} />
+        <Route path="/podcasts/library" element={<PodcastsLibrary />} />
+        <Route path="/podcasts/detail/:id" element={<PodcastsDetail />} />
+        <Route path="/podcasts/stats" element={<PodcastsStats />} />
         <Route path="/settings/podcasts" element={isStaticMode() ? <Navigate to="/settings" replace /> : <PodcastsSettings />} />
 
         {/* Books */}
-        <Route path="/books-library" element={<BooksLibrary />} />
-        <Route path="/books-detail/:id" element={<BooksDetail />} />
-        <Route path="/books-stats" element={<BooksStats />} />
+        <Route path="/books/library" element={<BooksLibrary />} />
+        <Route path="/books/detail/:id" element={<BooksDetail />} />
+        <Route path="/books/stats" element={<BooksStats />} />
         <Route path="/settings/books" element={isStaticMode() ? <Navigate to="/settings" replace /> : <BooksSettings />} />
 
         {/* Audiobooks */}
-        <Route path="/audiobooks-library" element={<AudiobooksLibrary />} />
-        <Route path="/audiobooks-detail/:id" element={<AudiobooksDetail />} />
-        <Route path="/audiobooks-stats" element={<AudiobooksStats />} />
+        <Route path="/audiobooks/library" element={<AudiobooksLibrary />} />
+        <Route path="/audiobooks/detail/:id" element={<AudiobooksDetail />} />
+        <Route path="/audiobooks/stats" element={<AudiobooksStats />} />
         <Route path="/settings/audiobooks" element={isStaticMode() ? <Navigate to="/settings" replace /> : <AudiobooksSettings />} />
 
         {/* Music */}
-        <Route path="/music-discover" element={<MusicDiscover />} />
-        <Route path="/music-library" element={<MusicLibrary />} />
-        <Route path="/music-playlists" element={<MusicPlaylists />} />
-        <Route path="/music-stats" element={<MusicStats />} />
-        <Route path="/music-schedule" element={<MusicSchedule />} />
-        <Route path="/music-detail/:albumId" element={<MusicDetail />} />
+        <Route path="/music/discover" element={<MusicDiscover />} />
+        <Route path="/music/library" element={<MusicLibrary />} />
+        <Route path="/music/playlists" element={<MusicPlaylists />} />
+        <Route path="/music/stats" element={<MusicStats />} />
+        <Route path="/music/schedule" element={<MusicSchedule />} />
+        <Route path="/music/detail/:albumId" element={<MusicDetail />} />
         <Route path="/settings/music" element={isStaticMode() ? <Navigate to="/settings" replace /> : <MusicSettings />} />
         <Route path="/investing/economics" element={<EconomicsOverview />} />
         <Route path="/investing/retirement" element={<RetirementPlanner />} />

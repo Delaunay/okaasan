@@ -150,7 +150,7 @@ const AudiobooksLibrary: React.FC = () => {
             key={book.id}
             book={book}
             onPlay={(e) => { e.stopPropagation(); setPlayerBook(book); }}
-            onClick={() => navigate(`/audiobooks-detail/${book.id}`)}
+            onClick={() => navigate(`/audiobooks/detail/${book.id}`)}
           />
         ))}
       </Grid>

@@ -295,7 +295,7 @@ const ShowsSchedule: React.FC = () => {
 
 const UpcomingCard: React.FC<{ item: UpcomingItem; isToday: boolean; onMarkWatched: () => void }> = ({ item, isToday, onMarkWatched }) => {
   const poster = resolvePoster(item.poster_path);
-  const to = `/shows-detail/tv/${item.tmdb_id}`;
+  const to = `/shows/detail/tv/${item.tmdb_id}`;
 
   return (
     <Box
@@ -374,7 +374,7 @@ const SHUFFLE_KEYFRAMES = `
 
 const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMarkCompleted, onDrop }) => {
   const poster = resolvePoster(item.poster_path);
-  const to = `/shows-detail/tv/${item.tmdb_id}`;
+  const to = `/shows/detail/tv/${item.tmdb_id}`;
   const epKey = `${item.next_episode.season}-${item.next_episode.episode}`;
   const prevEpRef = useRef(epKey);
   const [shuffling, setShuffling] = useState(false);

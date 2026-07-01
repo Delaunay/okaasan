@@ -16,6 +16,7 @@ import {
   Textarea,
   IconButton,
   Heading,
+  Portal,
 } from '@chakra-ui/react';
 import { recipeAPI, imagePath } from '../../services/api';
 import type { RecipeData, RecipeIngredient, Instruction, RecipeNutritionResult, IngredientComposition } from '../../services/type';
@@ -955,7 +956,7 @@ const IngredientItem: FC<IngredientItemProps> = ({
   return (
     <>
       <HStack
-        gap={4}
+        gap={{ base: 1, md: 4 }}
         align="center"
         bg={dragOverIndex === index ? "blue.50" : "transparent"}
         border={dragOverIndex === index ? "2px dashed" : "1px solid"}
@@ -972,7 +973,7 @@ const IngredientItem: FC<IngredientItemProps> = ({
         {/* Checkbox for crossing out ingredients (view mode only) */}
         {!isEditable && !isStatic && onToggleCheck && (
           <Box
-            minW="24px"
+            minW={{ base: "20px", md: "24px" }}
             display="flex"
             alignItems="center"
             justifyContent="center"
@@ -1008,7 +1009,7 @@ const IngredientItem: FC<IngredientItemProps> = ({
           </Box>
         )}
 
-        <Box minW="80px" width="5%">
+        <Box minW={{ base: "45px", md: "80px" }} width="5%">
           {isEditable && !isStatic && onUpdateIngredient ? (
             <Input
               value={rawQuantityText}
@@ -1049,7 +1050,7 @@ const IngredientItem: FC<IngredientItemProps> = ({
           )}
         </Box>
 
-        <Box minW="80px">
+        <Box minW={{ base: "55px", md: "80px" }}>
           {isEditable && !isStatic && onUpdateIngredient ? (
             <UnitSelect
               value={ingredient.unit || 'cup'}
@@ -1066,11 +1067,11 @@ const IngredientItem: FC<IngredientItemProps> = ({
                 onChange={(e: ChangeEvent<HTMLSelectElement>) => handleUnitChange(e.target.value)}
                 disabled={isLoadingUnits || availableUnits.length === 0}
                 style={{
-                  padding: '4px 8px',
+                  padding: '2px 4px',
                   borderRadius: '4px',
                   border: '1px solid var(--chakra-colors-border)',
-                  fontSize: '14px',
-                  minWidth: '80px',
+                  fontSize: '13px',
+                  minWidth: '55px',
                   backgroundColor: 'var(--chakra-colors-bg)'
                 }}
               >
@@ -1464,7 +1465,7 @@ const RecipeIngredients: FC<RecipeIngredientsProps> = ({
         </HStack>
       </Flex>
 
-      <VStack gap={3} align="stretch">
+      <VStack gap={{ base: 1, md: 3 }} align="stretch">
         {ingredients.map((ingredient, index) => (
           <IngredientItem
             key={index}
@@ -2151,8 +2152,8 @@ const InstructionStep: FC<InstructionStepProps> = ({
     <VStack
       id={`step-${instruction.step}`}
       align="stretch"
-      gap={3}
-      p={4}
+      gap={{ base: 2, md: 3 }}
+      p={{ base: 1, md: 4 }}
       borderRadius="md"
       bg={dragOverIndex === index ? "blue.50" : "bg"}
       border={dragOverIndex === index ? "2px dashed" : "1px solid"}
@@ -2164,7 +2165,7 @@ const InstructionStep: FC<InstructionStepProps> = ({
       onDrop={(e) => onDrop(e, index)}
       onDragEnd={onDragEnd}
     >
-      <HStack align="flex-start" gap={4}>
+      <HStack align="center" gap={{ base: 2, md: 4 }}>
         {/* Drag Handle - Left Side */}
         {isEditable && !isStatic && onReorderInstructions && (
           <Box
@@ -2184,7 +2185,7 @@ const InstructionStep: FC<InstructionStepProps> = ({
         )}
 
         {/* Step Image - Left Side */}
-        <Box minW="200px" maxW="200px" position="relative">
+        <Box minW={{ base: "100px", md: "200px" }} maxW={{ base: "100px", md: "200px" }} position="relative">
           {isEditable && !isStatic && onAddInstructionImage && onRemoveInstructionImage ? (
             <VStack align="stretch" gap={2}>
               <Text fontSize="xs" color="gray.600" fontWeight="medium">
@@ -2207,8 +2208,8 @@ const InstructionStep: FC<InstructionStepProps> = ({
                 <Image
                   src={imagePath(instruction.image)}
                   alt={`Step ${instruction.step} image`}
-                  width="200px"
-                  height="150px"
+                  width="100%"
+                  height={{ base: "75px", md: "150px" }}
                   objectFit="cover"
                   borderRadius="md"
                   border="1px solid"
@@ -2216,8 +2217,8 @@ const InstructionStep: FC<InstructionStepProps> = ({
                 />
               ) : (
                 <Box
-                  width="200px"
-                  height="150px"
+                  width="100%"
+                  height={{ base: "75px", md: "150px" }}
                   bg="var(--surface-muted)"
                   borderRadius="md"
                   border="2px dashed"
@@ -2312,6 +2313,202 @@ const InstructionStep: FC<InstructionStepProps> = ({
   );
 };
 
+// InstructionSlideshow Component - Fullscreen step-by-step cooking mode
+interface InstructionSlideshowProps {
+  instructions: Instruction[];
+  ingredients: RecipeIngredient[];
+  multiplier: number;
+  convertedIngredients: Record<number, ConvertedIngredient>;
+  preferredTemperatureUnit: 'C' | 'F';
+  onClose: () => void;
+  initialStep?: number;
+}
+
+const InstructionSlideshow: FC<InstructionSlideshowProps> = ({
+  instructions,
+  ingredients,
+  multiplier,
+  convertedIngredients,
+  preferredTemperatureUnit,
+  onClose,
+  initialStep = 0,
+}) => {
+  const [currentStep, setCurrentStep] = useState(initialStep);
+  const timerRef = useRef<any>(null);
+  const total = instructions.length;
+  const instruction = instructions[currentStep];
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        setCurrentStep(prev => Math.min(prev + 1, total - 1));
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentStep(prev => Math.max(prev - 1, 0));
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose, total]);
+
+  if (!instruction) return null;
+
+  const handleTimerStart = (seconds: number) => {
+    if (timerRef.current?.startTimer) {
+      timerRef.current.startTimer(seconds);
+    }
+  };
+
+  return (
+    <Portal>
+      <Box
+        position="fixed"
+        top="0"
+        left="0"
+        right="0"
+        bottom="0"
+        bg="var(--card-bg)"
+        zIndex={2000}
+        display="flex"
+        flexDirection="column"
+        overflow="hidden"
+      >
+        {/* Header */}
+        <Flex
+          px={{ base: 4, md: 8 }}
+          py={3}
+          borderBottom="1px solid"
+          borderColor="var(--border-color)"
+          align="center"
+          flexShrink={0}
+        >
+          <Text fontWeight="bold" fontSize="lg" color="var(--heading-color)">
+            Step {instruction.step} of {total}
+          </Text>
+          <Spacer />
+          {instruction.duration && (
+            <Badge colorPalette="blue" mr={4} fontSize="sm">{instruction.duration}</Badge>
+          )}
+          <Button size="sm" variant="ghost" onClick={onClose}>✕ Close</Button>
+        </Flex>
+
+        {/* Progress bar */}
+        <Box h="3px" bg="var(--border-color)" flexShrink={0}>
+          <Box
+            h="100%"
+            bg="blue.500"
+            width={`${((currentStep + 1) / total) * 100}%`}
+            transition="width 0.3s"
+          />
+        </Box>
+
+        {/* Content */}
+        <Flex
+          flex="1"
+          direction={{ base: "column", md: "row" }}
+          overflow="auto"
+          px={{ base: 4, md: 8 }}
+          py={{ base: 4, md: 8 }}
+          gap={{ base: 4, md: 8 }}
+          align={{ base: "stretch", md: "flex-start" }}
+          justify="center"
+        >
+          {/* Step image */}
+          {instruction.image && (
+            <Box flexShrink={0} maxW={{ base: "100%", md: "40%" }}>
+              <Image
+                src={imagePath(instruction.image)}
+                alt={`Step ${instruction.step}`}
+                maxH={{ base: "200px", md: "60vh" }}
+                width="100%"
+                objectFit="contain"
+                borderRadius="lg"
+              />
+            </Box>
+          )}
+
+          {/* Step text */}
+          <Box flex="1" maxW={{ base: "100%", md: "600px" }}>
+            <Text fontSize={{ base: "lg", md: "xl" }} lineHeight="1.8">
+              <InstructionTextRenderer
+                text={instruction.description}
+                ingredients={ingredients}
+                multiplier={multiplier}
+                convertedIngredients={convertedIngredients}
+                preferredTemperatureUnit={preferredTemperatureUnit}
+                onTimerStart={handleTimerStart}
+                activeTimers={{}}
+                stepIndex={currentStep}
+              />
+            </Text>
+            <StepTimer ref={timerRef} />
+          </Box>
+        </Flex>
+
+        {/* Navigation */}
+        <Flex
+          px={{ base: 4, md: 8 }}
+          py={4}
+          borderTop="1px solid"
+          borderColor="var(--border-color)"
+          align="center"
+          justify="space-between"
+          flexShrink={0}
+        >
+          <Button
+            size={{ base: "md", md: "lg" }}
+            onClick={() => setCurrentStep(prev => Math.max(prev - 1, 0))}
+            disabled={currentStep === 0}
+            variant="outline"
+          >
+            ← Previous
+          </Button>
+
+          <HStack gap={1} display={{ base: "none", md: "flex" }}>
+            {instructions.map((_, i) => (
+              <Box
+                key={i}
+                w="10px"
+                h="10px"
+                borderRadius="full"
+                bg={i === currentStep ? "blue.500" : i < currentStep ? "blue.200" : "var(--border-color)"}
+                cursor="pointer"
+                onClick={() => setCurrentStep(i)}
+                transition="all 0.2s"
+              />
+            ))}
+          </HStack>
+
+          <Text display={{ base: "block", md: "none" }} fontSize="sm" color="var(--muted-text)">
+            {currentStep + 1} / {total}
+          </Text>
+
+          {currentStep < total - 1 ? (
+            <Button
+              size={{ base: "md", md: "lg" }}
+              onClick={() => setCurrentStep(prev => Math.min(prev + 1, total - 1))}
+              colorScheme="blue"
+            >
+              Next →
+            </Button>
+          ) : (
+            <Button
+              size={{ base: "md", md: "lg" }}
+              onClick={onClose}
+              colorScheme="green"
+            >
+              Done ✓
+            </Button>
+          )}
+        </Flex>
+      </Box>
+    </Portal>
+  );
+};
+
 // RecipeInstructions Component
 interface RecipeInstructionsProps {
   instructions: Instruction[];
@@ -2348,6 +2545,7 @@ const RecipeInstructions: FC<RecipeInstructionsProps> = ({
   const isStatic = recipeAPI.isStaticMode();
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [slideshowOpen, setSlideshowOpen] = useState(false);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -2384,7 +2582,29 @@ const RecipeInstructions: FC<RecipeInstructionsProps> = ({
     <Box>
       <Flex align="center" mb={4}>
         <Text fontSize="lg" fontWeight="semibold">Instructions</Text>
+        <Spacer />
+        {!isEditable && instructions.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            colorScheme="blue"
+            onClick={() => setSlideshowOpen(true)}
+          >
+            ▶ Cook Mode
+          </Button>
+        )}
       </Flex>
+
+      {slideshowOpen && (
+        <InstructionSlideshow
+          instructions={instructions}
+          ingredients={ingredients}
+          multiplier={multiplier}
+          convertedIngredients={convertedIngredients}
+          preferredTemperatureUnit={preferredTemperatureUnit}
+          onClose={() => setSlideshowOpen(false)}
+        />
+      )}
 
       {isEditable && !isStatic && (
         <Box p={3} bg="blue.50" borderRadius="md" mb={4}>
@@ -3396,19 +3616,8 @@ const Recipe: FC<RecipeProps> = ({
   }, []);
 
   return (
-    <Box maxW="4xl" mx="auto" p={6} borderWidth="1px" borderRadius="lg" shadow="lg" bg="bg">
-      <VStack gap={6} align="stretch" className='recipe-cls'>
-        {/* Static Mode Notice */}
-        {isStatic && (
-          <Box p={4} bg="blue.50" borderRadius="md" borderLeft="4px solid" borderColor="blue.400">
-            <Text fontWeight="medium" color="blue.800" mb={1}>
-              📖 Read-Only Mode
-            </Text>
-            <Text fontSize="sm" color="blue.700">
-              This is a static version of the recipe website. Editing, creating, and deleting recipes is not available.
-            </Text>
-          </Box>
-        )}
+    <Box maxW="4xl" mx="auto" p={{ base: 2, md: 6 }} borderWidth="1px" borderRadius="lg" shadow={{ base: "none", md: "lg" }} bg="bg">
+      <VStack gap={{ base: 3, md: 6 }} align="stretch" className='recipe-cls'>
 
         {/* Header with Title and Controls */}
         <Flex align="center" wrap="wrap" gap={4}>
@@ -3520,7 +3729,7 @@ const Recipe: FC<RecipeProps> = ({
                       key={index}
                       src={imagePath(imageUrl)}
                       alt={`Recipe image ${index + 1}`}
-                      maxHeight="300px"
+                      maxHeight="400px"
                       objectFit="cover"
                       borderRadius="lg"
                       border="2px solid"
@@ -3532,7 +3741,7 @@ const Recipe: FC<RecipeProps> = ({
               ) : (
                 <Box
                   width="300px"
-                  height="250px"
+                  height="300px"
                   bg="bg"
                   borderRadius="lg"
                   border="2px dashed"
@@ -3550,7 +3759,7 @@ const Recipe: FC<RecipeProps> = ({
           </Box>
 
           {/* Recipe Info - Right Side */}
-          <VStack align="stretch" gap={4} minW="200px">
+          <VStack align="stretch" gap={2} minW="140px" maxW="160px" flexShrink={0}>
             {isEditable && !isStatic && (
               <Box>
                 <HStack gap={2}>
@@ -3566,12 +3775,12 @@ const Recipe: FC<RecipeProps> = ({
                       accentColor: '#3182ce'
                     }}
                   />
-                  <Text fontSize="sm">Component Recipe</Text>
+                  <Text fontSize="sm">Component</Text>
                 </HStack>
               </Box>
             )}
             <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={1}>Prep Time (minutes)</Text>
+              <Text fontSize="xs" fontWeight="medium" color="var(--muted-text)">Prep</Text>
               {isEditable && !isStatic ? (
                 <Input
                   type="number"
@@ -3583,11 +3792,11 @@ const Recipe: FC<RecipeProps> = ({
                   min="0"
                 />
               ) : (
-                <Text>{recipe.prep_time || 0}</Text>
+                <Text fontWeight="semibold">{recipe.prep_time || 0} min</Text>
               )}
             </Box>
             <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={1}>Cook Time (minutes)</Text>
+              <Text fontSize="xs" fontWeight="medium" color="var(--muted-text)">Cook</Text>
               {isEditable && !isStatic ? (
                 <Input
                   type="number"
@@ -3599,11 +3808,11 @@ const Recipe: FC<RecipeProps> = ({
                   min="0"
                 />
               ) : (
-                <Text>{recipe.cook_time || 0}</Text>
+                <Text fontWeight="semibold">{recipe.cook_time || 0} min</Text>
               )}
             </Box>
             <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={1}>Servings</Text>
+              <Text fontSize="xs" fontWeight="medium" color="var(--muted-text)">Servings</Text>
               {isEditable && !isStatic ? (
                 <Input
                   type="number"
@@ -3615,11 +3824,11 @@ const Recipe: FC<RecipeProps> = ({
                   min="1"
                 />
               ) : (
-                <Text>{recipe.servings || 1}</Text>
+                <Text fontWeight="semibold">{recipe.servings || 1}</Text>
               )}
             </Box>
             <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={1}>Recipe Multiplier</Text>
+              <Text fontSize="xs" fontWeight="medium" color="var(--muted-text)">Recipe ×</Text>
               <input
                 type="number"
                 step="0.1"
@@ -3634,7 +3843,7 @@ const Recipe: FC<RecipeProps> = ({
                 }}
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '6px',
                   border: '1px solid var(--chakra-colors-border)',
                   borderRadius: '4px',
                   fontSize: '14px',

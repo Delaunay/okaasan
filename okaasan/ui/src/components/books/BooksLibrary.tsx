@@ -177,7 +177,7 @@ const LibraryBookCard: React.FC<{ book: Book }> = ({ book }) => {
   return (
     <Box
       as={Link}
-      to={`/books-detail/${book.id}`}
+      to={`/books/detail/${book.id}`}
       borderRadius="lg"
       overflow="hidden"
       border="1px solid"

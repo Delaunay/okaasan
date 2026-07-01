@@ -235,7 +235,7 @@ const HealthSettings: React.FC = () => {
         try {
             const form = new FormData();
             form.append('file', file);
-            await recipeAPI.requestSSE('/health-data/import/garmin-export', {
+            await recipeAPI.requestSSE('/health/data/import/garmin-export', {
                 method: 'POST',
                 body: form,
             }, (evt) => {
@@ -266,7 +266,7 @@ const HealthSettings: React.FC = () => {
         setExportLoading(true);
         setExportLogs([{ text: `Importing from ${exportPath}...`, type: 'info' }]);
         try {
-            await recipeAPI.requestSSE('/health-data/import/garmin-export-path', {
+            await recipeAPI.requestSSE('/health/data/import/garmin-export-path', {
                 method: 'POST',
                 body: JSON.stringify({ path: exportPath.trim() }),
             }, (evt) => {

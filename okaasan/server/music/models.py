@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, DateTime, ForeignKey, Index,
+    Boolean, Column, Integer, String, DateTime, ForeignKey, Index,
 )
 from sqlalchemy.orm import relationship
 
@@ -73,6 +73,7 @@ class MusicPlaylist(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(500), nullable=False)
+    is_public = Column(Boolean, default=True, nullable=False, server_default="1")
     created_at = Column(DateTime, default=_utcnow)
 
     items = relationship(
@@ -86,6 +87,7 @@ class MusicPlaylist(Base):
         result = {
             "id": self.id,
             "name": self.name,
+            "is_public": self.is_public,
             "item_count": len(self.items) if self.items else 0,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }

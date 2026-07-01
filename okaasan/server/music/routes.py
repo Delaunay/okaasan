@@ -102,6 +102,8 @@ async def library_configure(request: Request):
         config["fetch_covers"] = bool(data["fetch_covers"])
     if "contact_email" in data:
         config["contact_email"] = data["contact_email"]
+    if "ignored_artists" in data:
+        config["ignored_artists"] = [a for a in data["ignored_artists"] if isinstance(a, str) and a.strip()]
 
     save_config(request.app.state.static_folder, config)
     return {"message": "Configuration saved", "config": config}
@@ -183,6 +185,36 @@ def library_all_files(request: Request, db: Session = Depends(_get_db)):
     return {"files": raw}
 
 
+# ── Ignored artists ────────────────────────────────────────────────
+
+@router.get("/ignored-artists")
+def get_ignored_artists_endpoint(request: Request):
+    """Return the list of artists hidden from stats and display."""
+    from .library import get_ignored_artists
+    return {"artists": get_ignored_artists(request.app.state.static_folder)}
+
+
+@router.put("/ignored-artists")
+async def set_ignored_artists(request: Request):
+    """Replace the ignored artists list. Body: {"artists": ["Name", ...]}"""
+    from .library import load_config, save_config
+    data = await request.json()
+    artists = data.get("artists", [])
+    if not isinstance(artists, list):
+        raise HTTPException(status_code=400, detail="artists must be a list of strings")
+
+    config = load_config(request.app.state.static_folder)
+    config["ignored_artists"] = [a for a in artists if isinstance(a, str) and a.strip()]
+    save_config(request.app.state.static_folder, config)
+    return {"artists": config["ignored_artists"]}
+
+
+def _ignored_artist_set(request: Request) -> set[str]:
+    """Return lowercase set of ignored artist names for fast filtering."""
+    from .library import get_ignored_artists
+    return {a.lower() for a in get_ignored_artists(request.app.state.static_folder)}
+
+
 # ── Overview & Library (aggregate endpoints) ──────────────────────
 
 def _normalize_cover(cover_path: str | None, static_folder: str) -> str | None:
@@ -244,26 +276,32 @@ def music_overview(request: Request, db: Session = Depends(_get_db)):
 
     sf = request.app.state.static_folder
     local_ids = _get_local_file_track_ids(request.app.state.private_engine)
-    total_tracks = db.query(func.count(MusicTrack.id)).scalar() or 0
-    total_albums = db.query(func.count(func.distinct(MusicTrack.album))).filter(
+    ignored = _ignored_artist_set(request)
+
+    base = db.query(MusicTrack)
+    if ignored:
+        base = base.filter(func.lower(MusicTrack.artist).notin_(ignored))
+
+    total_tracks = base.with_entities(func.count(MusicTrack.id)).scalar() or 0
+    total_albums = base.with_entities(func.count(func.distinct(MusicTrack.album))).filter(
         MusicTrack.album.isnot(None), MusicTrack.album != ""
     ).scalar() or 0
-    total_artists = db.query(func.count(func.distinct(MusicTrack.artist))).filter(
+    total_artists = base.with_entities(func.count(func.distinct(MusicTrack.artist))).filter(
         MusicTrack.artist.isnot(None), MusicTrack.artist != ""
     ).scalar() or 0
     total_playlists = db.query(func.count(MusicPlaylist.id)).scalar() or 0
 
     # Genre breakdown
-    genres_q = db.query(
+    genre_q = base.with_entities(
         MusicTrack.genre,
         func.count(MusicTrack.id).label("count"),
     ).filter(
         MusicTrack.genre.isnot(None), MusicTrack.genre != ""
     ).group_by(MusicTrack.genre).order_by(desc("count")).limit(20).all()
-    genres = [{"name": g.genre, "count": g.count} for g in genres_q]
+    genres = [{"name": g.genre, "count": g.count} for g in genre_q]
 
     # Top artists
-    top_artists_q = db.query(
+    top_artists_q = base.with_entities(
         MusicTrack.artist,
         func.count(MusicTrack.id).label("track_count"),
         func.count(func.distinct(MusicTrack.album)).label("album_count"),
@@ -276,10 +314,10 @@ def music_overview(request: Request, db: Session = Depends(_get_db)):
         for a in top_artists_q
     ]
 
-    # Random picks
+    # Random picks (exclude ignored artists)
     random_tracks = []
     if total_tracks > 0:
-        all_ids = [r[0] for r in db.query(MusicTrack.id).all()]
+        all_ids = [r[0] for r in base.with_entities(MusicTrack.id).all()]
         pick_ids = random.sample(all_ids, min(20, len(all_ids)))
         picks = db.query(MusicTrack).filter(MusicTrack.id.in_(pick_ids)).all()
         random_tracks = _enrich_tracks_with_local_flag(
@@ -287,7 +325,7 @@ def music_overview(request: Request, db: Session = Depends(_get_db)):
         )
 
     # Recent albums
-    recent_albums_q = db.query(
+    recent_albums_q = base.with_entities(
         MusicTrack.album,
         MusicTrack.album_artist,
         MusicTrack.year,
@@ -328,7 +366,11 @@ def music_library(
     """Paginated library grouped by artist or album."""
     sf = request.app.state.static_folder
     local_ids = _get_local_file_track_ids(request.app.state.private_engine)
+    ignored = _ignored_artist_set(request)
+
     base_q = db.query(MusicTrack)
+    if ignored:
+        base_q = base_q.filter(func.lower(MusicTrack.artist).notin_(ignored))
     if search and search.strip():
         term = f"%{search.strip()}%"
         base_q = base_q.filter(
@@ -424,7 +466,11 @@ def list_tracks(
     """List all tracks with pagination, search, and filters."""
     sf = request.app.state.static_folder
     local_ids = _get_local_file_track_ids(request.app.state.private_engine)
+    ignored = _ignored_artist_set(request)
+
     q = db.query(MusicTrack)
+    if ignored:
+        q = q.filter(func.lower(MusicTrack.artist).notin_(ignored))
 
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -488,25 +534,31 @@ def record_play(request: Request, track_id: int, db: Session = Depends(_get_db))
 # ── Stats ──────────────────────────────────────────────────────────
 
 @router.get("/stats")
+@expose()
 def music_stats(request: Request, db: Session = Depends(_get_db)):
     """Music listening statistics and metadata breakdown."""
     sf = request.app.state.static_folder
     local_ids = _get_local_file_track_ids(request.app.state.private_engine)
+    ignored = _ignored_artist_set(request)
 
-    total_tracks = db.query(func.count(MusicTrack.id)).scalar() or 0
-    total_plays = db.query(func.sum(MusicTrack.play_count)).scalar() or 0
-    total_duration_ms = db.query(func.sum(MusicTrack.duration_ms)).scalar() or 0
-    total_listening_ms = db.query(
+    base = db.query(MusicTrack)
+    if ignored:
+        base = base.filter(func.lower(MusicTrack.artist).notin_(ignored))
+
+    total_tracks = base.with_entities(func.count(MusicTrack.id)).scalar() or 0
+    total_plays = base.with_entities(func.sum(MusicTrack.play_count)).scalar() or 0
+    total_duration_ms = base.with_entities(func.sum(MusicTrack.duration_ms)).scalar() or 0
+    total_listening_ms = base.with_entities(
         func.sum(MusicTrack.duration_ms * MusicTrack.play_count)
     ).scalar() or 0
 
     # Most played tracks
-    most_played = db.query(MusicTrack).filter(
+    most_played = base.filter(
         MusicTrack.play_count > 0
     ).order_by(desc(MusicTrack.play_count)).limit(20).all()
 
     # Most played artists
-    top_artists_plays = db.query(
+    top_artists_plays = base.with_entities(
         MusicTrack.artist,
         func.sum(MusicTrack.play_count).label("total_plays"),
         func.count(MusicTrack.id).label("track_count"),
@@ -517,7 +569,7 @@ def music_stats(request: Request, db: Session = Depends(_get_db)):
     ).group_by(MusicTrack.artist).order_by(desc("total_plays")).limit(15).all()
 
     # Most played albums
-    top_albums_plays = db.query(
+    top_albums_plays = base.with_entities(
         MusicTrack.album,
         MusicTrack.album_artist,
         func.sum(MusicTrack.play_count).label("total_plays"),
@@ -529,7 +581,7 @@ def music_stats(request: Request, db: Session = Depends(_get_db)):
     ).group_by(MusicTrack.album, MusicTrack.album_artist).order_by(desc("total_plays")).limit(15).all()
 
     # Genre distribution
-    genre_dist = db.query(
+    genre_dist = base.with_entities(
         MusicTrack.genre,
         func.count(MusicTrack.id).label("track_count"),
         func.sum(MusicTrack.play_count).label("total_plays"),
@@ -539,7 +591,7 @@ def music_stats(request: Request, db: Session = Depends(_get_db)):
     ).group_by(MusicTrack.genre).order_by(desc("track_count")).limit(20).all()
 
     # Year distribution
-    year_dist = db.query(
+    year_dist = base.with_entities(
         MusicTrack.year,
         func.count(MusicTrack.id).label("track_count"),
         func.sum(MusicTrack.play_count).label("total_plays"),
@@ -548,12 +600,12 @@ def music_stats(request: Request, db: Session = Depends(_get_db)):
     ).group_by(MusicTrack.year).order_by(MusicTrack.year).all()
 
     # Recently played
-    recently_played = db.query(MusicTrack).filter(
+    recently_played = base.filter(
         MusicTrack.last_played_at.isnot(None)
     ).order_by(desc(MusicTrack.last_played_at)).limit(20).all()
 
     # Unplayed tracks count
-    unplayed_count = db.query(func.count(MusicTrack.id)).filter(
+    unplayed_count = base.with_entities(func.count(MusicTrack.id)).filter(
         (MusicTrack.play_count == 0) | (MusicTrack.play_count.is_(None))
     ).scalar() or 0
 
@@ -600,6 +652,8 @@ def list_albums(
 ):
     """List unique albums with track counts."""
     sf = request.app.state.static_folder
+    ignored = _ignored_artist_set(request)
+
     q = db.query(
         MusicTrack.album,
         MusicTrack.album_artist,
@@ -609,7 +663,10 @@ def list_albums(
     ).filter(
         MusicTrack.album.isnot(None),
         MusicTrack.album != "",
-    ).group_by(MusicTrack.album, MusicTrack.album_artist)
+    )
+    if ignored:
+        q = q.filter(func.lower(MusicTrack.artist).notin_(ignored))
+    q = q.group_by(MusicTrack.album, MusicTrack.album_artist)
 
     if search and search.strip():
         q = q.filter(MusicTrack.album.ilike(f"%{search.strip()}%"))
@@ -637,6 +694,8 @@ def list_artists(
     db: Session = Depends(_get_db),
 ):
     """List unique artists with track and album counts."""
+    ignored = _ignored_artist_set(request)
+
     q = db.query(
         MusicTrack.artist,
         func.count(MusicTrack.id).label("track_count"),
@@ -644,7 +703,10 @@ def list_artists(
     ).filter(
         MusicTrack.artist.isnot(None),
         MusicTrack.artist != "",
-    ).group_by(MusicTrack.artist)
+    )
+    if ignored:
+        q = q.filter(func.lower(MusicTrack.artist).notin_(ignored))
+    q = q.group_by(MusicTrack.artist)
 
     if search and search.strip():
         q = q.filter(MusicTrack.artist.ilike(f"%{search.strip()}%"))
@@ -696,7 +758,10 @@ async def stream_audio(request: Request, file_id: int):
 @expose()
 def list_playlists(request: Request, db: Session = Depends(_get_db)):
     """List all playlists."""
-    playlists = db.query(MusicPlaylist).order_by(MusicPlaylist.created_at).all()
+    q = db.query(MusicPlaylist)
+    if request.headers.get("X-Public-Only"):
+        q = q.filter(MusicPlaylist.is_public == True)  # noqa: E712
+    playlists = q.order_by(MusicPlaylist.created_at).all()
     return [p.to_json() for p in playlists]
 
 
@@ -707,12 +772,28 @@ def get_playlist(request: Request, playlist_id: int, db: Session = Depends(_get_
     playlist = db.query(MusicPlaylist).filter_by(id=playlist_id).first()
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if request.headers.get("X-Public-Only") and not playlist.is_public:
+        raise HTTPException(status_code=404, detail="Playlist not found")
     local_ids = _get_local_file_track_ids(request.app.state.private_engine)
     result = playlist.to_json(include_items=True)
     for item in result.get("items", []):
         track = item.get("track", {})
         track["has_local_file"] = track.get("id") in local_ids
     return result
+
+
+@router.patch("/playlists/{playlist_id}")
+async def update_playlist(request: Request, playlist_id: int, db: Session = Depends(_get_db)):
+    """Update playlist attributes (e.g. toggle is_public)."""
+    playlist = db.query(MusicPlaylist).filter_by(id=playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    data = await request.json()
+    if "is_public" in data:
+        playlist.is_public = bool(data["is_public"])
+    db.commit()
+    db.refresh(playlist)
+    return playlist.to_json()
 
 
 @router.post("/playlists")
@@ -794,14 +875,20 @@ def music_discover(request: Request, db: Session = Depends(_get_db)):
     import random
 
     mb_client = _get_mb(request)
+    ignored = _ignored_artist_set(request)
 
     # ── Build taste profile ───────────────────────────────────────
     # Prefer most-played artists, fall back to artists with most tracks
-    top_played = db.query(
+    taste_base = db.query(MusicTrack).filter(
+        MusicTrack.artist.isnot(None), MusicTrack.artist != "",
+    )
+    if ignored:
+        taste_base = taste_base.filter(func.lower(MusicTrack.artist).notin_(ignored))
+
+    top_played = taste_base.with_entities(
         MusicTrack.artist,
         func.sum(MusicTrack.play_count).label("plays"),
     ).filter(
-        MusicTrack.artist.isnot(None), MusicTrack.artist != "",
         MusicTrack.play_count > 0,
     ).group_by(MusicTrack.artist).order_by(desc("plays")).limit(20).all()
 
@@ -809,8 +896,8 @@ def music_discover(request: Request, db: Session = Depends(_get_db)):
         taste_artists = [r.artist for r in top_played]
     else:
         taste_artists = [
-            r[0] for r in db.query(MusicTrack.artist, func.count(MusicTrack.id).label("c")).filter(
-                MusicTrack.artist.isnot(None), MusicTrack.artist != ""
+            r[0] for r in taste_base.with_entities(
+                MusicTrack.artist, func.count(MusicTrack.id).label("c")
             ).group_by(MusicTrack.artist).order_by(desc("c")).limit(20).all()
         ]
 
@@ -1039,6 +1126,219 @@ def delete_event(request: Request, event_id: int, db: Session = Depends(_get_db)
     db.delete(event)
     db.commit()
     return {"message": "Deleted"}
+
+
+# ── Cover art backfill ─────────────────────────────────────────
+
+@router.get("/backfill-covers/status")
+def backfill_covers_status(request: Request, db: Session = Depends(_get_db)):
+    """Return count of tracks missing cover art."""
+    from sqlalchemy import or_
+
+    total = db.query(func.count(MusicTrack.id)).scalar() or 0
+    missing = db.query(func.count(MusicTrack.id)).filter(
+        or_(MusicTrack.cover_path.is_(None), MusicTrack.cover_path == "")
+    ).scalar() or 0
+
+    return {
+        "total_tracks": total,
+        "missing_covers": missing,
+        "has_covers": total - missing,
+    }
+
+
+@router.post("/backfill-covers")
+async def backfill_covers(request: Request):
+    """Backfill cover art for tracks missing covers using MusicBrainz.
+
+    Groups tracks by (artist, album) and searches once per album for efficiency.
+    Streams SSE progress events.
+    """
+    import json as _json
+    import queue
+    import threading
+    from collections import defaultdict
+    from starlette.responses import StreamingResponse
+    from sqlalchemy import or_
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    limit = body.get("limit", 100)
+    artist_filter = body.get("artist")
+    static_folder = request.app.state.static_folder
+    SL = request.app.state.SessionLocal
+    q: queue.Queue = queue.Queue()
+
+    def _worker():
+        from ..task_registry import registry
+
+        registry.register("cover_backfill", "Cover Art Backfill", status="running")
+        db = SL()
+        try:
+            mb_client = _get_mb(request)
+
+            base_q = db.query(MusicTrack).filter(
+                or_(MusicTrack.cover_path.is_(None), MusicTrack.cover_path == "")
+            )
+            if artist_filter:
+                base_q = base_q.filter(MusicTrack.artist.ilike(f"%{artist_filter}%"))
+
+            tracks = base_q.order_by(MusicTrack.artist, MusicTrack.album).all()
+
+            album_groups: dict[tuple[str, str], list] = defaultdict(list)
+            for t in tracks:
+                key = (t.artist or "", t.album or "")
+                album_groups[key].append(t)
+
+            groups_list = list(album_groups.items())
+            total_groups = len(groups_list)
+            total_tracks_to_process = len(tracks)
+
+            if limit:
+                applied = 0
+                capped_groups = []
+                for key, group_tracks in groups_list:
+                    if applied >= limit:
+                        break
+                    capped_groups.append((key, group_tracks))
+                    applied += len(group_tracks)
+                groups_list = capped_groups
+                total_groups = len(groups_list)
+                total_tracks_to_process = sum(len(g) for _, g in groups_list)
+
+            stats = {
+                "total_groups": total_groups,
+                "total_tracks": total_tracks_to_process,
+                "groups_processed": 0,
+                "tracks_updated": 0,
+                "covers_found": 0,
+                "covers_not_found": 0,
+                "errors": 0,
+                "current_artist": "",
+                "current_album": "",
+            }
+            q.put({"progress": stats.copy()})
+
+            for idx, ((artist, album), group_tracks) in enumerate(groups_list):
+                stats["current_artist"] = artist
+                stats["current_album"] = album
+                stats["groups_processed"] = idx
+
+                registry.update(
+                    "cover_backfill",
+                    detail=f"{stats['covers_found']} covers found ({idx}/{total_groups} groups)",
+                )
+
+                try:
+                    cover_path = _backfill_album_cover(
+                        mb_client, artist, album, group_tracks, static_folder
+                    )
+                    if cover_path:
+                        for t in group_tracks:
+                            t.cover_path = cover_path
+                        stats["covers_found"] += 1
+                        stats["tracks_updated"] += len(group_tracks)
+                    else:
+                        stats["covers_not_found"] += 1
+
+                    if (idx + 1) % 5 == 0:
+                        db.commit()
+
+                except Exception as exc:
+                    log.warning("Cover backfill error for %s - %s: %s", artist, album, exc)
+                    stats["errors"] += 1
+
+                q.put({"progress": stats.copy()})
+
+            stats["groups_processed"] = total_groups
+            db.commit()
+
+            q.put({"done": True, **stats})
+            registry.update(
+                "cover_backfill", status="idle",
+                detail=f"{stats['covers_found']} covers found, {stats['tracks_updated']} tracks updated",
+            )
+        except Exception as exc:
+            log.error("Cover backfill failed: %s", exc, exc_info=True)
+            db.rollback()
+            q.put({"error": str(exc)})
+            registry.update("cover_backfill", status="error", error=str(exc))
+        finally:
+            db.close()
+            registry.unregister("cover_backfill")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _stream():
+        while True:
+            try:
+                evt = q.get(timeout=600)
+            except queue.Empty:
+                yield f"data: {_json.dumps({'error': 'Backfill timed out'})}\n\n"
+                return
+            yield f"data: {_json.dumps(evt)}\n\n"
+            if "done" in evt or "error" in evt:
+                return
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _backfill_album_cover(
+    mb_client, artist: str, album: str, tracks: list, static_folder: str,
+) -> str | None:
+    """Try to find cover art for an album group.
+
+    Strategy:
+    1. If album name is available, search for a recording from the album
+    2. Use the release_mbid from the best match
+    3. Download cover from Cover Art Archive
+    4. Return relative path or None
+    """
+    representative = tracks[0]
+    title = representative.title
+
+    result = mb_client.search_recording(title, artist or None)
+    if not result or not result.get("recordings"):
+        return None
+
+    best_release_mbid = None
+    exact_match = False
+    for rec in result.get("recordings", []):
+        score = rec.get("score", 0)
+        if score < 70:
+            continue
+        for release in rec.get("releases", []):
+            release_title = release.get("title", "").lower()
+            if album and release_title == album.lower():
+                best_release_mbid = release.get("id")
+                exact_match = True
+                break
+            if not best_release_mbid:
+                best_release_mbid = release.get("id")
+        if exact_match:
+            break
+
+    if not best_release_mbid:
+        return None
+
+    cover_path = mb_client.get_cover_art(best_release_mbid)
+    if not cover_path:
+        return None
+
+    sf = static_folder.rstrip("/") + "/"
+    if cover_path.startswith(sf):
+        cover_path = cover_path[len(sf):]
+
+    return cover_path
 
 
 # ── Spotify import ────────────────────────────────────────────

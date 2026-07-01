@@ -60,6 +60,12 @@ def save_config(static_folder: str, config: dict[str, Any]):
     path.write_text(json.dumps(config, indent=2))
 
 
+def get_ignored_artists(static_folder: str) -> list[str]:
+    """Return the list of artist names to hide from stats and display."""
+    config = load_config(static_folder)
+    return config.get("ignored_artists", [])
+
+
 def _read_tags(file_path: str) -> dict[str, Any]:
     """Read audio metadata tags using mutagen. Returns a dict of tag values."""
     if not _HAS_MUTAGEN:

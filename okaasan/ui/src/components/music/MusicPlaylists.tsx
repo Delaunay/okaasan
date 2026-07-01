@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Button, Input } from '@chakra-ui/react';
-import { ListMusic, Play, Plus, Trash2, Music, X } from 'lucide-react';
-import { recipeAPI, resolveMediaUrl } from '../../services/api';
+import { ListMusic, Play, Plus, Trash2, Music, X, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { recipeAPI, resolveMediaUrl, isStaticMode } from '../../services/api';
 import { useMusicPlayer, type MusicTrack } from './MusicPlayerContext';
 
 interface PlaylistSummary {
   id: number;
   name: string;
+  is_public: boolean;
   item_count: number;
   created_at: string;
 }
@@ -25,6 +26,7 @@ interface PlaylistItem {
     cover_path: string | null;
     track_number: number | null;
     has_local_file?: boolean;
+    spotify_id?: string;
   };
 }
 
@@ -44,6 +46,11 @@ function formatDuration(ms: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function spotifyTrackUrl(spotifyId: string): string {
+  const id = spotifyId.includes(':') ? spotifyId.split(':').pop()! : spotifyId;
+  return `https://open.spotify.com/track/${id}`;
 }
 
 const MusicPlaylists: React.FC = () => {
@@ -104,6 +111,19 @@ const MusicPlaylists: React.FC = () => {
     }
   };
 
+  const toggleVisibility = async (id: number, currentlyPublic: boolean) => {
+    try {
+      await recipeAPI.request(`/music/playlists/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_public: !currentlyPublic }),
+      });
+      fetchPlaylists();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const removeItem = async (playlistId: number, itemId: number) => {
     try {
       await recipeAPI.request(`/music/playlists/${playlistId}/items/${itemId}`, { method: 'DELETE' });
@@ -156,6 +176,14 @@ const MusicPlaylists: React.FC = () => {
           </Button>
           <Heading size="lg" color="var(--heading-color)">{selectedPlaylist.name}</Heading>
           <Badge colorPalette="blue">{selectedPlaylist.items.length} tracks</Badge>
+          {(() => {
+            const spotifyCount = selectedPlaylist.items.filter(i => i.track.spotify_id).length;
+            return spotifyCount > 0 ? (
+              <Badge colorPalette="green" variant="subtle">
+                {spotifyCount} on Spotify
+              </Badge>
+            ) : null;
+          })()}
         </HStack>
 
         {selectedPlaylist.items.length > 0 && (
@@ -221,13 +249,31 @@ const MusicPlaylists: React.FC = () => {
                   </Text>
                 </Box>
                 <Text fontSize="2xs" color="var(--muted-text)">{formatDuration(item.track.duration_ms || 0)}</Text>
-                <Button
-                  size="xs" variant="ghost" p={0} minW="auto" h="auto"
-                  onClick={() => removeItem(selectedPlaylist.id, item.id)}
-                  title="Remove from playlist"
-                >
-                  <X size={12} />
-                </Button>
+                {item.track.spotify_id && (
+                  <Button
+                    size="xs" variant="ghost" p={0} minW="auto" h="auto"
+                    asChild
+                    title="Open on Spotify"
+                  >
+                    <a
+                      href={spotifyTrackUrl(item.track.spotify_id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <ExternalLink size={12} color="#1DB954" />
+                    </a>
+                  </Button>
+                )}
+                {!isStaticMode() && (
+                  <Button
+                    size="xs" variant="ghost" p={0} minW="auto" h="auto"
+                    onClick={() => removeItem(selectedPlaylist.id, item.id)}
+                    title="Remove from playlist"
+                  >
+                    <X size={12} />
+                  </Button>
+                )}
               </HStack>
             ))}
           </VStack>
@@ -244,21 +290,22 @@ const MusicPlaylists: React.FC = () => {
         <Heading size="lg" color="var(--heading-color)">Playlists</Heading>
       </HStack>
 
-      {/* Create new playlist */}
-      <HStack gap={2}>
-        <Input
-          placeholder="New playlist name..."
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          size="sm"
-          maxW="300px"
-          onKeyDown={e => e.key === 'Enter' && createPlaylist()}
-        />
-        <Button size="sm" onClick={createPlaylist} disabled={!newName.trim() || creating}>
-          <Plus size={14} />
-          <Text ml={1}>Create</Text>
-        </Button>
-      </HStack>
+      {!isStaticMode() && (
+        <HStack gap={2}>
+          <Input
+            placeholder="New playlist name..."
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            size="sm"
+            maxW="300px"
+            onKeyDown={e => e.key === 'Enter' && createPlaylist()}
+          />
+          <Button size="sm" onClick={createPlaylist} disabled={!newName.trim() || creating}>
+            <Plus size={14} />
+            <Text ml={1}>Create</Text>
+          </Button>
+        </HStack>
+      )}
 
       {playlists.length === 0 ? (
         <Flex justify="center" py={12} direction="column" align="center" gap={3}>
@@ -276,6 +323,7 @@ const MusicPlaylists: React.FC = () => {
               borderColor="var(--border-color)"
               borderRadius="lg"
               cursor="pointer"
+              opacity={pl.is_public ? 1 : 0.6}
               _hover={{ borderColor: 'var(--icon-color)', transform: 'translateY(-1px)' }}
               transition="all 0.2s"
               onClick={() => openPlaylist(pl.id)}
@@ -284,16 +332,32 @@ const MusicPlaylists: React.FC = () => {
                 <HStack>
                   <ListMusic size={18} color="var(--icon-color)" />
                   <Text fontWeight="bold" lineClamp={1}>{pl.name}</Text>
+                  {!pl.is_public && (
+                    <EyeOff size={14} color="var(--muted-text)" />
+                  )}
                 </HStack>
-                <Button
-                  size="xs" variant="ghost" p={0} minW="auto" h="auto"
-                  onClick={(e) => { e.stopPropagation(); deletePlaylist(pl.id); }}
-                  title="Delete playlist"
-                  color="var(--muted-text)"
-                  _hover={{ color: 'red.500' }}
-                >
-                  <Trash2 size={14} />
-                </Button>
+                {!isStaticMode() && (
+                  <HStack gap={1}>
+                    <Button
+                      size="xs" variant="ghost" p={0} minW="auto" h="auto"
+                      onClick={(e) => { e.stopPropagation(); toggleVisibility(pl.id, pl.is_public); }}
+                      title={pl.is_public ? 'Make private' : 'Make public'}
+                      color="var(--muted-text)"
+                      _hover={{ color: 'var(--icon-color)' }}
+                    >
+                      {pl.is_public ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </Button>
+                    <Button
+                      size="xs" variant="ghost" p={0} minW="auto" h="auto"
+                      onClick={(e) => { e.stopPropagation(); deletePlaylist(pl.id); }}
+                      title="Delete playlist"
+                      color="var(--muted-text)"
+                      _hover={{ color: 'red.500' }}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </HStack>
+                )}
               </HStack>
               <Text fontSize="sm" color="var(--muted-text)">
                 {pl.item_count} {pl.item_count === 1 ? 'track' : 'tracks'}

@@ -328,6 +328,7 @@ const Layout: FC<LayoutProps> = ({ children }) => {
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set());
+  const [hiddenItems, setHiddenItems] = useState<Set<string>>(new Set());
 
   const allSections = getStaticSidebarSections();
 
@@ -340,12 +341,17 @@ const Layout: FC<LayoutProps> = ({ children }) => {
       const data = await recipeAPI.getSidebar();
       const configuredMedia = new Set(data.configured_media || []);
       const unconfigured = [...MEDIA_SECTIONS].filter(s => !configuredMedia.has(s));
-      const merged = new Set([
+      const mergedSections = new Set([
         ...(data.hidden || []),
         ...unconfigured,
         ...(isStaticMode() ? (data.static_hidden || []) : []),
       ]);
-      setHiddenSections(merged);
+      const mergedItems = new Set([
+        ...(data.hidden_items || []),
+        ...(isStaticMode() ? (data.static_hidden_items || []) : []),
+      ]);
+      setHiddenSections(mergedSections);
+      setHiddenItems(mergedItems);
     } catch { /* use defaults — show everything */ }
   }, []);
 
@@ -363,17 +369,20 @@ const Layout: FC<LayoutProps> = ({ children }) => {
       const alwaysShow = ALWAYS_VISIBLE.has(s.title) || (!isStaticMode() && s.title === 'Settings');
       return alwaysShow || !hiddenSections.has(s.title);
     });
-    if (!isStaticMode()) {
-      return filtered.map(s =>
-        Object.assign({}, s, { items: s.items.filter((item: { href: string }) => !DYNAMIC_HIDDEN_HREFS.has(item.href)) })
-      );
-    }
+
     return filtered.map(s => {
-      let items = s.items.filter((item: { href: string }) => !STATIC_HIDDEN_HREFS.has(item.href));
-      if (s.title === 'Home') items = items.filter((item: { href: string }) => !item.href.startsWith('/day/'));
+      let items = s.items.filter((item: { href: string }) => {
+        if (hiddenItems.has(item.href)) return false;
+        if (!isStaticMode() && DYNAMIC_HIDDEN_HREFS.has(item.href)) return false;
+        if (isStaticMode() && STATIC_HIDDEN_HREFS.has(item.href)) return false;
+        return true;
+      });
+      if (isStaticMode() && s.title === 'Home') {
+        items = items.filter((item: { href: string }) => !item.href.startsWith('/day/'));
+      }
       return Object.assign({}, s, { items });
     });
-  }, [hiddenSections]);
+  }, [hiddenSections, hiddenItems]);
 
   useEffect(() => {
     const path = location.pathname;

@@ -972,14 +972,14 @@ class RecipeAPI {
   }
 
   // Sidebar configuration
-  async getSidebar(): Promise<{ sections: any[]; all_sections: any[]; hidden: string[]; static_hidden: string[]; configured_media: string[] }> {
+  async getSidebar(): Promise<{ sections: any[]; all_sections: any[]; hidden: string[]; static_hidden: string[]; hidden_items: string[]; static_hidden_items: string[]; configured_media: string[] }> {
     if (isStaticMode()) {
       return this.requestStatic('/sidebar');
     }
     return this.request('/sidebar');
   }
 
-  async updateSidebar(config: { hidden?: string[]; static_hidden?: string[] }): Promise<{ message: string }> {
+  async updateSidebar(config: { hidden?: string[]; static_hidden?: string[]; hidden_items?: string[]; static_hidden_items?: string[] }): Promise<{ message: string }> {
     if (isStaticMode()) {
       throw new Error('Updating sidebar is not supported in static mode');
     }

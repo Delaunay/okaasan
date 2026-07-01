@@ -767,6 +767,8 @@ def create_app() -> FastAPI:
         cfg = _load_sidebar_config()
         hidden = set(cfg.get("hidden", []))
         static_hidden = set(cfg.get("static_hidden", _DEFAULT_STATIC_HIDDEN))
+        hidden_items = cfg.get("hidden_items", [])
+        static_hidden_items = cfg.get("static_hidden_items", [])
         configured_media = _get_configured_media()
         # Auto-hide media sections that aren't configured yet
         unconfigured = set(_MEDIA_CONFIG_FILES.keys()) - configured_media
@@ -777,6 +779,8 @@ def create_app() -> FastAPI:
             "all_sections": _ALL_SECTIONS,
             "hidden": list(hidden),
             "static_hidden": list(static_hidden),
+            "hidden_items": hidden_items,
+            "static_hidden_items": static_hidden_items,
             "configured_media": list(configured_media),
         }
 
@@ -788,6 +792,10 @@ def create_app() -> FastAPI:
             cfg["hidden"] = body["hidden"]
         if "static_hidden" in body:
             cfg["static_hidden"] = body["static_hidden"]
+        if "hidden_items" in body:
+            cfg["hidden_items"] = body["hidden_items"]
+        if "static_hidden_items" in body:
+            cfg["static_hidden_items"] = body["static_hidden_items"]
         folder = public_folder() / "data" / "_config"
         folder.mkdir(parents=True, exist_ok=True)
         with open(folder / "_sidebar.json", "w") as f:

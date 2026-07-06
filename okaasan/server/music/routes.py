@@ -48,6 +48,18 @@ def _get_mb(request: Request) -> MusicBrainzClient:
     return _mb_client
 
 
+def _clear_failed_cover_cache(request: Request):
+    """Remove zero-byte marker files from covers dir so failed lookups are retried."""
+    mb = _get_mb(request)
+    removed = 0
+    for f in mb.covers_dir.iterdir():
+        if f.is_file() and f.stat().st_size == 0:
+            f.unlink()
+            removed += 1
+    if removed:
+        log.info("Cleared %d failed cover art cache markers", removed)
+
+
 # ── Library management ─────────────────────────────────────────────
 
 @router.get("/library/status")
@@ -1169,9 +1181,14 @@ async def backfill_covers(request: Request):
 
     limit = body.get("limit", 100)
     artist_filter = body.get("artist")
+    clear_failed = body.get("clear_failed", False)
+    rerun = body.get("rerun", False)
     static_folder = request.app.state.static_folder
     SL = request.app.state.SessionLocal
     q: queue.Queue = queue.Queue()
+
+    if clear_failed or rerun:
+        _clear_failed_cover_cache(request)
 
     def _worker():
         from ..task_registry import registry
@@ -1181,9 +1198,11 @@ async def backfill_covers(request: Request):
         try:
             mb_client = _get_mb(request)
 
-            base_q = db.query(MusicTrack).filter(
-                or_(MusicTrack.cover_path.is_(None), MusicTrack.cover_path == "")
-            )
+            base_q = db.query(MusicTrack)
+            if not rerun:
+                base_q = base_q.filter(
+                    or_(MusicTrack.cover_path.is_(None), MusicTrack.cover_path == "")
+                )
             if artist_filter:
                 base_q = base_q.filter(MusicTrack.artist.ilike(f"%{artist_filter}%"))
 
@@ -1297,15 +1316,66 @@ def _backfill_album_cover(
 ) -> str | None:
     """Try to find cover art for an album group.
 
-    Strategy:
-    1. If album name is available, search for a recording from the album
-    2. Use the release_mbid from the best match
-    3. Download cover from Cover Art Archive
-    4. Return relative path or None
+    Strategy (in priority order):
+    1. Direct release search by album + artist (most reliable when we have both)
+    2. Direct release search by album alone (if artist search yielded nothing)
+    3. Fall back to recording search using first track title
     """
-    representative = tracks[0]
-    title = representative.title
+    best_release_mbid = _find_release_via_album_search(mb_client, artist, album)
 
+    if not best_release_mbid:
+        representative = tracks[0]
+        title = representative.title
+        if title:
+            best_release_mbid = _find_release_via_recording_search(
+                mb_client, title, artist, album
+            )
+
+    if not best_release_mbid:
+        return None
+
+    cover_path = mb_client.get_cover_art(best_release_mbid)
+    if not cover_path:
+        return None
+
+    sf = static_folder.rstrip("/") + "/"
+    if cover_path.startswith(sf):
+        cover_path = cover_path[len(sf):]
+
+    return cover_path
+
+
+def _find_release_via_album_search(
+    mb_client, artist: str, album: str,
+) -> str | None:
+    """Search MusicBrainz releases directly by album name + artist."""
+    if not album:
+        return None
+
+    result = mb_client.search_release(album, artist or None)
+    if not result or not result.get("releases"):
+        return None
+
+    for release in result["releases"]:
+        score = release.get("score", 0)
+        if score < 60:
+            continue
+        release_title = release.get("title", "").lower()
+        if release_title == album.lower():
+            return release.get("id")
+
+    # No exact title match — accept the top result if score is high enough
+    top = result["releases"][0]
+    if top.get("score", 0) >= 80:
+        return top.get("id")
+
+    return None
+
+
+def _find_release_via_recording_search(
+    mb_client, title: str, artist: str | None, album: str | None,
+) -> str | None:
+    """Fallback: search for a recording by track title, extract release MBID."""
     result = mb_client.search_recording(title, artist or None)
     if not result or not result.get("recordings"):
         return None
@@ -1327,18 +1397,7 @@ def _backfill_album_cover(
         if exact_match:
             break
 
-    if not best_release_mbid:
-        return None
-
-    cover_path = mb_client.get_cover_art(best_release_mbid)
-    if not cover_path:
-        return None
-
-    sf = static_folder.rstrip("/") + "/"
-    if cover_path.startswith(sf):
-        cover_path = cover_path[len(sf):]
-
-    return cover_path
+    return best_release_mbid
 
 
 # ── Spotify import ────────────────────────────────────────────

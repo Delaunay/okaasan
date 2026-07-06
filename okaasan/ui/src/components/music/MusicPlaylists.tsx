@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Button, Input } from '@chakra-ui/react';
 import { ListMusic, Play, Plus, Trash2, Music, X, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl, isStaticMode } from '../../services/api';
@@ -54,6 +55,8 @@ function spotifyTrackUrl(spotifyId: string): string {
 }
 
 const MusicPlaylists: React.FC = () => {
+  const { playlistId } = useParams<{ playlistId?: string }>();
+  const navigate = useNavigate();
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,14 +77,16 @@ const MusicPlaylists: React.FC = () => {
 
   useEffect(() => { fetchPlaylists(); }, [fetchPlaylists]);
 
-  const openPlaylist = async (id: number) => {
-    try {
-      const data = await recipeAPI.request<PlaylistDetail>(`/music/playlists/${id}`);
-      setSelectedPlaylist(data);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  useEffect(() => {
+    if (!playlistId || loading) return;
+    recipeAPI.request<PlaylistDetail>(`/music/playlists/${playlistId}`)
+      .then(setSelectedPlaylist)
+      .catch(() => setSelectedPlaylist(null));
+  }, [playlistId, loading]);
+
+  useEffect(() => {
+    if (!playlistId) setSelectedPlaylist(null);
+  }, [playlistId]);
 
   const createPlaylist = async () => {
     if (!newName.trim()) return;
@@ -104,7 +109,7 @@ const MusicPlaylists: React.FC = () => {
   const deletePlaylist = async (id: number) => {
     try {
       await recipeAPI.request(`/music/playlists/${id}`, { method: 'DELETE' });
-      if (selectedPlaylist?.id === id) setSelectedPlaylist(null);
+      if (selectedPlaylist?.id === id) navigate('/music/playlists');
       fetchPlaylists();
     } catch (e) {
       console.error(e);
@@ -167,11 +172,11 @@ const MusicPlaylists: React.FC = () => {
   }
 
   // Playlist detail view
-  if (selectedPlaylist) {
+  if (playlistId && selectedPlaylist) {
     return (
       <VStack gap={6} align="stretch" p={4}>
         <HStack>
-          <Button size="sm" variant="ghost" onClick={() => setSelectedPlaylist(null)}>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/music/playlists')}>
             ← Back
           </Button>
           <Heading size="lg" color="var(--heading-color)">{selectedPlaylist.name}</Heading>
@@ -326,7 +331,7 @@ const MusicPlaylists: React.FC = () => {
               opacity={pl.is_public ? 1 : 0.6}
               _hover={{ borderColor: 'var(--icon-color)', transform: 'translateY(-1px)' }}
               transition="all 0.2s"
-              onClick={() => openPlaylist(pl.id)}
+              onClick={() => navigate(`/music/playlists/${pl.id}`)}
             >
               <HStack justify="space-between" mb={2}>
                 <HStack>

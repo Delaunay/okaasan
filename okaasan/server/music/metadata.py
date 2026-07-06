@@ -112,6 +112,23 @@ class MusicBrainzClient:
             self._write_cache("search", cache_key, data)
         return data
 
+    def search_release(self, album: str, artist: str | None = None) -> dict | None:
+        """Search MusicBrainz for a release (album) by name and optional artist."""
+        parts = [f'release:"{album}"']
+        if artist:
+            parts.append(f'artist:"{artist}"')
+        query = " AND ".join(parts)
+
+        cache_key = f"release-search-{query}"
+        cached = self._read_cache("search", cache_key, ttl=CACHE_TTL_SEARCH)
+        if cached is not None:
+            return cached
+
+        data = self._api_request("/release", {"query": query, "limit": "10"})
+        if data:
+            self._write_cache("search", cache_key, data)
+        return data
+
     def get_release(self, mbid: str) -> dict | None:
         """Get release details by MusicBrainz ID."""
         cache_key = f"release-{mbid}"

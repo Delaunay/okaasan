@@ -142,7 +142,7 @@ const MusicSettings: React.FC = () => {
 
   useEffect(() => { fetchBackfillStatus(); }, [fetchBackfillStatus]);
 
-  const handleBackfill = async () => {
+  const handleBackfill = async (rerun = false) => {
     setBackfilling(true);
     setBackfillResult(null);
     setBackfillError(null);
@@ -151,6 +151,7 @@ const MusicSettings: React.FC = () => {
       const lim = parseInt(backfillLimit, 10);
       if (!isNaN(lim) && lim > 0) body.limit = lim;
       if (backfillArtist.trim()) body.artist = backfillArtist.trim();
+      if (rerun) body.rerun = true;
 
       const resp = await fetch('/api/music/backfill-covers', {
         method: 'POST',
@@ -461,11 +462,21 @@ const MusicSettings: React.FC = () => {
                 <Button
                   size="sm"
                   colorPalette="purple"
-                  onClick={handleBackfill}
+                  onClick={() => handleBackfill(false)}
                   disabled={backfilling}
                 >
                   {backfilling ? <Spinner size="xs" /> : <Image size={14} />}
-                  <Text ml={1}>{backfilling ? 'Backfilling...' : 'Backfill Covers'}</Text>
+                  <Text ml={1}>{backfilling ? 'Backfilling...' : 'Backfill Missing'}</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  colorPalette="purple"
+                  onClick={() => handleBackfill(true)}
+                  disabled={backfilling}
+                >
+                  <Image size={14} />
+                  <Text ml={1}>Rerun All</Text>
                 </Button>
               </HStack>
               {backfillError && (

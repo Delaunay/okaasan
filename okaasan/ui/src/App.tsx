@@ -249,6 +249,7 @@ function MainApp() {
         <Route path="/music/discover" element={<MusicDiscover />} />
         <Route path="/music/library" element={<MusicLibrary />} />
         <Route path="/music/playlists" element={<MusicPlaylists />} />
+        <Route path="/music/playlists/:playlistId" element={<MusicPlaylists />} />
         <Route path="/music/stats" element={<MusicStats />} />
         <Route path="/music/schedule" element={<MusicSchedule />} />
         <Route path="/music/detail/:albumId" element={<MusicDetail />} />

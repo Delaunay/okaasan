@@ -53,7 +53,7 @@ def _parse_date(s: Optional[str]) -> Optional[datetime]:
 # ── Router factory ────────────────────────────────────────────────────
 
 def create_health_router(engine) -> APIRouter:
-    router = APIRouter(prefix="/health-data")
+    router = APIRouter(prefix="/health/data")
     get_db = _get_db_factory(engine)
 
     # ------------------------------------------------------------------

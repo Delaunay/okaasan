@@ -971,7 +971,7 @@ def create_app() -> FastAPI:
                          "ingredient/", "sidebar", "version", "update",
                          "git/", "usda/", "subtasks",
                          "gcalendar/", "garmin/", "weather/",
-                         "health-data/", "shows/", "audiobooks/", "books/", "music/",
+                         "health/data/", "shows/", "audiobooks/", "books/", "music/",
                          "comics/", "games/", "investing/")
 
         @app.get("/{full_path:path}")

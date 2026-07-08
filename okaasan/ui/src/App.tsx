@@ -92,6 +92,10 @@ import MusicDetail from './components/music/MusicDetail';
 import { MusicPlayerProvider } from './components/music/MusicPlayerContext';
 import MusicSettings from './components/settings/MusicSettings';
 import NewsOverview from './components/news/NewsOverview';
+import SocialsOverview from './components/socials/SocialsOverview';
+import SocialsPlatform from './components/socials/SocialsPlatform';
+import SocialsItemDetail from './components/socials/SocialsItemDetail';
+import SocialsSettings from './components/settings/SocialsSettings';
 import InvestingOverview from './components/investing/InvestingOverview';
 import TickerDetail from './components/investing/TickerDetail';
 import EconomicsOverview from './components/investing/EconomicsOverview';
@@ -140,6 +144,7 @@ const sectionOverrides: Record<string, React.ReactNode> = {
   '/music': <MusicOverview />,
   '/feed': <FeedPage />,
   '/news': <NewsOverview />,
+  '/socials': <SocialsOverview />,
   '/investing': <InvestingOverview />,
   '/torrents': <TorrentsPage />,
 };
@@ -264,6 +269,11 @@ function MainApp() {
         <Route path="/investing/simulation" element={<MarketSimulation />} />
         <Route path="/investing/:symbol" element={<TickerDetail />} />
         <Route path="/settings/investing" element={isStaticMode() ? <Navigate to="/settings" replace /> : <InvestingSettings />} />
+        <Route path="/settings/socials" element={isStaticMode() ? <Navigate to="/settings" replace /> : <SocialsSettings />} />
+
+        {/* Socials */}
+        <Route path="/socials/:platform" element={<SocialsPlatform />} />
+        <Route path="/socials/:platform/item/:itemId" element={<SocialsItemDetail />} />
 
         {/* Downloads */}
         <Route path="/torrents/discover" element={<DiscoverPage />} />

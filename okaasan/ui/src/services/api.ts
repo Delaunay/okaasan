@@ -1336,6 +1336,46 @@ class RecipeAPI {
     return this.request('/vpn/bind-qbt', { method: 'POST' });
   }
 
+  // ==========================================================================
+  // Socials
+  // ==========================================================================
+
+  async getSocialsOverview(): Promise<{ platforms: any[] }> {
+    return this.request('/socials/overview');
+  }
+
+  async getSocialsConfig(): Promise<{ dumps: Record<string, { path: string; default_path: string; configured: boolean }> }> {
+    return this.request('/socials/config');
+  }
+
+  async updateSocialsConfig(dumps: Record<string, string>): Promise<any> {
+    return this.request('/socials/config', {
+      method: 'PUT',
+      body: JSON.stringify({ dumps }),
+    });
+  }
+
+  async getSocialsCategories(platform: string): Promise<{ platform: string; name: string; dump_path: string; categories: any[] }> {
+    return this.request(`/socials/${platform}/categories`);
+  }
+
+  async getSocialsItems(
+    platform: string,
+    category: string,
+    page = 1,
+    perPage = 50,
+    search?: string,
+  ): Promise<{ items: any[]; total: number; page: number; per_page: number; category: string }> {
+    const params = new URLSearchParams({ category, page: String(page), per_page: String(perPage) });
+    if (search) params.set('search', search);
+    return this.request(`/socials/${platform}/items?${params}`);
+  }
+
+  async getSocialsItem(platform: string, itemId: string, category: string): Promise<any> {
+    const params = new URLSearchParams({ category });
+    return this.request(`/socials/${platform}/items/${itemId}?${params}`);
+  }
+
 }
 
 // Export a singleton instance

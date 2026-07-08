@@ -179,6 +179,7 @@ def create_app() -> FastAPI:
     from .games import router as games_router
     from .comics import router as comics_router
     from .news import router as news_router
+    from .socials import router as socials_router
     from .computers import router as computers_router
     from .investing import router as investing_router
     try:
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(games_router)
     app.include_router(comics_router)
     app.include_router(news_router)
+    app.include_router(socials_router)
     app.include_router(computers_router)
     app.include_router(investing_router)
     if _has_smarthome:
@@ -645,6 +647,7 @@ def create_app() -> FastAPI:
         {"title": "Downloads",             "href": "/torrents",            "items": ["Downloads", "Discover", "Crawler"]},
         {"title": "Feed",                  "href": "/feed"},
         {"title": "World News",            "href": "/news"},
+        {"title": "Socials",               "href": "/socials",             "items": ["Overview", "Instagram", "Facebook", "LinkedIn"]},
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
@@ -756,7 +759,7 @@ def create_app() -> FastAPI:
         return configured
 
     _DEFAULT_STATIC_HIDDEN = [
-        "Downloads", "Feed", "World News",
+        "Downloads", "Feed", "World News", "Socials",
         "Planning", "Inventory & Shopping", "Home Management",
         "Health", "Investing", "Expense Tracker",
     ]

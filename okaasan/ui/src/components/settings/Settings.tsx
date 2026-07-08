@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send, Sparkles,
-    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music, Share2,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
 import { TelegramSettings } from '../common/TelegramSettings';
@@ -164,6 +164,14 @@ const Settings: React.FC = () => {
                 icon: <Music size={20} />,
                 badge: 'Library',
                 onOpen: () => navigate('/settings/music'),
+            },
+            {
+                id: 'socials',
+                title: 'Socials',
+                description: 'Configure Instagram, Facebook, and LinkedIn data dump folders for inspection',
+                icon: <Share2 size={20} />,
+                badge: 'Import',
+                onOpen: () => navigate('/settings/socials'),
             },
         ]),
         {

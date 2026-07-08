@@ -120,6 +120,17 @@ const getStaticSidebarSections = () => [
     items: [],
   },
   {
+    title: 'Socials',
+    href: '/socials',
+    isSelected: (location: Location) => location.pathname.startsWith('/socials'),
+    items: [
+      { name: 'Overview', href: '/socials' },
+      { name: 'Instagram', href: '/socials/instagram' },
+      { name: 'Facebook', href: '/socials/facebook' },
+      { name: 'LinkedIn', href: '/socials/linkedin' },
+    ],
+  },
+  {
     title: 'Downloads',
     href: '/torrents',
     isSelected: (location: Location) => location.pathname.startsWith('/torrents'),
@@ -280,6 +291,7 @@ const getStaticSidebarSections = () => [
       { name: 'Google Calendar', href: '/settings/google-calendar' },
       { name: 'Software Update', href: '/settings/updates' },
       { name: 'Health', href: '/health/settings' },
+      { name: 'Socials', href: '/settings/socials' },
       { name: 'Money', href: '/settings/investing' },
       { name: 'API Tester', href: '/api-tester' },
     ]

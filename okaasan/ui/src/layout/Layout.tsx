@@ -271,6 +271,8 @@ const getStaticSidebarSections = () => [
       { name: 'Print Cost', href: '/scratch/print-cost' },
       { name: 'PyTorch Wheels', href: '/scratch/pytorch-wheels' },
       { name: 'Machine Designer', href: '/scratch/machine-designer' },
+      { name: 'Resource Cycle', href: '/scratch/resource-cycle' },
+      { name: 'Climate Map', href: '/scratch/climate-map' },
     ]
   },
   {

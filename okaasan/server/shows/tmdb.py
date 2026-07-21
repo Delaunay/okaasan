@@ -36,6 +36,8 @@ class TMDBClient:
         self.image_cache_dir.mkdir(parents=True, exist_ok=True)
         self._rate_lock = threading.Lock()
         self._request_timestamps: deque[float] = deque()
+        self._refresh_lock = threading.Lock()
+        self._refreshing: set[str] = set()
 
         headers = {
             "Accept": "application/json",
@@ -123,13 +125,9 @@ class TMDBClient:
             log.warning("TMDB %s failed after %.0fms: %s", endpoint, elapsed, e)
             return None
 
-    def get_show(self, tmdb_id: int, max_age: int | None = None) -> dict | None:
-        """Get TV show details, using cache first. max_age overrides default TTL (seconds)."""
+    def _fetch_and_cache_show(self, tmdb_id: int) -> dict | None:
+        """Fetch TV show details from TMDB and write to disk cache."""
         cache_key = f"tv-{tmdb_id}"
-        cached = self._read_cache("tv", cache_key, ttl=max_age)
-        if cached is not None:
-            return cached
-
         data = self._api_request(f"/tv/{tmdb_id}", params={"append_to_response": "external_ids"})
         if data:
             ext = data.pop("external_ids", None)
@@ -137,6 +135,47 @@ class TMDBClient:
                 data["imdb_id"] = ext["imdb_id"]
             self._write_cache("tv", cache_key, data)
         return data
+
+    def _schedule_show_refresh(self, tmdb_id: int) -> None:
+        """Refresh a show in a background thread (deduped per tmdb_id)."""
+        cache_key = f"tv-{tmdb_id}"
+        with self._refresh_lock:
+            if cache_key in self._refreshing:
+                return
+            self._refreshing.add(cache_key)
+
+        def _worker():
+            try:
+                log.info("Background refresh for TV %s", tmdb_id)
+                self._fetch_and_cache_show(tmdb_id)
+            except Exception as exc:
+                log.warning("Background refresh for TV %s failed: %s", tmdb_id, exc)
+            finally:
+                with self._refresh_lock:
+                    self._refreshing.discard(cache_key)
+
+        threading.Thread(target=_worker, name=f"tmdb-refresh-{tmdb_id}", daemon=True).start()
+
+    def get_show(self, tmdb_id: int, max_age: int | None = None, *, allow_stale: bool = False) -> dict | None:
+        """Get TV show details, using cache first.
+
+        max_age overrides default TTL (seconds).
+        When allow_stale=True and the cache is older than max_age, return the
+        stale entry immediately and refresh TMDB data in a background thread.
+        """
+        cache_key = f"tv-{tmdb_id}"
+        cached = self._read_cache("tv", cache_key, ttl=max_age)
+        if cached is not None:
+            return cached
+
+        if allow_stale:
+            # ttl=0 means never expire — read whatever is on disk
+            stale = self._read_cache("tv", cache_key, ttl=0)
+            if stale is not None:
+                self._schedule_show_refresh(tmdb_id)
+                return stale
+
+        return self._fetch_and_cache_show(tmdb_id)
 
     def get_movie(self, tmdb_id: int) -> dict | None:
         """Get movie details, using cache first."""

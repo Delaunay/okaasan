@@ -20,7 +20,7 @@ def _store_dir(request: Request) -> str:
     return str(public_folder() / "data")
 
 
-_STATIC_COLLECTIONS = ["brainstorm"]
+_STATIC_COLLECTIONS = ["brainstorm", "resource-cycle"]
 
 
 def _static_keys():

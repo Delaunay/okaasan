@@ -555,7 +555,7 @@ def get_schedule(request: Request, db: Session = Depends(_get_db)):
         if not tmdb.available:
             break
 
-        tmdb_data = tmdb.get_show(show.tmdb_id, max_age=SCHEDULE_CACHE_TTL)
+        tmdb_data = tmdb.get_show(show.tmdb_id, max_age=SCHEDULE_CACHE_TTL, allow_stale=True)
         if not tmdb_data:
             continue
 

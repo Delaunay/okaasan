@@ -183,7 +183,14 @@ async function fetchPyTorchWheels(): Promise<WheelEntry[]> {
 // ─── PyG fetcher ────────────────────────────────────────────────────────────────
 
 function parsePyGDirName(name: string): PyGEntry | null {
-    const match = name.match(/torch-([\d.]+)(?:\+(.+))?/);
+    // Index hrefs are URL-encoded (e.g. torch-2.4.0%2Bcu121.html)
+    let decoded = name;
+    try {
+        decoded = decodeURIComponent(name);
+    } catch { /* keep raw */ }
+    decoded = decoded.replace(/\.html?$/i, '').split('/').pop() ?? decoded;
+
+    const match = decoded.match(/torch-([\d.]+)(?:\+(.+))?/);
     if (!match) return null;
     const pytorchVersion = match[1];
     const backendRaw = match[2];
@@ -422,10 +429,16 @@ const CompatibilityOverview: React.FC<{
             if (pygSet.has(`${e.pytorchVersion}|${e.backendVersion}`)) {
                 data.push({ pytorch: e.pytorchVersion, backend: e.backendVersion, library: 'PyG' });
             }
-            const torchOk = !vllmMinTorch || versionSort(e.pytorchVersion, vllmMinTorch) >= 0;
-            const cudaOk = vllmCudaSet.size === 0 || vllmCudaSet.has(e.backendVersion);
-            if (torchOk && cudaOk) {
-                data.push({ pytorch: e.pytorchVersion, backend: e.backendVersion, library: `vLLM ${latestVllm!.version}` });
+            if (latestVllm) {
+                const torchOk = !vllmMinTorch || versionSort(e.pytorchVersion, vllmMinTorch) >= 0;
+                const cudaOk = vllmCudaSet.size === 0 || vllmCudaSet.has(e.backendVersion);
+                if (torchOk && cudaOk) {
+                    data.push({
+                        pytorch: e.pytorchVersion,
+                        backend: e.backendVersion,
+                        library: `vLLM ${latestVllm.version}`,
+                    });
+                }
             }
         }
 
@@ -435,22 +448,22 @@ const CompatibilityOverview: React.FC<{
             $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
             autosize: { type: 'fit', contains: 'padding' },
             data: { values: data },
-            width: { step: 18 },
-            height: { step: 18 },
+            width: { step: 28 },
+            height: { step: 16 },
             mark: { type: 'circle', size: 40, opacity: 0.85 },
             encoding: {
                 x: {
-                    field: 'pytorch',
-                    type: 'ordinal',
-                    title: 'PyTorch Version',
-                    sort: pytorchVersions,
-                    axis: { labelAngle: -45 },
-                },
-                y: {
                     field: 'backend',
                     type: 'ordinal',
                     title: 'CUDA Version',
-                    sort: [...backends].reverse(),
+                    sort: backends,
+                    axis: { labelAngle: -45 },
+                },
+                y: {
+                    field: 'pytorch',
+                    type: 'ordinal',
+                    title: 'PyTorch Version',
+                    sort: [...pytorchVersions].reverse(),
                 },
                 color: {
                     field: 'library',

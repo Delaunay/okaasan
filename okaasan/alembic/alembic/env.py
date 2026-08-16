@@ -49,6 +49,7 @@ from okaasan.server.comics.models import *  # noqa: F401,F403
 from okaasan.server.comics.library_models import *  # noqa: F401,F403
 from okaasan.server.podcasts.library_models import *  # noqa: F401,F403
 from okaasan.server.news.models import *  # noqa: F401,F403
+from okaasan.server.recipe.models import *  # noqa: F401,F403
 # computers.models uses TaskBase (separate DB) — not managed by alembic
 try:
     from okaasan.server.audit.models import *  # noqa: F401,F403

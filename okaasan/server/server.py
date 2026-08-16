@@ -159,6 +159,9 @@ def create_app() -> FastAPI:
     app.state.originals_folder = ORIGINALS_FOLDER
     app.state.private_engine = private_engine
 
+    from .recipe_sources import configure as _configure_recipe_sources
+    _configure_recipe_sources(SessionLocal)
+
     from .route_keyvalue import router as kv_router
     from .route_images import router as images_router
     from .route_jsonstore import router as jsonstore_router
@@ -169,6 +172,7 @@ def create_app() -> FastAPI:
     from .tasks import router as tasks_router
     from .recipe import router as recipe_router
     from .recipe import ingredient_router, units_router
+    from .recipe_sources import router as recipe_sources_router
     from .articles import router as article_router
     from .feed.routes import router as feed_router
     from .shows import router as shows_router
@@ -196,6 +200,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(recipe_router)
     app.include_router(units_router)
+    app.include_router(recipe_sources_router)
     app.include_router(article_router)
     app.include_router(ingredient_router)
     app.include_router(images_router)

@@ -83,6 +83,20 @@ recipe_categories = Table(
     Column('category_id', Integer, ForeignKey('categories._id'))
 )
 
+recipe_utensils = Table(
+    'recipe_utensils',
+    Base.metadata,
+    Column('recipe_id', Integer, ForeignKey('recipes._id')),
+    Column('utensil_id', Integer, ForeignKey('utensils._id'))
+)
+
+recipe_allergens = Table(
+    'recipe_allergens',
+    Base.metadata,
+    Column('recipe_id', Integer, ForeignKey('recipes._id')),
+    Column('allergen_id', Integer, ForeignKey('allergens._id'))
+)
+
 
 class USDAFood(Base):
     __tablename__ = 'usda_foods'
@@ -118,10 +132,23 @@ class Recipe(Base):
     component = Column(Boolean, default=False)
     extension = Column(JSON)
 
+    # Provenance for recipes imported from an external website (e.g. "hellofresh").
+    # NULL for recipes created locally.
+    source = Column(String(50), nullable=True)
+    source_url = Column(String(500), nullable=True)
+    external_id = Column(String(100), nullable=True)
+    synced_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('source', 'external_id', name='uq_recipe_source_external_id'),
+    )
+
     # Relationships
     author = relationship('User', back_populates='recipes')
     recipe_ingredients = relationship('RecipeIngredient', back_populates='recipe', foreign_keys="RecipeIngredient.recipe_id")
     categories = relationship('Category', secondary=recipe_categories, back_populates='recipes')
+    utensils = relationship('Utensil', secondary=recipe_utensils, back_populates='recipes')
+    allergens = relationship('Allergen', secondary=recipe_allergens, back_populates='recipes')
 
     def __repr__(self):
         return f'<Recipe {self.title}>'
@@ -143,9 +170,15 @@ class Recipe(Base):
             'owner': self.owner,
             'extension': self.extension,
             "component": self.component,
+            'source': self.source,
+            'source_url': self.source_url,
+            'external_id': self.external_id,
+            'synced_at': self.synced_at.isoformat() if self.synced_at else None,
 
             'ingredients': [ri.to_json() for ri in self.recipe_ingredients] if self.recipe_ingredients else [],
-            'categories': [category.to_json() for category in self.categories] if self.categories else []
+            'categories': [category.to_json() for category in self.categories] if self.categories else [],
+            'utensils': [utensil.to_json() for utensil in self.utensils] if self.utensils else [],
+            'allergens': [allergen.to_json() for allergen in self.allergens] if self.allergens else [],
         }
 
 
@@ -264,6 +297,52 @@ class Category(Base):
 
     def __repr__(self):
         return f'<Category {self.name}>'
+
+    def to_json(self):
+        return {
+            'id': self._id,
+            'name': self.name,
+            'description': self.description,
+            'extension': self.extension
+        }
+
+
+class Utensil(Base):
+    __tablename__ = 'utensils'
+
+    _id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+    extension = Column(JSON)
+
+    # Relationships
+    recipes = relationship('Recipe', secondary=recipe_utensils, back_populates='utensils')
+
+    def __repr__(self):
+        return f'<Utensil {self.name}>'
+
+    def to_json(self):
+        return {
+            'id': self._id,
+            'name': self.name,
+            'description': self.description,
+            'extension': self.extension
+        }
+
+
+class Allergen(Base):
+    __tablename__ = 'allergens'
+
+    _id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+    extension = Column(JSON)
+
+    # Relationships
+    recipes = relationship('Recipe', secondary=recipe_allergens, back_populates='allergens')
+
+    def __repr__(self):
+        return f'<Allergen {self.name}>'
 
     def to_json(self):
         return {

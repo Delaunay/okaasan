@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, FC, ChangeEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   VStack,
@@ -1166,19 +1166,22 @@ const IngredientItem: FC<IngredientItemProps> = ({
               </Box>
             </HStack>
           ) : (
-            <Text
-              color="blue.600"
-              _hover={{ textDecoration: 'underline', cursor: 'pointer' }}
-              onClick={() => {
-                if (ingredient.ingredient_id) {
-                  navigate(`/ingredients/${ingredient.ingredient_id}`);
-                } else if (ingredient.ingredient_recipe_id) {
-                  navigate(`/recipes/${ingredient.ingredient_recipe_id}`);
-                }
-              }}
-            >
-              {ingredient.name}
-            </Text>
+            (() => {
+              const to = ingredient.ingredient_id
+                ? `/ingredients/${ingredient.ingredient_id}`
+                : ingredient.ingredient_recipe_id
+                ? `/recipes/${ingredient.ingredient_recipe_id}`
+                : null;
+              return to ? (
+                <RouterLink to={to} style={{ textDecoration: 'none' }}>
+                  <Text color="blue.600" _hover={{ textDecoration: 'underline' }}>
+                    {ingredient.name}
+                  </Text>
+                </RouterLink>
+              ) : (
+                <Text>{ingredient.name}</Text>
+              );
+            })()
           )}
         </Box>
 
@@ -4010,13 +4013,21 @@ const Recipe: FC<RecipeProps> = ({
               </Button>
             </HStack>
             {nutritionResult && nutritionResult.compositions.length > 0 && (
-              <NutritionFacts
-                compositions={nutritionResult.compositions as IngredientComposition[]}
-                entityId={recipe.id}
-                editable={false}
-                totalWeightG={nutritionResult.total_weight_g}
-                servings={nutritionResult.servings}
-              />
+              <>
+                {nutritionResult.nutrition_source && (
+                  <Text fontSize="xs" style={{ color: 'var(--muted-text)' }} mb={1}>
+                    Nutrition provided by {nutritionResult.nutrition_source === 'hellofresh' ? 'HelloFresh' : nutritionResult.nutrition_source}
+                    {' '}(not calculated from this recipe's ingredients)
+                  </Text>
+                )}
+                <NutritionFacts
+                  compositions={nutritionResult.compositions as IngredientComposition[]}
+                  entityId={recipe.id}
+                  editable={false}
+                  totalWeightG={nutritionResult.total_weight_g}
+                  servings={nutritionResult.servings}
+                />
+              </>
             )}
             {nutritionResult && nutritionResult.compositions.length === 0 && !nutritionLoading && (
               <Text fontSize="sm" style={{ color: 'var(--empty-text)' }}>

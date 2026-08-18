@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from sqlalchemy import Integer, cast, func
 from sqlalchemy.orm import Session
 
 from . import mqtt_client
@@ -176,6 +177,17 @@ async def set_device(friendly_name: str, payload: dict):
 
 # ── Sensor history endpoints ──────────────────────────────────────────────
 
+# Bucket widths to pick from when a range has too many raw rows to return
+# as-is. Kept to "nice" calendar-ish units so chart ticks land cleanly.
+_BUCKET_LADDER_SECONDS = [60, 300, 900, 1800, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86400, 7 * 86400, 30 * 86400]
+
+
+def _pick_bucket_seconds(range_seconds: float, target_points: int) -> int:
+    for bucket in _BUCKET_LADDER_SECONDS:
+        if range_seconds / bucket <= target_points:
+            return bucket
+    return _BUCKET_LADDER_SECONDS[-1]
+
 
 @router.get("/sensors/history")
 async def get_sensor_history(
@@ -183,21 +195,59 @@ async def get_sensor_history(
     metric: str | None = None,
     hours: float = Query(default=24, ge=0.1, le=8760),
     limit: int = Query(default=2000, ge=1, le=50000),
+    target_points: int = Query(default=800, ge=50, le=5000, description="Approx. points per metric when bucketing"),
 ):
-    """Get historical sensor readings. Filter by device and/or metric."""
+    """Get historical sensor readings, filtered by device and/or metric.
+
+    Ranges that fit within `limit` raw rows are returned unchanged. Longer
+    ranges (e.g. months/years of minute-by-minute data) are bucketed into
+    ~`target_points` averaged points per metric instead, so the query and
+    response stay cheap regardless of how far back `hours` reaches.
+    """
     from .models import SensorReading
 
     db = _get_db()
     try:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
-        q = db.query(SensorReading).filter(SensorReading.recorded_at >= since)
+
+        base_q = db.query(SensorReading).filter(SensorReading.recorded_at >= since)
         if device:
-            q = q.filter(SensorReading.device_name == device)
+            base_q = base_q.filter(SensorReading.device_name == device)
         if metric:
-            q = q.filter(SensorReading.metric == metric)
-        q = q.order_by(SensorReading.recorded_at.desc()).limit(limit)
-        readings = q.all()
-        return {"readings": [r.to_json() for r in reversed(readings)]}
+            base_q = base_q.filter(SensorReading.metric == metric)
+
+        if base_q.count() <= limit:
+            q = base_q.order_by(SensorReading.recorded_at.desc()).limit(limit)
+            readings = q.all()
+            return {"readings": [r.to_json() for r in reversed(readings)], "bucket_seconds": None}
+
+        bucket_seconds = _pick_bucket_seconds(hours * 3600, target_points)
+        epoch = cast(func.strftime("%s", SensorReading.recorded_at), Integer)
+        bucket_expr = (epoch // bucket_seconds) * bucket_seconds
+
+        rows = (
+            base_q
+            .with_entities(
+                SensorReading.device_name,
+                SensorReading.metric,
+                bucket_expr.label("bucket"),
+                func.avg(SensorReading.value).label("value"),
+            )
+            .group_by(SensorReading.device_name, SensorReading.metric, "bucket")
+            .order_by(SensorReading.metric, "bucket")
+            .all()
+        )
+        readings = [
+            {
+                "id": int(bucket),
+                "device_name": device_name,
+                "metric": metric_name,
+                "value": float(value),
+                "recorded_at": datetime.fromtimestamp(int(bucket), tz=timezone.utc).replace(tzinfo=None).isoformat() + "Z",
+            }
+            for device_name, metric_name, bucket, value in rows
+        ]
+        return {"readings": readings, "bucket_seconds": bucket_seconds}
     finally:
         db.close()
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -20,20 +20,167 @@ import type { RecipeData } from '../../services/type';
 // Component filter states
 type ComponentFilter = 'all' | 'components' | 'dishes';
 
+// Max total (prep + cook) time in minutes, or 'all' for no cap
+type TimeFilter = 'all' | 30 | 60 | 90;
+
+const SOURCE_DISPLAY_NAMES: Record<string, string> = {
+  hellofresh: 'HelloFresh',
+};
+
+const sourceDisplayName = (source: string) =>
+  SOURCE_DISPLAY_NAMES[source] ?? (source.charAt(0).toUpperCase() + source.slice(1));
+
+const FilterChip = ({
+  label,
+  active,
+  onClick,
+  count,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  count?: number;
+}) => (
+  <Box
+    as="button"
+    onClick={onClick}
+    px={3}
+    py={1.5}
+    borderRadius="md"
+    fontWeight={active ? 'bold' : 'normal'}
+    bg={active ? 'blue.500' : 'bg'}
+    color={active ? 'white' : undefined}
+    borderWidth="1px"
+    borderColor={active ? 'blue.500' : 'gray.300'}
+    fontSize="sm"
+    cursor="pointer"
+    _hover={{ borderColor: 'blue.400' }}
+  >
+    {label}
+    {typeof count === 'number' && ` (${count})`}
+  </Box>
+);
+
+// Recipes are fetched a page at a time (server-side pagination when a source
+// filter narrows things down) so switching to "All"/"HelloFresh" on a catalog
+// with thousands of rows doesn't stall the initial load.
+const PAGE_SIZE = 100;
+
 const RecipeList = () => {
   const [recipes, setRecipes] = useState<RecipeData[]>([]);
   const [filteredRecipes, setFilteredRecipes] = useState<RecipeData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [componentFilter, setComponentFilter] = useState<ComponentFilter>('dishes');
   const [tagFilter, setTagFilter] = useState<string>('');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  // Default to 'local' so the page loads fast even once thousands of scraped
+  // recipes exist — switching to 'all'/'hellofresh' fetches those on demand.
+  const [sourceFilter, setSourceFilter] = useState<string>('local');
+  const [sourceCounts, setSourceCounts] = useState<Record<string, number> | null>(null);
   const navigate = useNavigate();
   const isStatic = recipeAPI.isStaticMode();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  // Source filter chip counts: server-reported totals when available (live mode),
+  // falling back to counting whatever's currently loaded (static mode).
+  const sourceOptions = useMemo(() => {
+    if (sourceCounts) {
+      const localCount = sourceCounts['local'] || 0;
+      const sources = Object.entries(sourceCounts).filter(([key]) => key !== 'local');
+      sources.sort((a, b) => b[1] - a[1]);
+      const total = Object.values(sourceCounts).reduce((sum, n) => sum + n, 0);
+      return { localCount, sources, total };
+    }
+    const counts = new Map<string, number>();
+    let localCount = 0;
+    for (const recipe of recipes) {
+      if (recipe.source) {
+        counts.set(recipe.source, (counts.get(recipe.source) || 0) + 1);
+      } else {
+        localCount += 1;
+      }
+    }
+    return {
+      localCount,
+      sources: Array.from(counts.entries()).sort((a, b) => b[1] - a[1]),
+      total: recipes.length,
+    };
+  }, [recipes, sourceCounts]);
+
+  const fetchRecipes = async (reset: boolean) => {
+    if (reset) {
+      setLoading(true);
+      setError(null);
+    } else {
+      if (loadingMore || !hasMore) return;
+      setLoadingMore(true);
+    }
+
+    try {
+      if (isStatic) {
+        // Static builds ship one pre-baked JSON file — nothing to paginate server-side.
+        const all = await recipeAPI.getRecipes();
+        setRecipes(all);
+        setHasMore(false);
+        return;
+      }
+
+      const offset = reset ? 0 : recipes.length;
+      const page = await recipeAPI.getRecipes({
+        source: sourceFilter === 'all' ? undefined : sourceFilter,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      setRecipes(prev => (reset ? page : [...prev, ...page]));
+      setHasMore(page.length === PAGE_SIZE);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch recipes');
+      console.error('Failed to fetch recipes:', err);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
-    fetchRecipes();
     document.title = 'All Recipes';
+    if (!isStatic) {
+      recipeAPI.getRecipeSourceCounts()
+        .then(rows => {
+          const counts: Record<string, number> = {};
+          for (const row of rows) counts[row.source ?? 'local'] = row.count;
+          setSourceCounts(counts);
+        })
+        .catch(() => { /* counts are a nice-to-have, ignore failures */ });
+    }
   }, []);
+
+  // (Re)load the first page whenever the server-side filter changes.
+  // Runs on mount too, which is our initial fetch.
+  useEffect(() => {
+    fetchRecipes(true);
+  }, [sourceFilter]);
+
+  // Infinite scroll: fetch the next page once the sentinel below the grid is visible.
+  useEffect(() => {
+    if (isStatic || !hasMore) return;
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchRecipes(false);
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, recipes.length, sourceFilter]);
 
   useEffect(() => {
     if (!loading && recipes.length > 0) {
@@ -71,6 +218,22 @@ const RecipeList = () => {
       });
     }
 
+    // Apply time-to-make filter (prep + cook time)
+    if (timeFilter !== 'all') {
+      filtered = filtered.filter(recipe => {
+        const totalTime = (recipe.prep_time || 0) + (recipe.cook_time || 0);
+        return totalTime > 0 && totalTime <= timeFilter;
+      });
+    }
+
+    // Apply source filter (server already filtered by source in live mode —
+    // this is what actually does the filtering in static mode)
+    if (sourceFilter !== 'all') {
+      filtered = filtered.filter(recipe =>
+        sourceFilter === 'local' ? !recipe.source : recipe.source === sourceFilter
+      );
+    }
+
     // Stable sort: recipes with images first, preserve relative order within each group
     filtered.sort((a, b) => {
       const aHasImage = (a.images && a.images.length > 0) ? 0 : 1;
@@ -79,21 +242,7 @@ const RecipeList = () => {
     });
 
     setFilteredRecipes(filtered);
-  }, [recipes, componentFilter, tagFilter]);
-
-  const fetchRecipes = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const fetchedRecipes = await recipeAPI.getRecipes();
-      setRecipes(fetchedRecipes);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch recipes');
-      console.error('Failed to fetch recipes:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [recipes, componentFilter, tagFilter, timeFilter, sourceFilter]);
 
   const handleComponentFilterChange = () => {
     if (componentFilter === 'all') {
@@ -115,6 +264,90 @@ const RecipeList = () => {
   };
 
 
+
+  const renderFilterBar = () => (
+    <Flex gap={6} wrap="wrap" align="center">
+      <Box>
+        <HStack>
+          <Box
+            as="button"
+            onClick={handleComponentFilterChange}
+            display="flex"
+            alignItems="center"
+            gap={2}
+            p={2}
+            borderRadius="md"
+            bg="bg"
+            _hover={{ bg: "gray.100" }}
+            cursor="pointer"
+          >
+            <Box
+              w={4}
+              h={4}
+              border="2px solid"
+              borderColor={componentFilter === 'components' ? "blue.500" : "gray.300"}
+              borderRadius="sm"
+              bg={componentFilter === 'components' ? "blue.500" : "bg"}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+            >
+              {componentFilter === 'components' && (
+                <Box w={2} h={2} bg="bg" borderRadius="xs" />
+              )}
+              {componentFilter === 'all' && (
+                <Box w={2} h={1} bg="gray.600" />
+              )}
+            </Box>
+            <Text fontSize="sm">{getComponentFilterLabel()}</Text>
+          </Box>
+        </HStack>
+      </Box>
+
+      <Box flex="1" minW="200px">
+        <Input
+          placeholder="Filter by tags, title, or description..."
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          bg="bg"
+        />
+      </Box>
+
+      <Box>
+        <Text fontSize="xs" color="gray.500" mb={1}>Time to make</Text>
+        <HStack gap={2} flexWrap="wrap">
+          <FilterChip label="Any time" active={timeFilter === 'all'} onClick={() => setTimeFilter('all')} />
+          <FilterChip label="Under 30 min" active={timeFilter === 30} onClick={() => setTimeFilter(30)} />
+          <FilterChip label="Under 60 min" active={timeFilter === 60} onClick={() => setTimeFilter(60)} />
+          <FilterChip label="Under 90 min" active={timeFilter === 90} onClick={() => setTimeFilter(90)} />
+        </HStack>
+      </Box>
+
+      <Box>
+        <Text fontSize="xs" color="gray.500" mb={1}>Source</Text>
+        <HStack gap={2} flexWrap="wrap">
+          <FilterChip label="All" active={sourceFilter === 'all'} onClick={() => setSourceFilter('all')} count={sourceOptions.total} />
+          {sourceOptions.localCount > 0 && (
+            <FilterChip
+              label="Local"
+              active={sourceFilter === 'local'}
+              onClick={() => setSourceFilter('local')}
+              count={sourceOptions.localCount}
+            />
+          )}
+          {sourceOptions.sources.map(([source, count]) => (
+            <FilterChip
+              key={source}
+              label={sourceDisplayName(source)}
+              active={sourceFilter === source}
+              onClick={() => setSourceFilter(source)}
+              count={count}
+            />
+          ))}
+        </HStack>
+      </Box>
+    </Flex>
+  );
 
   const restoreScrollPosition = () => {
     const saved = sessionStorage.getItem(`scroll_recipe`);
@@ -173,52 +406,7 @@ const RecipeList = () => {
           {/* Filter Controls */}
           <Box p={4} bg="bg" borderRadius="md">
             <Text fontSize="lg" fontWeight="semibold" mb={3}>Filters</Text>
-            <Flex gap={6} wrap="wrap" align="center">
-              <Box>
-                <HStack>
-                  <Box
-                    as="button"
-                    onClick={handleComponentFilterChange}
-                    display="flex"
-                    alignItems="center"
-                    gap={2}
-                    p={2}
-                    borderRadius="md"
-                    bg="bg"
-                    _hover={{ bg: "gray.100" }}
-                    cursor="pointer"
-                  >
-                    <Box
-                      w={4}
-                      h={4}
-                      border="2px solid"
-                      borderColor={componentFilter === 'components' ? "blue.500" : "gray.300"}
-                      borderRadius="sm"
-                      bg={componentFilter === 'components' ? "blue.500" : "bg"}
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                    >
-                      {componentFilter === 'components' && (
-                        <Box w={2} h={2} bg="bg" borderRadius="xs" />
-                      )}
-                      {componentFilter === 'all' && (
-                        <Box w={2} h={1} bg="gray.600" />
-                      )}
-                    </Box>
-                    <Text fontSize="sm">{getComponentFilterLabel()}</Text>
-                  </Box>
-                </HStack>
-              </Box>
-              <Box flex="1" minW="200px">
-                <Input
-                  placeholder="Filter by tags, title, or description..."
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value)}
-                  bg="bg"
-                />
-              </Box>
-            </Flex>
+            {renderFilterBar()}
           </Box>
 
           <Box textAlign="center" py={10}>
@@ -229,6 +417,8 @@ const RecipeList = () => {
               onClick={() => {
                 setComponentFilter('all');
                 setTagFilter('');
+                setTimeFilter('all');
+                setSourceFilter('all');
               }}
               colorScheme="blue"
               variant="outline"
@@ -264,7 +454,8 @@ const RecipeList = () => {
 
               </Text>
               <Text fontSize="lg" color="gray.600">
-                {filteredRecipes.length} of {recipes.length}
+                {filteredRecipes.length} of {recipes.length} loaded
+                {hasMore && !isStatic ? ' · scroll for more' : ''}
               </Text>
             </HStack>
             {!isStatic && (
@@ -277,52 +468,7 @@ const RecipeList = () => {
           <HStack justify="space-between" width="100%">
             {/* Filter Controls */}
             <Box bg="bg" borderRadius="md" width="100%">
-              <Flex gap={6} wrap="wrap" align="center">
-                <Box>
-                  <HStack>
-                    <Box
-                      as="button"
-                      onClick={handleComponentFilterChange}
-                      display="flex"
-                      alignItems="center"
-                      gap={2}
-                      p={2}
-                      borderRadius="md"
-                      bg="bg"
-                      _hover={{ bg: "gray.100" }}
-                      cursor="pointer"
-                    >
-                      <Box
-                        w={4}
-                        h={4}
-                        border="2px solid"
-                        borderColor={componentFilter === 'components' ? "blue.500" : "gray.300"}
-                        borderRadius="sm"
-                        bg={componentFilter === 'components' ? "blue.500" : "bg"}
-                        display="flex"
-                        alignItems="center"
-                        justifyContent="center"
-                      >
-                        {componentFilter === 'components' && (
-                          <Box w={2} h={2} bg="bg" borderRadius="xs" />
-                        )}
-                        {componentFilter === 'all' && (
-                          <Box w={2} h={1} bg="gray.600" />
-                        )}
-                      </Box>
-                      <Text fontSize="sm">{getComponentFilterLabel()}</Text>
-                    </Box>
-                  </HStack>
-                </Box>
-                <Box flex="1">
-                  <Input
-                    placeholder="Filter"
-                    value={tagFilter}
-                    onChange={(e) => setTagFilter(e.target.value)}
-                    bg="bg"
-                  />
-                </Box>
-              </Flex>
+              {renderFilterBar()}
             </Box>
           </HStack>
         </Box>
@@ -440,6 +586,12 @@ const RecipeList = () => {
             </RouterLink>
           ))}
         </SimpleGrid>
+
+        {!isStatic && hasMore && (
+          <Box ref={loadMoreRef} textAlign="center" py={4}>
+            <Spinner size="md" />
+          </Box>
+        )}
       </VStack>
     </Box>
   );

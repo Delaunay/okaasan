@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Box, Flex, Heading, Text, VStack, HStack, Spinner, Badge,
   Button, Table, Input,
@@ -56,6 +57,17 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
+// Deprioritize (not exclude) obvious low-quality releases so they don't
+// crowd out healthy, legitimate results with the same or fewer seeders.
+const LOW_QUALITY_RE = /\b(cam|hdcam|ts|telesync|scr(?:eener)?|workprint|sample)\b/i;
+
+function rankScore(r: SearchResultItem): number {
+  const seeders = r.seeders ?? 0;
+  const leechers = r.leechers ?? 0;
+  const base = seeders * 1000 + leechers;
+  return LOW_QUALITY_RE.test(r.title) ? base * 0.05 : base;
+}
+
 function timeAgo(isoDate: string | null): string {
   if (!isoDate) return '—';
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -83,10 +95,15 @@ const SearchPanel: React.FC = () => {
   const [adding, setAdding] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [completedIndexers, setCompletedIndexers] = useState<string[]>([]);
+  const sortedResults = useMemo(
+    () => [...results].sort((a, b) => rankScore(b) - rankScore(a)),
+    [results]
+  );
   const abortRef = React.useRef<AbortController | null>(null);
 
-  const doSearch = useCallback(async () => {
-    if (!query.trim()) return;
+  const doSearch = useCallback(async (queryOverride?: string) => {
+    const effectiveQuery = queryOverride ?? query;
+    if (!effectiveQuery.trim()) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -98,7 +115,7 @@ const SearchPanel: React.FC = () => {
     setCompletedIndexers([]);
 
     try {
-      const params = new URLSearchParams({ q: query });
+      const params = new URLSearchParams({ q: effectiveQuery });
       if (category) params.set('categories', category);
 
       const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
@@ -147,6 +164,21 @@ const SearchPanel: React.FC = () => {
       setSearching(false);
     }
   }, [query, category]);
+
+  // Landing here with e.g. /torrents/discover?q=Some+Show — pre-fill and
+  // run the search immediately, so linking in from another page "just works".
+  const [searchParams] = useSearchParams();
+  const autoSearchedRef = useRef(false);
+  useEffect(() => {
+    if (autoSearchedRef.current) return;
+    const q = searchParams.get('q');
+    if (q) {
+      autoSearchedRef.current = true;
+      setQuery(q);
+      doSearch(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') doSearch();
@@ -279,7 +311,7 @@ const SearchPanel: React.FC = () => {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {results.map((r, i) => (
+              {sortedResults.map((r, i) => (
                 <Table.Row key={i}>
                   <Table.Cell maxW="400px">
                     <Text fontSize="sm" truncate title={r.title}>{r.title}</Text>

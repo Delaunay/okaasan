@@ -15,6 +15,7 @@ from typing import Iterator
 
 import httpx
 
+from ..integrations.usda import normalize_nutrient_name
 from .base import (
     NormalizedIngredient,
     NormalizedInstructionStep,
@@ -24,6 +25,24 @@ from .base import (
 )
 
 log = logging.getLogger("okaasan.recipe_sources.hellofresh")
+
+# normalize_nutrient_name() knows USDA's verbose nomenclature; HelloFresh
+# uses plainer names for the same nutrients, so translate first.
+_NUTRIENT_NAME_ALIASES = {
+    "calories": "energy",
+    "saturated fat": "fatty acids, total saturated",
+    "trans fat": "fatty acids, total trans",
+    "monounsaturated fat": "fatty acids, total monounsaturated",
+    "polyunsaturated fat": "fatty acids, total polyunsaturated",
+    "sugar": "sugars",
+}
+
+
+def _normalize_hellofresh_nutrient(raw_name: str, unit: str) -> tuple[str, str]:
+    if raw_name.strip().lower() == "energy (kj)":
+        return "_skip", ""  # redundant with Calories in kcal, same as the app's own kJ/kcal convention
+    lookup_name = _NUTRIENT_NAME_ALIASES.get(raw_name.strip().lower(), raw_name)
+    return normalize_nutrient_name(lookup_name, unit)
 
 BASE_URL = "https://www.hellofresh.ca"
 # Any recipe page works as a token source; this one is stable and lightweight.
@@ -39,6 +58,22 @@ USER_AGENT = (
 # catalog is ~15k recipes.
 REQUEST_DELAY_SECONDS = 0.15
 MAX_RETRIES = 3
+
+# HelloFresh's own `imageLink` field (a d3hvwccx09j84u.cloudfront.net URL) no
+# longer resolves — that distribution 502s "failed to contact origin" for
+# every path, old and freshly-scraped alike. Their current working image CDN
+# is media.hellofresh.com, which takes the same *relative* path (imagePath /
+# a step image's "path" / an ingredient's imagePath) behind a transform
+# prefix and a literal "hellofresh_s3" segment. Confirmed by hand against
+# both a real recipe photo and a real ingredient photo.
+MEDIA_BASE_URL = "https://media.hellofresh.com"
+
+
+def _media_url(image_path: str | None, width: int = 750) -> str | None:
+    if not image_path:
+        return None
+    return f"{MEDIA_BASE_URL}/w_{width},q_auto,f_auto,c_limit,fl_lossy/hellofresh_s3{image_path}"
+
 
 _NEXT_DATA_RE = re.compile(
     r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S
@@ -63,6 +98,7 @@ def _parse_duration_minutes(value: str | None) -> int | None:
 
 class HelloFreshSource(RecipeSource):
     name = "hellofresh"
+    display_name = "HelloFresh"
 
     def __init__(self, *, client: httpx.Client | None = None):
         self._client = client or httpx.Client(
@@ -158,8 +194,14 @@ class HelloFreshSource(RecipeSource):
             for entry in default_yield.get("ingredients", []):
                 ing = ingredients_by_id.get(entry["id"])
                 name = ing["name"] if ing else entry["id"]
+                # HelloFresh leaves amount null for "to taste"-style ingredients.
                 ingredients.append(
-                    NormalizedIngredient(name=name, quantity=entry["amount"], unit=entry["unit"])
+                    NormalizedIngredient(
+                        name=name,
+                        quantity=entry.get("amount") or 0,
+                        unit=entry.get("unit") or "unit(s)",
+                        image_url=_media_url(ing.get("imagePath"), 200) if ing else None,
+                    )
                 )
 
         instructions: list[NormalizedInstructionStep] = []
@@ -169,19 +211,16 @@ class HelloFreshSource(RecipeSource):
                 NormalizedInstructionStep(
                     step=step.get("index", len(instructions) + 1),
                     description=(step.get("instructions") or "").strip(),
-                    image=images[0]["link"] if images else None,
+                    image=_media_url(images[0]["path"], 600) if images else None,
                 )
             )
 
-        nutrition = [
-            NormalizedNutrition(
-                kind="nutrient",
-                name=n["name"],
-                quantity=n["amount"],
-                unit=n["unit"],
-            )
-            for n in item.get("nutrition", [])
-        ]
+        nutrition = []
+        for n in item.get("nutrition", []):
+            kind, name = _normalize_hellofresh_nutrient(n["name"], n["unit"])
+            if kind == "_skip":
+                continue
+            nutrition.append(NormalizedNutrition(kind=kind, name=name, quantity=n["amount"], unit=n["unit"]))
 
         categories = sorted({
             *(t["name"] for t in item.get("tags", []) if t.get("name")),
@@ -202,7 +241,7 @@ class HelloFreshSource(RecipeSource):
             title=item["name"],
             description=item.get("description"),
             headline=item.get("headline"),
-            image_url=item.get("imageLink"),
+            image_url=_media_url(item.get("imagePath"), 750),
             instructions=instructions,
             ingredients=ingredients,
             nutrition=nutrition,
@@ -218,7 +257,7 @@ class HelloFreshSource(RecipeSource):
                 "ratings_count": item.get("ratingsCount"),
                 "unique_recipe_code": item.get("uniqueRecipeCode"),
                 "video_link": item.get("videoLink"),
-                "image_url": item.get("imageLink"),
+                "image_url": _media_url(item.get("imagePath"), 750),
                 "total_time": item.get("totalTime"),
             },
         )

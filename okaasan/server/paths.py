@@ -38,6 +38,18 @@ def cache_folder(base: str | Path | None = None) -> Path:
     return d
 
 
+def thirdparty_folder(base: str | Path | None = None) -> Path:
+    """Downloaded images for recipes scraped from external sites (HelloFresh, etc).
+
+    Kept separate from ``uploads/`` since these photos aren't ours. Callers
+    should namespace by source, e.g. ``thirdparty_folder() / "hellofresh"``.
+    """
+    root = Path(base) if base else Path(STATIC_FOLDER)
+    d = root / "thirdparty"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def logs_folder(base: str | Path | None = None) -> Path:
     """Return the logs directory under private/, creating it if needed."""
     d = private_folder(base) / "logs"

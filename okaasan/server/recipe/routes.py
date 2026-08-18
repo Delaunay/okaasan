@@ -14,6 +14,26 @@ from ..decorators import expose
 
 log = logging.getLogger("okaasan.recipes")
 
+# Health Canada daily values (2016 Nutrition Facts table reference amounts,
+# based on a 2000-calorie diet) — used to compute "% Daily Value" for
+# source-provided nutrition rows, which otherwise carry no daily_value at all.
+# Keyed by (kind, name) exactly as produced by the nutrient-name normalizer.
+_DAILY_VALUES: dict[tuple[str, str], float] = {
+    ("Calories", ""): 2000,
+    ("Fat", ""): 75,
+    ("Fat", "Saturated"): 20,
+    ("Fat", "Trans"): 20,
+    ("Carbohydrate", ""): 275,
+    ("Carbohydrate", "Sugars"): 100,
+    ("Carbohydrate", "Fiber"): 28,
+    ("Protein", ""): 50,
+    ("Cholesterol", ""): 300,
+    ("Mineral", "Sodium"): 2300,
+    ("Mineral", "Potassium"): 3400,
+    ("Mineral", "Calcium"): 1300,
+    ("Mineral", "Iron"): 18,
+}
+
 router = APIRouter()
 
 
@@ -136,9 +156,29 @@ def search_ingredient(name: str, db: Session = Depends(get_db)):
 
 @router.get("/recipes")
 @expose()
-def get_recipes(db: Session = Depends(get_db)):
-    recipes = db.query(Recipe).all()
-    return [recipe.to_json() for recipe in recipes]
+def get_recipes(
+    db: Session = Depends(get_db),
+    source: str | None = Query(None, description="Filter by source, or 'local' for recipes with no source"),
+    limit: int | None = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    query = db.query(Recipe).order_by(Recipe._id)
+    if source == "local":
+        query = query.filter(Recipe.source.is_(None))
+    elif source:
+        query = query.filter(Recipe.source == source)
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
+    return [recipe.to_json() for recipe in query.all()]
+
+
+@router.get("/recipes/sources")
+def get_recipe_sources(db: Session = Depends(get_db)):
+    """Recipe counts grouped by source, for filter UI (e.g. 'Local (87)', 'HelloFresh (14706)')."""
+    from sqlalchemy import func
+
+    rows = db.query(Recipe.source, func.count(Recipe._id)).group_by(Recipe.source).all()
+    return [{"source": source, "count": count} for source, count in rows]
 
 
 @router.get("/recipes/{start}/{end}")
@@ -245,7 +285,10 @@ def calculate_recipe_nutrition_endpoint(
 
         if not result.get("error"):
             try:
-                db.query(IngredientComposition).filter_by(recipe_id=recipe_id).delete()
+                # Scoped to source="calculated" only — other sources (e.g. a
+                # recipe's own hellofresh-provided nutrition) live alongside
+                # these rows and must survive a recalculation.
+                db.query(IngredientComposition).filter_by(recipe_id=recipe_id, source="calculated").delete()
                 for comp in result.get("compositions", []):
                     db.add(IngredientComposition(
                         recipe_id=recipe_id,
@@ -267,6 +310,52 @@ def calculate_recipe_nutrition_endpoint(
                 result["cached"] = False
         else:
             result["cached"] = False
+
+        # Fall back to the source site's own nutrition info when nothing
+        # could be calculated from ingredient-level composition data.
+        if not result.get("compositions"):
+            fallback = (
+                db.query(IngredientComposition)
+                .filter(IngredientComposition.recipe_id == recipe_id)
+                .filter(IngredientComposition.source.isnot(None))
+                .filter(IngredientComposition.source != "calculated")
+                .all()
+            )
+            if fallback:
+                # These rows are absolute per-serving values as the source site
+                # reports them (e.g. "658 kcal" for the dish as served), but
+                # the rest of this endpoint — and the UI's per-100g/per-serving
+                # reference-quantity toggle — expects everything normalized to
+                # per 100g, same as calculate_recipe_nutrition's own output.
+                # Rescale using the per-serving weight (recipe weight ÷ servings),
+                # which calculate_recipe_nutrition already computed above.
+                total_weight_g = result.get("total_weight_g")
+                servings = result.get("servings")
+                per_serving_weight_g = (
+                    total_weight_g / servings
+                    if total_weight_g and servings and servings > 0
+                    else None
+                )
+
+                compositions = []
+                for c in fallback:
+                    data = c.to_json()
+                    if per_serving_weight_g:
+                        scale = 100 / per_serving_weight_g
+                        if data.get("quantity") is not None:
+                            data["quantity"] = round(data["quantity"] * scale, 3)
+
+                    reference = _DAILY_VALUES.get((data.get("kind"), data.get("name") or ""))
+                    if reference and data.get("quantity") is not None:
+                        data["daily_value"] = round(data["quantity"] / reference * 100, 1)
+
+                    compositions.append(data)
+
+                result["compositions"] = compositions
+                result["nutrition_source"] = fallback[0].source
+                result["error"] = False
+                result["error_messages"] = []
+                result["missing_nutrition_ingredients"] = []
 
         return result
     except Exception as e:

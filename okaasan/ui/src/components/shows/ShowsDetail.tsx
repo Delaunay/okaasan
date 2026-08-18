@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Text, Image, HStack, VStack, Badge, Spinner, Button } from '@chakra-ui/react';
-import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle, Play } from 'lucide-react';
+import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv, CheckCircle, Play, Download } from 'lucide-react';
 import { recipeAPI, isStaticMode, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 import VideoPlayerModal from './VideoPlayerModal';
+import { torrentSearchPath } from '../../utils/torrentSearch';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
@@ -231,16 +232,26 @@ const ShowsDetail: React.FC = () => {
           )}
 
           {/* Play button for movies */}
-          {movieFile && (
+          <HStack gap={2}>
+            {movieFile && (
+              <Button
+                colorPalette="blue"
+                size="sm"
+                onClick={() => openPlayer(title)}
+              >
+                <Play size={16} />
+                <Text ml={1}>Play</Text>
+              </Button>
+            )}
             <Button
-              colorPalette="blue"
+              variant="outline"
               size="sm"
-              onClick={() => openPlayer(title)}
+              onClick={() => navigate(torrentSearchPath(title, year))}
             >
-              <Play size={16} />
-              <Text ml={1}>Play</Text>
+              <Download size={16} />
+              <Text ml={1}>Find in Downloads</Text>
             </Button>
-          )}
+          </HStack>
 
           {/* Overview */}
           {overview && (

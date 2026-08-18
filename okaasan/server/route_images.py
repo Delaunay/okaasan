@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 
 from ..tools.images import centercrop_resize_image
-from .paths import public_folder
+from .paths import public_folder, thirdparty_folder
 
 router = APIRouter()
 
@@ -114,6 +114,15 @@ async def download_image(
 @router.get("/uploads/{filepath:path}")
 def uploaded_file(filepath: str, request: Request):
     full_path = public_folder() / filepath
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(full_path))
+
+
+@router.get("/thirdparty/{filepath:path}")
+def thirdparty_file(filepath: str):
+    """Serves images downloaded from external sites (HelloFresh, etc) — kept out of uploads/ since we don't own them."""
+    full_path = thirdparty_folder() / filepath
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(full_path))

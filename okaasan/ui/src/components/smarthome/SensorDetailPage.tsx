@@ -63,6 +63,24 @@ function formatMetricName(name: string): string {
   return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// 1h up to 1y — the backend transparently switches from raw rows to averaged
+// buckets once a range has too many points to return as-is.
+const HOUR_OPTIONS = [1, 6, 12, 24, 48, 168, 24 * 30, 24 * 90, 8760];
+
+function formatHours(h: number): string {
+  if (h < 24) return `${h}h`;
+  if (h < 24 * 30) return `${h / 24}d`;
+  if (h < 8760) return `${Math.round(h / (24 * 30))}mo`;
+  return `${Math.round(h / 8760)}y`;
+}
+
+// Longer ranges need date-aware axis ticks instead of just a time-of-day.
+function timeAxisFormat(h: number): string {
+  if (h <= 48) return '%H:%M';
+  if (h <= 24 * 14) return '%b %d %H:%M';
+  return '%b %d';
+}
+
 function downsample<T>(data: T[], maxPoints: number): T[] {
   if (data.length <= maxPoints) return data;
   const step = data.length / maxPoints;
@@ -226,9 +244,9 @@ const SensorDetailPage: React.FC = () => {
       </Box>
 
       {/* Time range selector */}
-      <HStack gap={2}>
+      <HStack gap={2} flexWrap="wrap">
         <Text fontSize="sm" fontWeight="medium">History:</Text>
-        {[1, 6, 12, 24, 48, 168].map(h => (
+        {HOUR_OPTIONS.map(h => (
           <Button
             key={h}
             size="xs"
@@ -236,7 +254,7 @@ const SensorDetailPage: React.FC = () => {
             colorPalette={hours === h ? 'blue' : 'gray'}
             onClick={() => setHours(h)}
           >
-            {h < 24 ? `${h}h` : `${h / 24}d`}
+            {formatHours(h)}
           </Button>
         ))}
       </HStack>
@@ -251,6 +269,7 @@ const SensorDetailPage: React.FC = () => {
             metric={metric}
             unit={unit}
             readings={metricReadings}
+            axisFormat={timeAxisFormat(hours)}
           />
         );
       })}
@@ -309,7 +328,8 @@ const MetricChart: React.FC<{
   metric: string;
   unit: string;
   readings: SensorReading[];
-}> = ({ metric, unit, readings }) => {
+  axisFormat: string;
+}> = ({ metric, unit, readings, axisFormat }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
 
@@ -332,7 +352,7 @@ const MetricChart: React.FC<{
         x: {
           field: 'time',
           type: 'temporal',
-          axis: { format: '%H:%M', labelFontSize: 10, title: null, labelOverlap: 'parity', tickCount: 15 },
+          axis: { format: axisFormat, labelFontSize: 10, title: null, labelOverlap: 'parity', tickCount: 15 },
         },
         y: {
           field: 'value',
@@ -366,7 +386,7 @@ const MetricChart: React.FC<{
         viewRef.current = null;
       }
     };
-  }, [readings, metric, unit]);
+  }, [readings, metric, unit, axisFormat]);
 
   return (
     <Box p={4} bg="var(--card-bg)" borderRadius="lg" borderWidth="1px" borderColor="var(--border-color)">

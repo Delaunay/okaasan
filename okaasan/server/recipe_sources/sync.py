@@ -17,7 +17,7 @@ from ..recipe.models import (
     RecipeIngredient,
     Utensil,
 )
-from .base import NormalizedRecipe
+from .base import NormalizedIngredient, NormalizedRecipe
 from .registry import get_source
 
 log = logging.getLogger("okaasan.recipe_sources.sync")
@@ -35,7 +35,29 @@ def _get_or_create(db: Session, model, name: str):
     return obj
 
 
-def _import_recipe(db: Session, source_name: str, r: NormalizedRecipe) -> Recipe:
+def _get_or_create_ingredient(db: Session, source_name: str, ing: NormalizedIngredient) -> Ingredient | None:
+    """Like ``_get_or_create``, but also stashes the source's ingredient photo
+    URL (for the image-download pass) — only filling it in if this ingredient
+    doesn't already have one from this source, since it's shared across recipes.
+    """
+    name = (ing.name or "").strip()
+    if not name:
+        return None
+    obj = db.query(Ingredient).filter_by(name=name).first()
+    if not obj:
+        obj = Ingredient(name=name)
+        if ing.image_url:
+            obj.extension = {source_name: {"image_url": ing.image_url}}
+        db.add(obj)
+        db.flush()
+    elif ing.image_url and not (obj.extension or {}).get(source_name, {}).get("image_url"):
+        ext = dict(obj.extension or {})
+        ext[source_name] = {**ext.get(source_name, {}), "image_url": ing.image_url}
+        obj.extension = ext
+    return obj
+
+
+def _import_recipe(db: Session, source_name: str, source_display_name: str, r: NormalizedRecipe) -> Recipe:
     recipe = Recipe(
         title=r.title,
         description=r.description,
@@ -62,7 +84,7 @@ def _import_recipe(db: Session, source_name: str, r: NormalizedRecipe) -> Recipe
             recipe.categories.append(cat)
 
     # Explicit "tag them as <source>" so imported recipes can be filtered out.
-    add_category(source_name.capitalize())
+    add_category(source_display_name)
     for name in r.categories:
         add_category(name)
 
@@ -77,7 +99,7 @@ def _import_recipe(db: Session, source_name: str, r: NormalizedRecipe) -> Recipe
             recipe.allergens.append(allergen)
 
     for ing in r.ingredients:
-        ingredient = _get_or_create(db, Ingredient, ing.name)
+        ingredient = _get_or_create_ingredient(db, source_name, ing)
         db.add(RecipeIngredient(
             recipe_id=recipe._id,
             ingredient_id=ingredient._id if ingredient else None,
@@ -112,6 +134,7 @@ def sync_source(
     run just picks back up where it left off.
     """
     source = get_source(source_name)
+    source_display_name = source.display_name or source_name.capitalize()
     db = session_factory()
     stats = {"imported": 0, "skipped": 0, "failed": 0, "errors": []}
 
@@ -132,7 +155,7 @@ def sync_source(
 
             try:
                 normalized = source.fetch_recipe(external_id)
-                _import_recipe(db, source_name, normalized)
+                _import_recipe(db, source_name, source_display_name, normalized)
                 db.commit()
                 stats["imported"] += 1
             except Exception as e:

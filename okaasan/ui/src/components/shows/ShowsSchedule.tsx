@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, Button } from '@chakra-ui/react';
-import { Calendar, Play, CheckCircle, X, Lightbulb } from 'lucide-react';
+import { Calendar, Play, CheckCircle, X, Lightbulb, Download } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
+import { torrentSearchPath, episodeQuery } from '../../utils/torrentSearch';
 
 interface EpisodeInfo {
   season: number;
@@ -335,6 +336,31 @@ const UpcomingCard: React.FC<{ item: UpcomingItem; isToday: boolean; onMarkWatch
           </Button>
         </Box>
       )}
+      <Box
+        position="absolute"
+        bottom={1}
+        right={1}
+        zIndex={2}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Link to={torrentSearchPath(item.title, episodeQuery(item.episode.season, item.episode.episode))}>
+          <Button
+            size="xs"
+            variant="ghost"
+            title="Find in Downloads"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <Download size={14} />
+          </Button>
+        </Link>
+      </Box>
       <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>
         {poster ? (
           <Image src={poster} alt={item.title} w="164px" h="220px" objectFit="cover" loading="lazy" />
@@ -459,6 +485,25 @@ const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMark
           >
             <X size={14} />
           </Button>
+        </Box>
+        {/* Bottom-left on poster: find next episode in Downloads */}
+        <Box position="absolute" bottom={1} left={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <Link to={torrentSearchPath(item.title, episodeQuery(item.next_episode.season, item.next_episode.episode))}>
+            <Button
+              size="xs"
+              variant="ghost"
+              title="Find in Downloads"
+              p={1}
+              minW="auto"
+              h="auto"
+              borderRadius="full"
+              bg="rgba(0,0,0,0.5)"
+              color="white"
+              _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+            >
+              <Download size={14} />
+            </Button>
+          </Link>
         </Box>
 
         <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>

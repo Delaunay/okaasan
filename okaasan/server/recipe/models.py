@@ -237,6 +237,10 @@ class Ingredient(Base):
     composition = Column(JSON)
     extension = Column(JSON)    # Additional info as JSON
 
+    # Local path once downloaded (e.g. "/thirdparty/hellofresh/ingredients/12/preview_1.jpg").
+    # The source's own image URL lives in extension[source]["image_url"] until then.
+    image = Column(String(500))
+
     # in grams
     item_avg_weight = Column(Float)
 
@@ -271,6 +275,7 @@ class Ingredient(Base):
             'density': self.density,
             'composition': self.composition,
             'extension': self.extension,
+            'image': self.image,
             'item_avg_weight': self.item_avg_weight,
             "fdc_id": self.fdc_id,
             "unit": {

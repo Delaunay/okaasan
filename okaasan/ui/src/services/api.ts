@@ -40,10 +40,12 @@ const isStaticMode = () => USE_STATIC_MODE;
 
 
 export function imagePath(image: string): string {
-  // Images stored in the DB use paths like "/uploads/…" without the /api/ prefix.
-  // The Vite proxy only forwards /api/* to Flask, so we need to add it.
-  // Paths already starting with /api/uploads/ are left untouched.
-  const path = image.startsWith('/uploads/') ? '/api' + image : image;
+  // Images stored in the DB use paths like "/uploads/…" or "/thirdparty/…"
+  // without the /api/ prefix. The Vite proxy only forwards /api/* to Flask,
+  // so we need to add it. Paths already prefixed with /api/ are left untouched.
+  const path = (image.startsWith('/uploads/') || image.startsWith('/thirdparty/'))
+    ? '/api' + image
+    : image;
   // On GitHub Pages (SITE_BASE="/recipes"), prepend the sub-path so the
   // absolute URL resolves correctly from the domain root.
   return SITE_BASE + path;
@@ -217,8 +219,20 @@ class RecipeAPI {
   }
 
   // Recipe methods
-  async getRecipes(): Promise<RecipeData[]> {
-    return this.request<RecipeData[]>('/recipes');
+  async getRecipes(params?: { source?: string; limit?: number; offset?: number }): Promise<RecipeData[]> {
+    if (!params) {
+      return this.request<RecipeData[]>('/recipes');
+    }
+    const qs = new URLSearchParams();
+    if (params.source) qs.set('source', params.source);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    const query = qs.toString();
+    return this.request<RecipeData[]>(`/recipes${query ? `?${query}` : ''}`);
+  }
+
+  async getRecipeSourceCounts(): Promise<Array<{ source: string | null; count: number }>> {
+    return this.request('/recipes/sources');
   }
 
   async getRecipe(id: number): Promise<RecipeData> {
@@ -261,8 +275,15 @@ class RecipeAPI {
   }
 
   // Ingredient methods
-  async getIngredients(): Promise<Ingredient[]> {
-    return this.request<Ingredient[]>('/ingredients');
+  async getIngredients(params?: { limit?: number; offset?: number }): Promise<Ingredient[]> {
+    if (!params) {
+      return this.request<Ingredient[]>('/ingredients');
+    }
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    const query = qs.toString();
+    return this.request<Ingredient[]>(`/ingredients${query ? `?${query}` : ''}`);
   }
 
   async getIngredient(id: number): Promise<Ingredient> {

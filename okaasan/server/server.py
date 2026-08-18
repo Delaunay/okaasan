@@ -975,7 +975,7 @@ def create_app() -> FastAPI:
         _API_PREFIXES = ("store/", "health", "kv/", "events", "tasks",
                          "recipes", "ingredients", "articles", "article/",
                          "blocks/", "units", "unit/", "upload", "download-image",
-                         "uploads/", "routine/", "planning/", "kiwi/", "categories",
+                         "uploads/", "thirdparty/", "routine/", "planning/", "kiwi/", "categories",
                          "ingredient/", "sidebar", "version", "update",
                          "git/", "usda/", "subtasks",
                          "gcalendar/", "garmin/", "weather/",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .models import Ingredient, RecipeIngredient, IngredientComposition
 from ..decorators import expose
@@ -22,9 +22,15 @@ def get_ingredients_range(start: int, end: int, db: Session = Depends(get_db)):
 
 @router.get("/ingredients")
 @expose()
-def get_ingredients(db: Session = Depends(get_db)):
-    ingredients = db.query(Ingredient).all()
-    return [ingredient.to_json() for ingredient in ingredients]
+def get_ingredients(
+    db: Session = Depends(get_db),
+    limit: int | None = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    query = db.query(Ingredient).order_by(Ingredient._id)
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
+    return [ingredient.to_json() for ingredient in query.all()]
 
 
 @router.post("/ingredients", status_code=201)

@@ -21,6 +21,8 @@ export interface RecipeData {
     extension?: any;
     created_at?: string;
     updated_at?: string;
+    source?: string;
+    source_url?: string;
 }
 
 export interface Instruction {
@@ -58,6 +60,7 @@ export interface Ingredient {
     density?: number;
     composition?: any;
     extension?: any;
+    image?: string;
     item_avg_weight?: number;
     unit?: {
         metric?: string;
@@ -112,6 +115,7 @@ export interface RecipeNutritionResult {
     servings?: number;
     compositions: IngredientComposition[];
     cached?: boolean;
+    nutrition_source?: string;
 }
 
 export interface IngredientSubstitution {

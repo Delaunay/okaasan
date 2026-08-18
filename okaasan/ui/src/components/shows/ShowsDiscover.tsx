@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Image, Badge, Input, Button } from '@chakra-ui/react';
-import { TrendingUp, Star, Film, Tv, Compass, Search, Eye, Bookmark, CheckCircle, Calendar, Clapperboard } from 'lucide-react';
+import { TrendingUp, Star, Film, Tv, Compass, Search, Eye, Bookmark, CheckCircle, Calendar, Clapperboard, Download } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
+import { torrentSearchPath } from '../../utils/torrentSearch';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w300';
 
@@ -22,22 +23,58 @@ interface TMDBItem {
 type Category = 'trending' | 'popular' | 'top-rated' | 'upcoming' | 'now-playing' | 'search';
 type MediaFilter = 'all' | 'movie' | 'tv';
 
+const DISCOVER_STATE_KEY = 'shows_discover_state';
+
+interface CachedDiscoverState {
+  items: TMDBItem[];
+  category: Category;
+  mediaFilter: MediaFilter;
+  searchQuery: string;
+  page: number;
+  hasMore: boolean;
+  scrollY: number;
+}
+
+function loadCachedState(): CachedDiscoverState | null {
+  try {
+    const raw = sessionStorage.getItem(DISCOVER_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 const ShowsDiscover: React.FC = () => {
-  const [items, setItems] = useState<TMDBItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Restoring this once (lazily) lets every piece of state below hydrate
+  // from it directly, so coming back from a detail page doesn't re-trigger
+  // the loading spinner or a fresh fetch — see the effects further down.
+  const [cachedState] = useState<CachedDiscoverState | null>(loadCachedState);
+
+  const [items, setItems] = useState<TMDBItem[]>(() => cachedState?.items ?? []);
+  const [loading, setLoading] = useState(() => !cachedState);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState<Category>('trending');
-  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [category, setCategory] = useState<Category>(() => cachedState?.category ?? 'trending');
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>(() => cachedState?.mediaFilter ?? 'all');
+  const [searchQuery, setSearchQuery] = useState(() => cachedState?.searchQuery ?? '');
+  const [page, setPage] = useState(() => cachedState?.page ?? 1);
+  const [hasMore, setHasMore] = useState(() => cachedState?.hasMore ?? true);
   const [hideWatched, setHideWatched] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Record<string, boolean>>({});
   const [watchlistIds, setWatchlistIds] = useState<Record<string, boolean>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // "Trust the cache" for exactly one real transition: as long as the
+  // (category, mediaFilter) hasn't changed since we hydrated, skip
+  // refetching. This is a comparison (not a one-shot flag) so it stays
+  // correct under React.StrictMode's dev-mode double-invoke of mount effects
+  // — both invocations see the same category/mediaFilter and both skip.
+  // The moment the user actually changes a filter, hasCachedData flips off
+  // for the rest of this mount, so later revisiting the same category still
+  // fetches fresh instead of showing stale data from a different filter.
+  const hasCachedData = useRef(!!cachedState);
+  const lastFilterRef = useRef<{ category: Category; mediaFilter: MediaFilter }>({ category, mediaFilter });
 
   const refreshStatus = useCallback(() => {
     recipeAPI.request<{ ids: Record<string, boolean> }>('/shows/watched-tmdb-ids')
@@ -102,10 +139,54 @@ const ShowsDiscover: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const prev = lastFilterRef.current;
+    const sameFilterAsBefore = prev.category === category && prev.mediaFilter === mediaFilter;
+    lastFilterRef.current = { category, mediaFilter };
+
+    if (hasCachedData.current && sameFilterAsBefore) {
+      // Mount (or its StrictMode dev replay) with a cache that already
+      // matches these filters — the hydrated items are still good.
+      return;
+    }
+    hasCachedData.current = false;
     setPage(1);
     setHasMore(true);
     fetchData(category, mediaFilter, 1, searchQuery, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, mediaFilter, fetchData]);
+
+  // Restore scroll position once, right after the cached items render.
+  useEffect(() => {
+    if (cachedState?.scrollY) {
+      requestAnimationFrame(() => window.scrollTo(0, cachedState.scrollY));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the cache in sync with whatever's currently on screen, so leaving
+  // for a detail page and coming back lands exactly where you left off.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DISCOVER_STATE_KEY, JSON.stringify({
+        items, category, mediaFilter, searchQuery, page, hasMore, scrollY: window.scrollY,
+      }));
+    } catch { /* sessionStorage unavailable/full — not critical */ }
+  }, [items, category, mediaFilter, searchQuery, page, hasMore]);
+
+  // Capture the final scroll position at the moment of navigating away,
+  // since the effect above only knows scrollY as of the last state change.
+  useEffect(() => {
+    return () => {
+      try {
+        const raw = sessionStorage.getItem(DISCOVER_STATE_KEY);
+        if (raw) {
+          const state = JSON.parse(raw);
+          state.scrollY = window.scrollY;
+          sessionStorage.setItem(DISCOVER_STATE_KEY, JSON.stringify(state));
+        }
+      } catch { /* ignore */ }
+    };
+  }, []);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -437,6 +518,31 @@ const DiscoverCard: React.FC<DiscoverCardProps> = ({ item, isWatched, isOnWatchl
         >
           <CheckCircle size={14} />
         </Button>
+      </Box>
+      <Box
+        position="absolute"
+        bottom={1}
+        right={1}
+        zIndex={2}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Link to={torrentSearchPath(title, year)}>
+          <Button
+            size="xs"
+            variant="ghost"
+            title="Find in Downloads"
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <Download size={14} />
+          </Button>
+        </Link>
       </Box>
 
       <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>

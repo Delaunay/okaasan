@@ -11,6 +11,7 @@ class NormalizedIngredient:
     name: str
     quantity: float
     unit: str
+    image_url: str | None = None
 
 
 @dataclass
@@ -65,6 +66,7 @@ class RecipeSource(ABC):
     """
 
     name: str
+    display_name: str = ""
 
     @abstractmethod
     def iter_external_ids(self) -> Iterator[str]:

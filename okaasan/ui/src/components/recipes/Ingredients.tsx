@@ -11,8 +11,9 @@ import {
   Spinner,
   Badge,
   SimpleGrid,
+  Image,
 } from '@chakra-ui/react';
-import { recipeAPI } from '../../services/api';
+import { recipeAPI, imagePath } from '../../services/api';
 import type { Ingredient } from '../../services/type';
 
 // Icon components
@@ -211,7 +212,11 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
         position="relative"
         style={{ backgroundColor: 'var(--surface-muted)' }}
       >
-        <Text fontSize="4xl" style={{ color: 'var(--muted-text)' }}>🥬</Text>
+        {ingredient.image ? (
+          <Image src={imagePath(ingredient.image)} alt={ingredient.name} h="100%" w="100%" objectFit="cover" />
+        ) : (
+          <Text fontSize="4xl" style={{ color: 'var(--muted-text)' }}>🥬</Text>
+        )}
         {!isStatic && (
           <Box position="absolute" top={2} right={2}>
             {isEditing ? (
@@ -400,34 +405,74 @@ const IngredientListItem: FC<IngredientListItemProps> = ({
 };
 
 // Main Ingredients component
+const PAGE_SIZE = 100;
+
 const Ingredients = () => {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [editingIngredientId, setEditingIngredientId] = useState<number | null>(null);
   const [originalIngredient, setOriginalIngredient] = useState<Ingredient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const isStatic = recipeAPI.isStaticMode();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const formatIngredientName = (name: string): string => {
     return name.toLowerCase().replace(/\s+/g, '-');
   };
 
   useEffect(() => {
-    loadIngredients();
+    loadIngredients(true);
     document.title = 'Ingredients';
   }, []);
 
-  const loadIngredients = async () => {
-    try {
+  // Infinite scroll: fetch the next page once the sentinel below the grid is visible.
+  useEffect(() => {
+    if (isStatic || !hasMore) return;
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadIngredients(false);
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore, loadingMore, ingredients.length]);
+
+  const loadIngredients = async (reset: boolean) => {
+    if (reset) {
       setLoading(true);
       setError(null);
-      const data = await recipeAPI.getIngredients();
-      setIngredients(data);
+    } else {
+      if (loadingMore || !hasMore) return;
+      setLoadingMore(true);
+    }
+
+    try {
+      if (isStatic) {
+        const data = await recipeAPI.getIngredients();
+        setIngredients(data);
+        setHasMore(false);
+        return;
+      }
+
+      const offset = reset ? 0 : ingredients.length;
+      const page = await recipeAPI.getIngredients({ limit: PAGE_SIZE, offset });
+      setIngredients(prev => (reset ? page : [...prev, ...page]));
+      setHasMore(page.length === PAGE_SIZE);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ingredients');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -565,7 +610,8 @@ const Ingredients = () => {
 
           <HStack gap={3}>
             <Badge colorScheme="blue" fontSize="sm" px={3} py={1}>
-              {ingredients.length} ingredient{ingredients.length !== 1 ? 's' : ''}
+              {ingredients.length} ingredient{ingredients.length !== 1 ? 's' : ''} loaded
+              {hasMore && !isStatic ? ' · scroll for more' : ''}
             </Badge>
 
             {!isStatic && (
@@ -582,7 +628,7 @@ const Ingredients = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={loadIngredients}
+              onClick={() => loadIngredients(true)}
             >
               Refresh
             </Button>
@@ -606,7 +652,15 @@ const Ingredients = () => {
               />
             ))}
           </SimpleGrid>
-        ) : (
+        ) : null}
+
+        {ingredients.length > 0 && !isStatic && hasMore && (
+          <Box ref={loadMoreRef} textAlign="center" py={4}>
+            <Spinner size="md" />
+          </Box>
+        )}
+
+        {ingredients.length === 0 && (
           <Box textAlign="center" py={12}>
             <Text fontSize="lg" mb={4} style={{ color: 'var(--muted-text)' }}>
               {isStatic ? 'No ingredients available in this static version.' : 'No ingredients found'}

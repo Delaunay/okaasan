@@ -136,68 +136,6 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
 
-    # Dedicated DB for recipe data (public, separate from main)
-    from .recipe.models import RecipesBase
-    from .recipe import routes as _recipe_routes
-    from .recipe import route_ingredient as _recipe_route_ingredient
-    from .recipe import route_units as _recipe_route_units
-    recipes_engine, RecipesSessionLocal = init_db(
-        app, RecipesBase, os.path.join(STATIC_FOLDER, "recipes.db"),
-        session_attr="RecipesSessionLocal",
-        wire=[_recipe_routes, _recipe_route_ingredient, _recipe_route_units],
-    )
-
-    # Dedicated DB for audio data: music/audiobooks/podcasts (public, separate from main)
-    from .music.models import AudioBase
-    from .music import routes as _music_routes
-    from .audiobooks import routes as _audiobooks_routes
-    from .podcasts import routes as _podcasts_routes
-    audio_engine, AudioSessionLocal = init_db(
-        app, AudioBase, os.path.join(STATIC_FOLDER, "audio.db"),
-        session_attr="AudioSessionLocal",
-        wire=[_music_routes, _audiobooks_routes, _podcasts_routes],
-    )
-
-    # Dedicated DB for shows/movies data (public, separate from main)
-    from .shows.models import VideoBase
-    from .shows import routes as _shows_routes
-    video_engine, VideoSessionLocal = init_db(
-        app, VideoBase, os.path.join(STATIC_FOLDER, "video.db"),
-        session_attr="VideoSessionLocal",
-        wire=[_shows_routes],
-    )
-
-    # Dedicated DB for health data (private, separate from private/database.db)
-    from .health.models import HealthBase
-    health_engine, HealthSessionLocal = init_db(
-        app, HealthBase, os.path.join(str(private_folder()), "health.db"),
-        session_attr="HealthSessionLocal",
-    )
-
-    # Dedicated DB for calendar data: events + tasks (public, separate from main)
-    from .calendar.models import CalendarBase
-    from .calendar import routes as _calendar_routes
-    from .tasks import routes as _tasks_routes
-    from .integrations import route_gcalendar as _route_gcalendar
-    calendar_engine, CalendarSessionLocal = init_db(
-        app, CalendarBase, os.path.join(STATIC_FOLDER, "calendar.db"),
-        session_attr="CalendarSessionLocal",
-        wire=[_calendar_routes, _tasks_routes, _route_gcalendar],
-    )
-
-    # Dedicated DB for articles data (public, separate from main)
-    from .articles.models import ArticlesBase
-    from .articles import routes as _articles_routes
-    articles_engine, ArticlesSessionLocal = init_db(
-        app, ArticlesBase, os.path.join(STATIC_FOLDER, "articles.db"),
-        session_attr="ArticlesSessionLocal",
-        wire=[_articles_routes],
-    )
-
-    public_folder()  # ensure uploads/ directory exists
-    from .music.listening_db import _listening_dir
-    _listening_dir()  # ensure listening_history/ directory exists
-
     def get_db():
         db = SessionLocal()
         try:
@@ -212,8 +150,50 @@ def create_app() -> FastAPI:
     app.state.originals_folder = ORIGINALS_FOLDER
     app.state.private_engine = private_engine
 
-    from .recipe_sources import configure as _configure_recipe_sources
-    _configure_recipe_sources(RecipesSessionLocal)
+    public_folder()  # ensure uploads/ directory exists
+    from .music.listening_db import _listening_dir
+    _listening_dir()  # ensure listening_history/ directory exists
+
+    # Self-contained features: each owns its DB (if any), routes, and
+    # background jobs — see feature.py and <module>/feature.py.
+    from .feature import register_feature
+
+    from .recipe.feature import RecipesFeature
+    from .recipe import routes as _recipe_routes
+    recipes_engine, RecipesSessionLocal = register_feature(app, RecipesFeature())
+
+    from .music.feature import AudioFeature
+    audio_engine, AudioSessionLocal = register_feature(app, AudioFeature())
+
+    from .shows.feature import VideoFeature
+    video_engine, VideoSessionLocal = register_feature(app, VideoFeature())
+
+    from .health.feature import HealthFeature
+    health_engine, HealthSessionLocal = register_feature(app, HealthFeature())
+
+    from .calendar.feature import CalendarFeature
+    calendar_engine, CalendarSessionLocal = register_feature(app, CalendarFeature())
+
+    from .articles.feature import ArticlesFeature
+    articles_engine, ArticlesSessionLocal = register_feature(app, ArticlesFeature())
+
+    from .news.feature import NewsFeature
+    news_engine, NewsSessionLocal = register_feature(app, NewsFeature())
+
+    from .books.feature import BooksFeature
+    register_feature(app, BooksFeature())
+
+    from .games.feature import GamesFeature
+    register_feature(app, GamesFeature())
+
+    from .comics.feature import ComicsFeature
+    register_feature(app, ComicsFeature())
+
+    from .socials.feature import SocialsFeature
+    register_feature(app, SocialsFeature())
+
+    from .computers.feature import ComputersFeature
+    register_feature(app, ComputersFeature())
 
     from .route_keyvalue import router as kv_router
     from .route_images import router as images_router
@@ -221,23 +201,7 @@ def create_app() -> FastAPI:
     from .route_private_jsonstore import router as private_jsonstore_router
     from .projects.graph import router as graph_router
 
-    from .calendar import router as calendar_router
-    from .tasks import router as tasks_router
-    from .recipe import router as recipe_router
-    from .recipe import ingredient_router, units_router
-    from .recipe_sources import router as recipe_sources_router
-    from .articles import router as article_router
     from .feed.routes import router as feed_router
-    from .shows import router as shows_router
-    from .audiobooks import router as audiobooks_router
-    from .books import router as books_router
-    from .music import router as music_router
-    from .podcasts import router as podcasts_router
-    from .games import router as games_router
-    from .comics import router as comics_router
-    from .news import router as news_router
-    from .socials import router as socials_router
-    from .computers import router as computers_router
     from .investing import router as investing_router
     try:
         from .smarthome import router as smarthome_router
@@ -249,28 +213,11 @@ def create_app() -> FastAPI:
     from .proxy import router as proxy_router
 
     app.include_router(kv_router)
-    app.include_router(calendar_router)
-    app.include_router(tasks_router)
-    app.include_router(recipe_router)
-    app.include_router(units_router)
-    app.include_router(recipe_sources_router)
-    app.include_router(article_router)
-    app.include_router(ingredient_router)
     app.include_router(images_router)
     app.include_router(jsonstore_router)
     app.include_router(private_jsonstore_router)
     app.include_router(graph_router)
     app.include_router(feed_router)
-    app.include_router(shows_router)
-    app.include_router(audiobooks_router)
-    app.include_router(books_router)
-    app.include_router(music_router)
-    app.include_router(podcasts_router)
-    app.include_router(games_router)
-    app.include_router(comics_router)
-    app.include_router(news_router)
-    app.include_router(socials_router)
-    app.include_router(computers_router)
     app.include_router(investing_router)
     if _has_smarthome:
         app.include_router(smarthome_router)
@@ -333,138 +280,6 @@ def create_app() -> FastAPI:
     from .alerts.broadcasters.telegram import TelegramBroadcaster
     _register_broadcaster(TelegramBroadcaster())
 
-    # Auto-import Trakt data if shows tables are empty
-    from .shows.models import Media as _ShowsMedia
-    _shows_db = VideoSessionLocal()
-    try:
-        if _shows_db.query(_ShowsMedia).count() == 0:
-            shows_dir = os.path.join(STATIC_FOLDER, "shows")
-            if os.path.isdir(shows_dir):
-                from .shows.importer import import_trakt_data
-                from .shows.routes import _get_tmdb_client_for_import
-                _tmdb_for_import = _get_tmdb_client_for_import(STATIC_FOLDER)
-                import_trakt_data(_shows_db, Path(shows_dir), base_dir=Path(STATIC_FOLDER), tmdb_client=_tmdb_for_import)
-    except Exception as e:
-        log.warning("Auto-import of Trakt data failed: %s", e)
-    finally:
-        _shows_db.close()
-
-    # Auto-import Kitsu/MAL anime dump in background (doesn't block server)
-    kitsu_dumps_dir = Path(STATIC_FOLDER) / "dumps" / "kitsu"
-    kitsu_marker = private_folder() / "_kitsu_imported.marker"
-    if kitsu_dumps_dir.is_dir() and not kitsu_marker.exists():
-        import threading
-
-        def _run_kitsu_import():
-            _kitsu_db = VideoSessionLocal()
-            try:
-                from .shows.importer import import_kitsu_data
-                import_kitsu_data(_kitsu_db, kitsu_dumps_dir)
-                kitsu_marker.write_text("done")
-            except Exception as e:
-                log.warning("Auto-import of Kitsu data failed: %s", e)
-            finally:
-                _kitsu_db.close()
-
-        threading.Thread(target=_run_kitsu_import, name="kitsu-import", daemon=True).start()
-        log.info("Kitsu import started in background thread")
-
-    # Backfill missing show/movie posters from TMDB in the background
-    import threading as _threading
-
-    def _run_poster_backfill():
-        import time as _time
-        _time.sleep(30)  # let imports finish first
-        _poster_db = VideoSessionLocal()
-        try:
-            from .shows.models import Media as _PosterMedia
-            from .shows.routes import _get_tmdb_client_for_import
-            from .shows.posters import PosterStore as _PosterStore
-
-            tmdb = _get_tmdb_client_for_import(STATIC_FOLDER)
-            if not tmdb.available:
-                return
-            posters = _PosterStore(Path(STATIC_FOLDER))
-
-            missing = _poster_db.query(_PosterMedia).filter(
-                _PosterMedia.poster_path.is_(None),
-                _PosterMedia.tmdb_id.isnot(None),
-            ).all()
-
-            if not missing:
-                return
-
-            fetched = 0
-            for media in missing:
-                try:
-                    if media.media_type == "show":
-                        info = tmdb.get_show(media.tmdb_id)
-                    else:
-                        info = tmdb.get_movie(media.tmdb_id)
-                    if info and info.get("poster_path"):
-                        path = posters.save_from_tmdb(
-                            media.media_type, media.tmdb_id, info["poster_path"], media.trakt_id
-                        )
-                        if path:
-                            media.poster_path = path
-                            fetched += 1
-                except Exception:
-                    continue
-
-            _poster_db.commit()
-            log.info("Poster backfill complete: %d/%d fetched", fetched, len(missing))
-        except Exception as e:
-            log.warning("Poster backfill failed: %s", e)
-        finally:
-            _poster_db.close()
-
-    _threading.Thread(target=_run_poster_backfill, name="poster-backfill", daemon=True).start()
-
-    # Start media library background scanner
-    from .shows.library import LibraryScanner
-    _library_scanner = LibraryScanner(STATIC_FOLDER, private_engine, video_engine)
-    _shows_routes._library_scanner = _library_scanner
-    _library_scanner.start()
-
-    # Start book library background scanner
-    from .books.library import BookLibraryScanner
-    from .books import routes as _books_routes
-    _book_scanner = BookLibraryScanner(STATIC_FOLDER, private_engine, engine)
-    _books_routes._library_scanner = _book_scanner
-    _book_scanner.start()
-
-    # Start audiobook library background scanner
-    from .audiobooks.library import AudiobookLibraryScanner
-    _ab_scanner = AudiobookLibraryScanner(STATIC_FOLDER, private_engine, audio_engine)
-    _audiobooks_routes._library_scanner = _ab_scanner
-    _ab_scanner.start()
-
-    # Start music library background scanner
-    from .music.library import MusicLibraryScanner
-    _music_scanner = MusicLibraryScanner(STATIC_FOLDER, private_engine, audio_engine)
-    _music_routes._music_scanner = _music_scanner
-    _music_scanner.start()
-
-    # Start ROM library background scanner
-    from .games.library import GameLibraryScanner
-    from .games import routes as _games_routes
-    _game_scanner = GameLibraryScanner(STATIC_FOLDER, private_engine, engine)
-    _games_routes._library_scanner = _game_scanner
-    _game_scanner.start()
-
-    # Start podcast feed refresher
-    from .podcasts.rss_fetcher import PodcastRefresher
-    _podcast_refresher = PodcastRefresher(AudioSessionLocal, interval_minutes=30)
-    _podcasts_routes._refresher = _podcast_refresher
-    _podcast_refresher.start()
-
-    # Start comic library background scanner
-    from .comics.library import ComicLibraryScanner
-    from .comics import routes as _comics_routes
-    _comic_scanner = ComicLibraryScanner(STATIC_FOLDER, private_engine, engine)
-    _comics_routes._library_scanner = _comic_scanner
-    _comic_scanner.start()
-
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
     register_integrations(
@@ -489,32 +304,6 @@ def create_app() -> FastAPI:
     except Exception as exc:
         log.warning("Torrent discover routes not available: %s", exc)
 
-    # Dedicated DB for computer tasks (avoids bloating the main database)
-    from .computers.models import TaskBase
-    tasks_db_path = os.path.join(str(private_folder()), "computer_tasks.db")
-    tasks_engine = create_engine(
-        f"sqlite:///{tasks_db_path}",
-        connect_args={"check_same_thread": False, "timeout": 30},
-        pool_pre_ping=True,
-    )
-    event.listen(tasks_engine, "connect", _set_sqlite_pragmas)
-    TaskBase.metadata.create_all(bind=tasks_engine)
-    TasksSessionLocal = sessionmaker(bind=tasks_engine)
-
-
-    def get_tasks_db():
-        db = TasksSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.state.get_tasks_db = get_tasks_db
-    app.state.TasksSessionLocal = TasksSessionLocal
-
-    from .computers.tasks import recover_orphaned_tasks
-    recover_orphaned_tasks(TasksSessionLocal)
-
     # Dedicated DB for investing data (public, separate from main)
     from .investing.models import InvestingBase
     investing_engine, InvestingSessionLocal = init_db(
@@ -530,19 +319,6 @@ def create_app() -> FastAPI:
     )
     _investing_routes._scheduler = _inv_scheduler
     _inv_scheduler.start()
-
-    # Dedicated DB for news data (public, separate from main)
-    from .news.models import NewsBase
-    from .news import routes as _news_routes
-    news_engine, NewsSessionLocal = init_db(
-        app, NewsBase, os.path.join(STATIC_FOLDER, "news.db"),
-        session_attr="NewsSessionLocal",
-        wire=[_news_routes],
-    )
-
-    # Start news feed refresher
-    from .news.routes import start_refresher as _start_news_refresher
-    _start_news_refresher(NewsSessionLocal)
 
     @app.get("/health")
     def health_check():

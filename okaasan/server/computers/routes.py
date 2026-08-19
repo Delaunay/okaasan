@@ -23,10 +23,15 @@ log = logging.getLogger("okaasan.computers")
 
 router = APIRouter(prefix="/computers", tags=["computers"])
 
+_SessionLocal = None  # set by server.py at startup, bound to computer_tasks.db
 
-def _get_tasks_db(request: Request):
-    """Yield a session for the dedicated computer-tasks DB."""
-    yield from request.app.state.get_tasks_db()
+
+def _get_tasks_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------

@@ -24,9 +24,15 @@ router = APIRouter(prefix="/podcasts", tags=["podcasts"])
 _client: PodcastIndexClient | None = None
 _refresher: PodcastRefresher | None = None
 
+_SessionLocal = None  # set by server.py at startup, bound to audio.db
+
 
 def _get_db(request: Request):
-    yield from request.app.state.get_db()
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _config_path(static_folder: str) -> Path:

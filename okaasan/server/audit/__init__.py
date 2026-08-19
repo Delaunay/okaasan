@@ -5,7 +5,7 @@ on all content models via SQLAlchemy ORM hooks.
 """
 
 from .model import AuditLog
-from .hooks import register_hooks
+from .hooks import register_hooks, configure as configure_hooks
 from .queries import get_feed, get_report, get_entity_history, backfill
 
 
@@ -26,6 +26,7 @@ def activate():
 __all__ = [
     "AuditLog",
     "activate",
+    "configure_hooks",
     "get_feed",
     "get_report",
     "get_entity_history",

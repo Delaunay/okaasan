@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
-from ..models.common import Base
+# Recipes live in their own private DB (recipes.db), not the main database —
+# see server.py wiring. Not managed by the main Alembic setup.
+RecipesBase = declarative_base()
 
 
 # TASTE
@@ -14,7 +16,7 @@ from ..models.common import Base
 #   FAT
 
 # Recipe ingredients association model
-class RecipeIngredient(Base):
+class RecipeIngredient(RecipesBase):
     __tablename__ = 'recipe_ingredients'
 
     _id = Column(Integer, primary_key=True)
@@ -78,34 +80,34 @@ class RecipeIngredient(Base):
 
 recipe_categories = Table(
     'recipe_categories',
-    Base.metadata,
+    RecipesBase.metadata,
     Column('recipe_id', Integer, ForeignKey('recipes._id')),
     Column('category_id', Integer, ForeignKey('categories._id'))
 )
 
 recipe_utensils = Table(
     'recipe_utensils',
-    Base.metadata,
+    RecipesBase.metadata,
     Column('recipe_id', Integer, ForeignKey('recipes._id')),
     Column('utensil_id', Integer, ForeignKey('utensils._id'))
 )
 
 recipe_allergens = Table(
     'recipe_allergens',
-    Base.metadata,
+    RecipesBase.metadata,
     Column('recipe_id', Integer, ForeignKey('recipes._id')),
     Column('allergen_id', Integer, ForeignKey('allergens._id'))
 )
 
 
-class USDAFood(Base):
+class USDAFood(RecipesBase):
     __tablename__ = 'usda_foods'
 
     fdc_id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
 
 
-class Recipe(Base):
+class Recipe(RecipesBase):
     __tablename__ = 'recipes'
     __audit_entity_type__ = 'recipe'
     __audit_title_field__ = 'title'
@@ -182,7 +184,7 @@ class Recipe(Base):
         }
 
 
-class IngredientComposition(Base):
+class IngredientComposition(RecipesBase):
     __tablename__ = 'ingredient_compositions'
 
     _id = Column(Integer, primary_key=True)
@@ -220,7 +222,7 @@ class IngredientComposition(Base):
         }
 
 
-class Ingredient(Base):
+class Ingredient(RecipesBase):
     __tablename__ = 'ingredients'
 
     _id = Column(Integer, primary_key=True)
@@ -289,7 +291,7 @@ class Ingredient(Base):
         }
 
 
-class Category(Base):
+class Category(RecipesBase):
     __tablename__ = 'categories'
 
     _id = Column(Integer, primary_key=True)
@@ -312,7 +314,7 @@ class Category(Base):
         }
 
 
-class Utensil(Base):
+class Utensil(RecipesBase):
     __tablename__ = 'utensils'
 
     _id = Column(Integer, primary_key=True)
@@ -335,7 +337,7 @@ class Utensil(Base):
         }
 
 
-class Allergen(Base):
+class Allergen(RecipesBase):
     __tablename__ = 'allergens'
 
     _id = Column(Integer, primary_key=True)
@@ -358,7 +360,7 @@ class Allergen(Base):
         }
 
 
-class IngredientSubstitution(Base):
+class IngredientSubstitution(RecipesBase):
     """Common substitution to handle intolerance of allergies"""
     __tablename__ = 'substitutions'
 
@@ -393,7 +395,7 @@ class IngredientSubstitution(Base):
 # Unit Profile ?
 
 # Table for unit conversions
-class UnitConversion(Base):
+class UnitConversion(RecipesBase):
     __tablename__ = 'unit_conversions'
 
     _id = Column(Integer, primary_key=True)

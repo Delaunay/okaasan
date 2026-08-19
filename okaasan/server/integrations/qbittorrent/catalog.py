@@ -57,18 +57,21 @@ def handle_completed(
     content_path: str,
     size: str | int | None,
     private_engine,
-    main_engine,
+    video_engine,
+    audio_engine,
     static_folder: str,
 ) -> dict:
     """Process a completed torrent: insert library file + catalog records.
 
+    ``video_engine``/``audio_engine`` are separate since Media (video.db) and
+    MusicTrack (audio.db) now live in different databases — only one of the
+    two catalog sessions is actually opened, based on the torrent's category.
+
     Returns a summary dict.
     """
     PrivateSession = sessionmaker(bind=private_engine)
-    MainSession = sessionmaker(bind=main_engine)
-
     private_db = PrivateSession()
-    main_db = MainSession()
+    main_db: Session | None = None
 
     try:
         existing = private_db.query(CompletedDownload).filter_by(
@@ -83,10 +86,12 @@ def handle_completed(
         files_added = 0
 
         if media_type in ("show", "movie", "anime"):
+            main_db = sessionmaker(bind=video_engine)()
             catalog_id, files_added = _handle_video(
                 main_db, private_db, content_path, media_type, static_folder
             )
         elif media_type == "music":
+            main_db = sessionmaker(bind=audio_engine)()
             catalog_id, files_added = _handle_music(
                 main_db, private_db, content_path, static_folder
             )
@@ -107,7 +112,8 @@ def handle_completed(
         )
         private_db.add(record)
         private_db.commit()
-        main_db.commit()
+        if main_db is not None:
+            main_db.commit()
 
         log.info("Processed torrent %s (%s): %d files, catalog_id=%s",
                  torrent_hash[:8], name, files_added, catalog_id)
@@ -120,11 +126,13 @@ def handle_completed(
 
     except Exception:
         private_db.rollback()
-        main_db.rollback()
+        if main_db is not None:
+            main_db.rollback()
         raise
     finally:
         private_db.close()
-        main_db.close()
+        if main_db is not None:
+            main_db.close()
 
 
 VIDEO_EXTENSIONS = {"mkv", "mp4", "avi", "m4v", "ts", "webm", "mov"}

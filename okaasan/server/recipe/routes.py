@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+_SessionLocal = None  # set by server.py at startup, bound to recipes.db
+
 from .models import Recipe, Ingredient, Category, RecipeIngredient, IngredientComposition
 from .nutrition_calculator import calculate_recipe_nutrition
 from ..decorators import expose
@@ -37,8 +39,12 @@ _DAILY_VALUES: dict[tuple[str, str], float] = {
 router = APIRouter()
 
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+def get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _resolve_ingredient(db: Session, ing_data: dict, recipe_id: int | None = None):

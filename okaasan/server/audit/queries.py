@@ -145,9 +145,15 @@ def _extra_from_entity(entity) -> dict | None:
     return extra or None
 
 
-def backfill(db: Session, models: list[type] | None = None) -> int:
+def backfill(db: Session, models: list[type] | None = None, sessions: dict[type, Session] | None = None) -> int:
     """Create ``action='created'`` audit entries for all existing entities
     that don't yet have an audit trail.
+
+    ``sessions`` optionally maps a model class to the session it should be
+    queried through, for models that live in a different database than
+    ``db`` (e.g. Recipe now lives in recipes.db). Models not present in
+    ``sessions`` are queried through ``db``. AuditLog entries are always
+    written through ``db``.
 
     Returns the number of entries created.
     """
@@ -159,6 +165,8 @@ def backfill(db: Session, models: list[type] | None = None) -> int:
         from ..product.models import Product
         models = [Recipe, Article, Task, Event, Product]
 
+    sessions = sessions or {}
+
     existing = set()
     for row in db.query(AuditLog.entity_type, AuditLog.entity_id).all():
         existing.add((row[0], row[1]))
@@ -167,8 +175,9 @@ def backfill(db: Session, models: list[type] | None = None) -> int:
     for model_cls in models:
         entity_type = getattr(model_cls, "__audit_entity_type__", model_cls.__name__.lower())
         title_field = getattr(model_cls, "__audit_title_field__", "title")
+        model_db = sessions.get(model_cls, db)
 
-        for entity in db.query(model_cls).all():
+        for entity in model_db.query(model_cls).all():
             eid = getattr(entity, "_id", None)
             if (entity_type, eid) in existing:
                 continue

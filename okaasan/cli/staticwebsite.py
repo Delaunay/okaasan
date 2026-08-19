@@ -54,7 +54,7 @@ class StaticWebsite(Command):
         return self.run(args)
 
     def run(self, args):
-        from okaasan.server.server import create_app, STATIC_FOLDER
+        from okaasan.server.server import create_app
 
         logging.basicConfig(
             level=logging.INFO,
@@ -64,12 +64,7 @@ class StaticWebsite(Command):
         logger.info("Starting static site generation...")
 
         self.fastapi_app = create_app()
-
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-        db_path = os.path.join(STATIC_FOLDER, "database.db")
-        engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-        self.SessionLocal = sessionmaker(bind=engine)
+        self._build_session_registry()
 
         from starlette.testclient import TestClient
         self.client = TestClient(self.fastapi_app)
@@ -101,6 +96,48 @@ class StaticWebsite(Command):
         logger.info(f"Static site generated at {self.output_dir}")
         self._log_api_contents()
         return 0
+
+    def _build_session_registry(self):
+        """Map each domain's declarative metadata to the app's session factory
+        for it, so a @expose()'d Select() gets resolved against whichever
+        split database (recipes.db, articles.db, ...) actually holds that
+        table, instead of always querying the main database.db.
+        """
+        from okaasan.server.models.common import Base
+        from okaasan.server.recipe.models import RecipesBase
+        from okaasan.server.music.models import AudioBase
+        from okaasan.server.shows.models import VideoBase
+        from okaasan.server.articles.models import ArticlesBase
+        from okaasan.server.calendar.models import CalendarBase
+        from okaasan.server.news.models import NewsBase
+        from okaasan.server.investing.models import InvestingBase
+        from okaasan.server.health.models import HealthBase
+
+        state = self.fastapi_app.state
+        self._session_by_metadata = {
+            id(Base.metadata): state.SessionLocal,
+            id(RecipesBase.metadata): state.RecipesSessionLocal,
+            id(AudioBase.metadata): state.AudioSessionLocal,
+            id(VideoBase.metadata): state.VideoSessionLocal,
+            id(ArticlesBase.metadata): state.ArticlesSessionLocal,
+            id(CalendarBase.metadata): state.CalendarSessionLocal,
+            id(NewsBase.metadata): state.NewsSessionLocal,
+            id(InvestingBase.metadata): state.InvestingSessionLocal,
+            id(HealthBase.metadata): state.HealthSessionLocal,
+        }
+
+    def _session_for_select(self, generator):
+        """Open a session bound to whichever database owns this Select()'s table."""
+        entity = None
+        try:
+            entity = generator.column_descriptions[0].get("entity")
+        except Exception:
+            pass
+        metadata = getattr(entity, "metadata", None)
+        SessionLocal = self._session_by_metadata.get(id(metadata)) if metadata is not None else None
+        if SessionLocal is None:
+            SessionLocal = self.fastapi_app.state.SessionLocal
+        return SessionLocal()
 
     def _verify_critical_files(self):
         """Check that essential API files were generated, warn loudly if not."""
@@ -216,13 +253,15 @@ class StaticWebsite(Command):
         logger.info(f"Processing route: {route.path}")
 
         combinations = []
-        db = self.SessionLocal()
+        opened_sessions = []
         try:
             with public_articles_only():
                 if static_kwargs:
                     resolved_params = {}
                     for param_name, generator in static_kwargs.items():
                         if isinstance(generator, Select):
+                            db = self._session_for_select(generator)
+                            opened_sessions.append(db)
                             resolved_params[param_name] = db.scalars(generator).all()
                         elif callable(generator):
                             resolved_params[param_name] = generator()
@@ -237,6 +276,8 @@ class StaticWebsite(Command):
                 if static_args:
                     for query in static_args:
                         if isinstance(query, Select):
+                            db = self._session_for_select(query)
+                            opened_sessions.append(db)
                             rows = db.execute(query).all()
                             for row in rows:
                                 combinations.append(dict(row._mapping))
@@ -247,7 +288,8 @@ class StaticWebsite(Command):
                 if not combinations and not static_args and not static_kwargs:
                     combinations = [{}]
         finally:
-            db.close()
+            for db in opened_sessions:
+                db.close()
 
         saved = 0
         for kwargs in combinations:

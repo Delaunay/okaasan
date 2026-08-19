@@ -8,9 +8,11 @@ from sqlalchemy import (
     Column, Integer, String, Float, DateTime, JSON, Index,
     UniqueConstraint, ForeignKey, Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 
-from ..models.common import Base
+# Shows/movies live in their own private DB (video.db), not the main
+# database — see server.py wiring. Not managed by the main Alembic setup.
+VideoBase = declarative_base()
 
 
 def _utcnow():
@@ -21,7 +23,7 @@ def _uuid():
     return str(uuid.uuid4())
 
 
-class Media(Base):
+class Media(VideoBase):
     """Canonical record for a show or movie."""
 
     __tablename__ = "shows_media"
@@ -84,7 +86,7 @@ class Media(Base):
         }
 
 
-class WatchHistory(Base):
+class WatchHistory(VideoBase):
     """Each time user watched something."""
 
     __tablename__ = "shows_watch_history"
@@ -116,7 +118,7 @@ class WatchHistory(Base):
         }
  
 
-class WatchlistItem(Base):
+class WatchlistItem(VideoBase):
     """Items the user wants to watch."""
 
     __tablename__ = "shows_watchlist"
@@ -146,7 +148,7 @@ class WatchlistItem(Base):
         }
 
 
-class UserRating(Base):
+class UserRating(VideoBase):
     """User's rating for a show/movie."""
 
     __tablename__ = "shows_user_ratings"
@@ -169,7 +171,7 @@ class UserRating(Base):
         }
 
 
-class Collection(Base):
+class Collection(VideoBase):
     """A named playlist/grouping of media."""
 
     __tablename__ = "shows_collections"
@@ -198,7 +200,7 @@ class Collection(Base):
         return result
 
 
-class CollectionItem(Base):
+class CollectionItem(VideoBase):
     """An item within a collection."""
 
     __tablename__ = "shows_collection_items"

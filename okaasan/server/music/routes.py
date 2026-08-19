@@ -23,9 +23,15 @@ router = APIRouter(prefix="/music", tags=["music"])
 _mb_client: MusicBrainzClient | None = None
 _music_scanner = None
 
+_SessionLocal = None  # set by server.py at startup, bound to audio.db
+
 
 def _get_db(request: Request):
-    yield from request.app.state.get_db()
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _get_private_db(request: Request):
@@ -149,12 +155,10 @@ async def library_scan(request: Request):
         result = await asyncio.to_thread(_music_scanner.scan_now)
     else:
         from .library import scan_folders
-        from sqlalchemy import create_engine
         static_folder = request.app.state.static_folder
         private_engine = request.app.state.private_engine
-        db_path = os.path.join(static_folder, "database.db")
-        main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, main_engine)
+        audio_engine = _SessionLocal().get_bind()
+        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, audio_engine)
 
     return {"message": "Scan complete", **result}
 
@@ -1184,7 +1188,7 @@ async def backfill_covers(request: Request):
     clear_failed = body.get("clear_failed", False)
     rerun = body.get("rerun", False)
     static_folder = request.app.state.static_folder
-    SL = request.app.state.SessionLocal
+    SL = _SessionLocal
     q: queue.Queue = queue.Queue()
 
     if clear_failed or rerun:
@@ -1425,7 +1429,7 @@ async def import_spotify(request: Request):
     if not Path(dump_dir).is_dir():
         raise HTTPException(status_code=404, detail=f"Dump directory not found: {dump_dir}")
 
-    SL = request.app.state.SessionLocal
+    SL = _SessionLocal
     q: queue.Queue = queue.Queue()
 
     def _worker():
@@ -1505,7 +1509,7 @@ async def import_spotify_library(request: Request):
     if not Path(dump_dir).is_dir():
         raise HTTPException(status_code=404, detail=f"Dump directory not found: {dump_dir}")
 
-    SL = request.app.state.SessionLocal
+    SL = _SessionLocal
     q: queue.Queue = queue.Queue()
 
     def _worker():

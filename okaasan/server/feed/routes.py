@@ -17,6 +17,30 @@ def get_db(request: Request):
     yield from request.app.state.get_db()
 
 
+def get_recipes_db(request: Request):
+    db = request.app.state.RecipesSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_calendar_db(request: Request):
+    db = request.app.state.CalendarSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_articles_db(request: Request):
+    db = request.app.state.ArticlesSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 @router.get("/feed")
 def feed(
     limit: int = 20,
@@ -85,11 +109,25 @@ def entity_history(
 
 
 @router.post("/feed/backfill")
-def backfill(db: Session = Depends(get_db)):
+def backfill(
+    db: Session = Depends(get_db),
+    recipes_db: Session = Depends(get_recipes_db),
+    calendar_db: Session = Depends(get_calendar_db),
+    articles_db: Session = Depends(get_articles_db),
+):
     """Seed the audit log with 'created' entries for all existing entities
     that don't yet have an audit trail."""
     try:
-        count = audit_backfill(db)
+        from ..recipe.models import Recipe
+        from ..tasks.models import Task
+        from ..calendar.models import Event
+        from ..articles.models import Article
+        count = audit_backfill(db, sessions={
+            Recipe: recipes_db,
+            Task: calendar_db,
+            Event: calendar_db,
+            Article: articles_db,
+        })
         return {"backfilled": count}
     except Exception as e:
         print_exc()

@@ -9,14 +9,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from ..models.common import Base
+from ..music.models import AudioBase
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-class Podcast(Base):
+class Podcast(AudioBase):
     """A subscribed podcast feed."""
 
     __tablename__ = "podcasts_media"
@@ -61,7 +61,7 @@ class Podcast(Base):
         return result
 
 
-class PodcastEpisode(Base):
+class PodcastEpisode(AudioBase):
     """A single episode within a podcast."""
 
     __tablename__ = "podcasts_episodes"
@@ -102,7 +102,7 @@ class PodcastEpisode(Base):
         }
 
 
-class PodcastProgress(Base):
+class PodcastProgress(AudioBase):
     """Playback progress for an episode."""
 
     __tablename__ = "podcasts_progress"

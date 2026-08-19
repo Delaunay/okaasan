@@ -9,9 +9,15 @@ from ..tasks.models import Task
 
 router = APIRouter()
 
+_SessionLocal = None  # set by server.py at startup, bound to calendar.db
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+
+def get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @router.get("/routine/{owner}/{name}")

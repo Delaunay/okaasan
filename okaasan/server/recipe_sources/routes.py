@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..recipe.models import Recipe
@@ -30,8 +30,12 @@ def configure(session_factory):
     _session_factory = session_factory
 
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+def get_db():
+    db = _session_factory()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _start_job(name: str, job_key: str, label: str, progress_fields: list[str], job_fn):

@@ -98,12 +98,7 @@ def create_app() -> FastAPI:
     activate_audit()
 
     from sqlalchemy import event
-
-    def _set_sqlite_pragmas(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
-        cursor.close()
+    from .db_utils import init_db, _set_sqlite_pragmas
 
     db_path = os.path.join(STATIC_FOLDER, "database.db")
     engine = create_engine(
@@ -113,6 +108,9 @@ def create_app() -> FastAPI:
     )
     event.listen(engine, "connect", _set_sqlite_pragmas)
     SessionLocal = sessionmaker(bind=engine)
+
+    from .audit import configure_hooks as _configure_audit_hooks
+    _configure_audit_hooks(engine)
 
     private_db_path = os.path.join(str(private_folder()), "database.db")
     private_engine = create_engine(
@@ -127,7 +125,6 @@ def create_app() -> FastAPI:
     from .music.library_models import MusicFile  # noqa: F401 — registers table
     from .podcasts.library_models import PodcastDownload  # noqa: F401 — registers table
     from .audiobooks.library_models import AudiobookFile  # noqa: F401 — registers table
-    from .audiobooks.models import Audiobook, AudiobookChapter, ListeningProgress  # noqa: F401
     from .books.library_models import BookFile  # noqa: F401 — registers table
     from .books.models import Book, ReadingProgress  # noqa: F401
     from .games.library_models import RomFile  # noqa: F401 — registers table
@@ -136,10 +133,66 @@ def create_app() -> FastAPI:
         from .integrations.qbittorrent.models import CompletedDownload  # noqa: F401
     except Exception:
         pass
-    from .news.models import NewsSource, NewsArticle, NewsGroup  # noqa: F401
-
     Base.metadata.create_all(bind=engine)
     Base.metadata.create_all(bind=private_engine)
+
+    # Dedicated DB for recipe data (public, separate from main)
+    from .recipe.models import RecipesBase
+    from .recipe import routes as _recipe_routes
+    from .recipe import route_ingredient as _recipe_route_ingredient
+    from .recipe import route_units as _recipe_route_units
+    recipes_engine, RecipesSessionLocal = init_db(
+        app, RecipesBase, os.path.join(STATIC_FOLDER, "recipes.db"),
+        session_attr="RecipesSessionLocal",
+        wire=[_recipe_routes, _recipe_route_ingredient, _recipe_route_units],
+    )
+
+    # Dedicated DB for audio data: music/audiobooks/podcasts (public, separate from main)
+    from .music.models import AudioBase
+    from .music import routes as _music_routes
+    from .audiobooks import routes as _audiobooks_routes
+    from .podcasts import routes as _podcasts_routes
+    audio_engine, AudioSessionLocal = init_db(
+        app, AudioBase, os.path.join(STATIC_FOLDER, "audio.db"),
+        session_attr="AudioSessionLocal",
+        wire=[_music_routes, _audiobooks_routes, _podcasts_routes],
+    )
+
+    # Dedicated DB for shows/movies data (public, separate from main)
+    from .shows.models import VideoBase
+    from .shows import routes as _shows_routes
+    video_engine, VideoSessionLocal = init_db(
+        app, VideoBase, os.path.join(STATIC_FOLDER, "video.db"),
+        session_attr="VideoSessionLocal",
+        wire=[_shows_routes],
+    )
+
+    # Dedicated DB for health data (private, separate from private/database.db)
+    from .health.models import HealthBase
+    health_engine, HealthSessionLocal = init_db(
+        app, HealthBase, os.path.join(str(private_folder()), "health.db"),
+        session_attr="HealthSessionLocal",
+    )
+
+    # Dedicated DB for calendar data: events + tasks (public, separate from main)
+    from .calendar.models import CalendarBase
+    from .calendar import routes as _calendar_routes
+    from .tasks import routes as _tasks_routes
+    from .integrations import route_gcalendar as _route_gcalendar
+    calendar_engine, CalendarSessionLocal = init_db(
+        app, CalendarBase, os.path.join(STATIC_FOLDER, "calendar.db"),
+        session_attr="CalendarSessionLocal",
+        wire=[_calendar_routes, _tasks_routes, _route_gcalendar],
+    )
+
+    # Dedicated DB for articles data (public, separate from main)
+    from .articles.models import ArticlesBase
+    from .articles import routes as _articles_routes
+    articles_engine, ArticlesSessionLocal = init_db(
+        app, ArticlesBase, os.path.join(STATIC_FOLDER, "articles.db"),
+        session_attr="ArticlesSessionLocal",
+        wire=[_articles_routes],
+    )
 
     public_folder()  # ensure uploads/ directory exists
     from .music.listening_db import _listening_dir
@@ -160,7 +213,7 @@ def create_app() -> FastAPI:
     app.state.private_engine = private_engine
 
     from .recipe_sources import configure as _configure_recipe_sources
-    _configure_recipe_sources(SessionLocal)
+    _configure_recipe_sources(RecipesSessionLocal)
 
     from .route_keyvalue import router as kv_router
     from .route_images import router as images_router
@@ -264,17 +317,16 @@ def create_app() -> FastAPI:
         _register_source(SensorMetricSource())
 
     from .alerts.sources.calendar import CalendarMetricSource
-    _register_source(CalendarMetricSource(SessionLocal))
+    _register_source(CalendarMetricSource(CalendarSessionLocal))
 
     from .alerts.sources.tasks import TasksMetricSource
-    _register_source(TasksMetricSource(SessionLocal))
+    _register_source(TasksMetricSource(CalendarSessionLocal))
 
     from .alerts.sources.downloads import DownloadsMetricSource
     _register_source(DownloadsMetricSource())
 
-    PrivateSessionLocal = sessionmaker(bind=private_engine)
     from .alerts.sources.health import HealthMetricSource
-    _register_source(HealthMetricSource(PrivateSessionLocal))
+    _register_source(HealthMetricSource(HealthSessionLocal))
 
     # Register alert broadcaster types
     from .alerts.broadcasters import register_type as _register_broadcaster
@@ -283,7 +335,7 @@ def create_app() -> FastAPI:
 
     # Auto-import Trakt data if shows tables are empty
     from .shows.models import Media as _ShowsMedia
-    _shows_db = SessionLocal()
+    _shows_db = VideoSessionLocal()
     try:
         if _shows_db.query(_ShowsMedia).count() == 0:
             shows_dir = os.path.join(STATIC_FOLDER, "shows")
@@ -304,7 +356,7 @@ def create_app() -> FastAPI:
         import threading
 
         def _run_kitsu_import():
-            _kitsu_db = SessionLocal()
+            _kitsu_db = VideoSessionLocal()
             try:
                 from .shows.importer import import_kitsu_data
                 import_kitsu_data(_kitsu_db, kitsu_dumps_dir)
@@ -323,7 +375,7 @@ def create_app() -> FastAPI:
     def _run_poster_backfill():
         import time as _time
         _time.sleep(30)  # let imports finish first
-        _poster_db = SessionLocal()
+        _poster_db = VideoSessionLocal()
         try:
             from .shows.models import Media as _PosterMedia
             from .shows.routes import _get_tmdb_client_for_import
@@ -370,8 +422,7 @@ def create_app() -> FastAPI:
 
     # Start media library background scanner
     from .shows.library import LibraryScanner
-    from .shows import routes as _shows_routes
-    _library_scanner = LibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _library_scanner = LibraryScanner(STATIC_FOLDER, private_engine, video_engine)
     _shows_routes._library_scanner = _library_scanner
     _library_scanner.start()
 
@@ -384,15 +435,13 @@ def create_app() -> FastAPI:
 
     # Start audiobook library background scanner
     from .audiobooks.library import AudiobookLibraryScanner
-    from .audiobooks import routes as _audiobooks_routes
-    _ab_scanner = AudiobookLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _ab_scanner = AudiobookLibraryScanner(STATIC_FOLDER, private_engine, audio_engine)
     _audiobooks_routes._library_scanner = _ab_scanner
     _ab_scanner.start()
 
     # Start music library background scanner
     from .music.library import MusicLibraryScanner
-    from .music import routes as _music_routes
-    _music_scanner = MusicLibraryScanner(STATIC_FOLDER, private_engine, engine)
+    _music_scanner = MusicLibraryScanner(STATIC_FOLDER, private_engine, audio_engine)
     _music_routes._music_scanner = _music_scanner
     _music_scanner.start()
 
@@ -405,14 +454,9 @@ def create_app() -> FastAPI:
 
     # Start podcast feed refresher
     from .podcasts.rss_fetcher import PodcastRefresher
-    from .podcasts import routes as _podcasts_routes
-    _podcast_refresher = PodcastRefresher(SessionLocal, interval_minutes=30)
+    _podcast_refresher = PodcastRefresher(AudioSessionLocal, interval_minutes=30)
     _podcasts_routes._refresher = _podcast_refresher
     _podcast_refresher.start()
-
-    # Start news feed refresher
-    from .news.routes import start_refresher as _start_news_refresher
-    _start_news_refresher(SessionLocal)
 
     # Start comic library background scanner
     from .comics.library import ComicLibraryScanner
@@ -423,7 +467,10 @@ def create_app() -> FastAPI:
 
     # Third-party integrations (USDA, Google Calendar, Telegram, etc.)
     from .integrations import register_integrations
-    register_integrations(app, engine, private_engine=private_engine)
+    register_integrations(
+        app, engine, private_engine=private_engine, recipes_engine=recipes_engine,
+        audio_engine=audio_engine, video_engine=video_engine, health_engine=health_engine,
+    )
 
     # Torrent discovery (search + DHT crawling) — separate DB for high-write crawl data
     try:
@@ -470,16 +517,10 @@ def create_app() -> FastAPI:
 
     # Dedicated DB for investing data (public, separate from main)
     from .investing.models import InvestingBase
-    investing_db_path = os.path.join(STATIC_FOLDER, "investing.db")
-    investing_engine = create_engine(
-        f"sqlite:///{investing_db_path}",
-        connect_args={"check_same_thread": False, "timeout": 30},
-        pool_pre_ping=True,
+    investing_engine, InvestingSessionLocal = init_db(
+        app, InvestingBase, os.path.join(STATIC_FOLDER, "investing.db"),
+        session_attr="InvestingSessionLocal",
     )
-    event.listen(investing_engine, "connect", _set_sqlite_pragmas)
-    InvestingBase.metadata.create_all(bind=investing_engine)
-    InvestingSessionLocal = sessionmaker(bind=investing_engine)
-    app.state.InvestingSessionLocal = InvestingSessionLocal
 
     # Start investing data scheduler
     from .investing.scheduler import InvestingScheduler
@@ -489,6 +530,19 @@ def create_app() -> FastAPI:
     )
     _investing_routes._scheduler = _inv_scheduler
     _inv_scheduler.start()
+
+    # Dedicated DB for news data (public, separate from main)
+    from .news.models import NewsBase
+    from .news import routes as _news_routes
+    news_engine, NewsSessionLocal = init_db(
+        app, NewsBase, os.path.join(STATIC_FOLDER, "news.db"),
+        session_attr="NewsSessionLocal",
+        wire=[_news_routes],
+    )
+
+    # Start news feed refresher
+    from .news.routes import start_refresher as _start_news_refresher
+    _start_news_refresher(NewsSessionLocal)
 
     @app.get("/health")
     def health_check():
@@ -521,14 +575,14 @@ def create_app() -> FastAPI:
 
     @app.get("/categories")
     @expose()
-    def get_categories(db: Session = Depends(get_db)):
-        from .models import Category
+    def get_categories(db: Session = Depends(_recipe_routes.get_db)):
+        from .recipe.models import Category
         categories = db.query(Category).all()
         return [category.to_json() for category in categories]
 
     @app.post("/categories", status_code=201)
-    async def create_category(request: Request, db: Session = Depends(get_db)):
-        from .models import Category
+    async def create_category(request: Request, db: Session = Depends(_recipe_routes.get_db)):
+        from .recipe.models import Category
         try:  
             data = await request.json()
             category = Category(**data)

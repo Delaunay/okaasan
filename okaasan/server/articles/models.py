@@ -17,10 +17,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
-from ..models.common import Base
+# Articles live in their own private DB (articles.db), not the main
+# database — see server.py wiring. Not managed by the main Alembic setup.
+ArticlesBase = declarative_base()
 
 
-class Article(Base):
+class Article(ArticlesBase):
     """Full blog post to display"""
 
     __tablename__ = "articles"
@@ -206,7 +208,7 @@ class Article(Base):
 # references
 # footnote
 # heading + paragraph
-class ArticleBlock(Base):
+class ArticleBlock(ArticlesBase):
     """Renderable block of a blog post"""
 
     __tablename__ = "article_blocks"

@@ -23,9 +23,15 @@ router = APIRouter(prefix="/shows", tags=["shows"])
 _tmdb: TMDBClient | None = None
 _posters: PosterStore | None = None
 
+_SessionLocal = None  # set by server.py at startup, bound to video.db
 
-def _get_db(request: Request):
-    yield from request.app.state.get_db()
+
+def _get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _init_tmdb(static_folder: str) -> TMDBClient:
@@ -986,7 +992,7 @@ async def import_kitsu_dump(request: Request):
     if not dumps_dir.is_dir():
         return {"success": False, "error": "No Kitsu dump found at dumps/kitsu/"}
 
-    SessionLocal = request.app.state.SessionLocal
+    SessionLocal = _SessionLocal
 
     def _run():
         db = SessionLocal()
@@ -1648,12 +1654,10 @@ async def library_scan(request: Request):
         result = await asyncio.to_thread(_library_scanner.scan_now)
     else:
         from .library import scan_folders
-        from sqlalchemy import create_engine
         static_folder = request.app.state.static_folder
         private_engine = request.app.state.private_engine
-        db_path = os.path.join(static_folder, "database.db")
-        main_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, main_engine)
+        video_engine = _SessionLocal().get_bind()
+        result = await asyncio.to_thread(scan_folders, static_folder, private_engine, video_engine)
 
     return {"message": "Scan complete", **result}
 

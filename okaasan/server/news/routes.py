@@ -14,10 +14,15 @@ log = logging.getLogger("okaasan.news")
 router = APIRouter(prefix="/news", tags=["news"])
 
 _news_refresher = None
+_SessionLocal = None  # set by server.py at startup, bound to news.db
 
 
-def _get_db(request: Request):
-    yield from request.app.state.get_db()
+def _get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @router.get("/feed")
@@ -102,14 +107,13 @@ async def add_news_source(request: Request, db: Session = Depends(_get_db)):
 
 
 @router.post("/refresh")
-def refresh_news(request: Request):
+def refresh_news():
     """Trigger an immediate news feed refresh."""
     from .rss_fetcher import refresh_all_sources
     from .grouping import group_recent_articles
 
-    SL = request.app.state.SessionLocal
-    count = refresh_all_sources(SL)
-    grouped = group_recent_articles(SL)
+    count = refresh_all_sources(_SessionLocal)
+    grouped = group_recent_articles(_SessionLocal)
     return {"new_articles": count, "newly_grouped": grouped}
 
 

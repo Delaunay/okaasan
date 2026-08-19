@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
-from .common import Base
+from ..recipe.models import RecipesBase
 
 
-class User(Base):
+class User(RecipesBase):
     __tablename__ = 'users'
 
     _id = Column(Integer, primary_key=True)

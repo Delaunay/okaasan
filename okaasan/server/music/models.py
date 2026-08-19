@@ -6,16 +6,18 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, Column, Integer, String, DateTime, ForeignKey, Index,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 
-from ..models.common import Base
+# Music/audiobooks/podcasts live in their own private DB (audio.db), not the
+# main database — see server.py wiring. Not managed by the main Alembic setup.
+AudioBase = declarative_base()
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-class MusicTrack(Base):
+class MusicTrack(AudioBase):
     """Canonical record for a music track."""
 
     __tablename__ = "music_tracks"
@@ -66,7 +68,7 @@ class MusicTrack(Base):
         }
 
 
-class MusicPlaylist(Base):
+class MusicPlaylist(AudioBase):
     """A named playlist of tracks."""
 
     __tablename__ = "music_playlists"
@@ -96,7 +98,7 @@ class MusicPlaylist(Base):
         return result
 
 
-class MusicPlaylistItem(Base):
+class MusicPlaylistItem(AudioBase):
     """An item within a music playlist."""
 
     __tablename__ = "music_playlist_items"
@@ -126,7 +128,7 @@ class MusicPlaylistItem(Base):
         return result
 
 
-class MusicEvent(Base):
+class MusicEvent(AudioBase):
     """An upcoming concert, album release, or other music event."""
 
     __tablename__ = "music_events"

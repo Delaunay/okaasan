@@ -23,9 +23,15 @@ DEFAULT_VOLUME_UNIT = "ml"
 
 router = APIRouter()
 
+_SessionLocal = None  # set by server.py at startup, bound to recipes.db
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+
+def get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _get_unit(db: Session, unit: str):

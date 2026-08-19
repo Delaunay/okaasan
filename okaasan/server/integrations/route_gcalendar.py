@@ -11,14 +11,20 @@ from ..paths import public_folder
 
 router = APIRouter(prefix="/gcalendar", tags=["google-calendar"])
 
+_SessionLocal = None  # set by server.py at startup, bound to calendar.db
+
 
 def _init_config(request: Request):
     """Lazily point gcalendar at the data config dir on first request."""
     gcalendar.set_config_dir(public_folder() / "data" / "_config")
 
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+def get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _error_detail(exc: Exception) -> str:

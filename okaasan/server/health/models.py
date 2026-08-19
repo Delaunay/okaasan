@@ -4,11 +4,15 @@ from sqlalchemy import (
     Column, Integer, String, Float, Date, DateTime, Boolean, JSON, Index,
     UniqueConstraint,
 )
+from sqlalchemy.orm import declarative_base
 
-from ..models.common import Base
+# Health data lives in its own private DB (private/health.db), not shared
+# private/database.db — see server.py wiring. Not managed by the main
+# Alembic setup.
+HealthBase = declarative_base()
 
 
-class HealthMetric(Base):
+class HealthMetric(HealthBase):
     """Dense time-series storage for scalar health readings."""
 
     __tablename__ = "health_metrics"
@@ -47,7 +51,7 @@ class HealthMetric(Base):
         }
 
 
-class HealthActivity(Base):
+class HealthActivity(HealthBase):
     """Activity / sleep events with a time span."""
 
     __tablename__ = "health_activities"
@@ -101,7 +105,7 @@ class HealthActivity(Base):
         }
 
 
-class HealthDailySummary(Base):
+class HealthDailySummary(HealthBase):
     """One row per day with typed columns for daily aggregates."""
 
     __tablename__ = "health_daily_summaries"
@@ -211,7 +215,7 @@ class HealthDailySummary(Base):
         }
 
 
-class HealthConnector(Base):
+class HealthConnector(HealthBase):
     """Connector configuration and credential storage."""
 
     __tablename__ = "health_connectors"

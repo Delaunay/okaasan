@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
-from ..models.common import Base
+# Calendar (events + tasks) lives in its own private DB (calendar.db), not
+# the main database — see server.py wiring. Not managed by the main
+# Alembic setup.
+CalendarBase = declarative_base()
 
 
 #
@@ -42,7 +45,7 @@ from ..models.common import Base
 #   The TODO list is a combination of Event and tasks
 #
 
-class Event(Base):
+class Event(CalendarBase):
     __tablename__ = 'events'
     __audit_entity_type__ = 'event'
     __audit_title_field__ = 'title'

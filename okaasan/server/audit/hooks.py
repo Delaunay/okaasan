@@ -21,6 +21,18 @@ log = logging.getLogger(__name__)
 
 _tracked_models: Set[Type] = set()
 
+# AuditLog itself always lives in the main database. Tracked models that
+# live in a different database (e.g. Recipe, in recipes.db) can't have
+# their audit row added to the same flushing session — set via configure()
+# at startup so _on_after_flush can detect that case and use a separate
+# session bound to the main engine instead.
+_main_engine = None
+
+
+def configure(main_engine):
+    global _main_engine
+    _main_engine = main_engine
+
 
 def _get_entity_type(target) -> str:
     return getattr(target.__class__, "__audit_entity_type__", target.__class__.__name__.lower())
@@ -178,8 +190,25 @@ def _on_after_flush(session: Session, flush_context):
             owner=getattr(target, "owner", None),
         ))
 
-    for row in audit_rows:
-        session.add(row)
+    if not audit_rows:
+        return
+
+    session_engine = session.get_bind()
+    if _main_engine is not None and session_engine is not _main_engine:
+        # The flushing session belongs to a different database than
+        # audit_log (e.g. recipes.db) — write the audit trail through a
+        # separate session on the main engine instead of `session.add()`,
+        # which would try (and fail) to insert into a table that doesn't
+        # exist in that database.
+        main_session = Session(bind=_main_engine)
+        try:
+            main_session.add_all(audit_rows)
+            main_session.commit()
+        finally:
+            main_session.close()
+    else:
+        for row in audit_rows:
+            session.add(row)
 
 
 def register_hooks(*models: Type):

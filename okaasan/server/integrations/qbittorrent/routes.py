@@ -116,7 +116,7 @@ def _get_destinations() -> dict[str, str]:
     return destinations
 
 
-def create_router(private_engine, main_engine) -> APIRouter:
+def create_router(private_engine, video_engine, audio_engine) -> APIRouter:
     router = APIRouter(prefix="/torrents", tags=["torrents"])
 
     # ── Process management ────────────────────────────────────────
@@ -260,7 +260,8 @@ def create_router(private_engine, main_engine) -> APIRouter:
                 content_path=payload.content_path,
                 size=payload.size,
                 private_engine=private_engine,
-                main_engine=main_engine,
+                video_engine=video_engine,
+                audio_engine=audio_engine,
                 static_folder=STATIC_FOLDER,
             )
             return result

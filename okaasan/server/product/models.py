@@ -60,4 +60,5 @@ class IngredientProduct(Base):
 
     _id = Column(Integer, primary_key=True)
     product_id = Column(Integer, ForeignKey('products._id'), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey('ingredients._id'), nullable=False)
+    # No FK constraint: ingredients now lives in recipes.db, a separate database.
+    ingredient_id = Column(Integer, nullable=False)

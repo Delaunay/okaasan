@@ -65,10 +65,10 @@ class RecipeSync(Command):
         from sqlalchemy import create_engine, event
         from sqlalchemy.orm import sessionmaker
 
-        from okaasan.server.models.common import Base
+        from okaasan.server.recipe.models import RecipesBase
         from okaasan.server.paths import STATIC_FOLDER
 
-        db_path = os.path.join(STATIC_FOLDER, "database.db")
+        db_path = os.path.join(STATIC_FOLDER, "recipes.db")
         engine = create_engine(
             f"sqlite:///{db_path}",
             connect_args={"check_same_thread": False, "timeout": 30},
@@ -82,7 +82,7 @@ class RecipeSync(Command):
             cursor.close()
 
         event.listen(engine, "connect", _set_sqlite_pragmas)
-        Base.metadata.create_all(bind=engine)
+        RecipesBase.metadata.create_all(bind=engine)
         SessionLocal = sessionmaker(bind=engine)
 
         source = args.source

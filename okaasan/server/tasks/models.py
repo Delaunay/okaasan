@@ -2,11 +2,11 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, Text, UniqueConstraint, JSON, create_engine, select, Boolean, Index, or_
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
-from ..models.common import Base
+from ..calendar.models import CalendarBase
 
 
 
-class Task(Base):
+class Task(CalendarBase):
     __tablename__ = 'tasks'
     __audit_entity_type__ = 'task'
     __audit_title_field__ = 'title'

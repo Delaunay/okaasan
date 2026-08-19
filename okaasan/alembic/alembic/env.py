@@ -34,22 +34,23 @@ from okaasan.server.models import Base
 # Import ALL model modules so Alembic sees every table.
 # Without these, autogenerate thinks the tables are "removed".
 from okaasan.server.models.common import Base  # noqa: F811
-from okaasan.server.shows.models import *  # noqa: F401,F403
 from okaasan.server.shows.library_models import *  # noqa: F401,F403
-from okaasan.server.music.models import *  # noqa: F401,F403
 from okaasan.server.music.library_models import *  # noqa: F401,F403
-from okaasan.server.podcasts.models import *  # noqa: F401,F403
 from okaasan.server.books.models import *  # noqa: F401,F403
 from okaasan.server.books.library_models import *  # noqa: F401,F403
-from okaasan.server.audiobooks.models import *  # noqa: F401,F403
 from okaasan.server.audiobooks.library_models import *  # noqa: F401,F403
 from okaasan.server.games.models import *  # noqa: F401,F403
 from okaasan.server.games.library_models import *  # noqa: F401,F403
 from okaasan.server.comics.models import *  # noqa: F401,F403
 from okaasan.server.comics.library_models import *  # noqa: F401,F403
 from okaasan.server.podcasts.library_models import *  # noqa: F401,F403
-from okaasan.server.news.models import *  # noqa: F401,F403
-from okaasan.server.recipe.models import *  # noqa: F401,F403
+# news.models uses NewsBase (separate DB) — not managed by alembic
+# recipe.models uses RecipesBase (separate DB) — not managed by alembic
+# music.models / audiobooks.models / podcasts.models use AudioBase (separate DB) — not managed by alembic
+# shows.models uses VideoBase (separate DB) — not managed by alembic
+# health.models uses HealthBase (separate DB) — not managed by alembic
+# calendar.models / tasks.models use CalendarBase (separate DB) — not managed by alembic
+# articles.models uses ArticlesBase (separate DB) — not managed by alembic
 # computers.models uses TaskBase (separate DB) — not managed by alembic
 try:
     from okaasan.server.audit.models import *  # noqa: F401,F403

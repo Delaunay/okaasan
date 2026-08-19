@@ -6,15 +6,18 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean, Index,
 )
+from sqlalchemy.orm import declarative_base
 
-from ..models.common import Base
+# News lives in its own private DB (news.db), not the main database —
+# see server.py wiring. Not managed by the main Alembic setup.
+NewsBase = declarative_base()
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-class NewsSource(Base):
+class NewsSource(NewsBase):
     """An RSS feed source (BBC, AP, Al Jazeera, etc.)."""
 
     __tablename__ = "news_sources"
@@ -36,7 +39,7 @@ class NewsSource(Base):
         }
 
 
-class NewsArticle(Base):
+class NewsArticle(NewsBase):
     """A single news article fetched from an RSS feed."""
 
     __tablename__ = "news_articles"
@@ -78,7 +81,7 @@ class NewsArticle(Base):
         }
 
 
-class NewsGroup(Base):
+class NewsGroup(NewsBase):
     """A group of articles covering the same story across sources."""
 
     __tablename__ = "news_groups"

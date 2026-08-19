@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 
-from ..models.common import Base
+from ..music.models import AudioBase
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-class Audiobook(Base):
+class Audiobook(AudioBase):
     """Canonical record for an audiobook."""
 
     __tablename__ = "audiobooks_media"
@@ -57,7 +57,7 @@ class Audiobook(Base):
         }
 
 
-class AudiobookChapter(Base):
+class AudiobookChapter(AudioBase):
     """Chapter within an audiobook."""
 
     __tablename__ = "audiobooks_chapters"
@@ -86,7 +86,7 @@ class AudiobookChapter(Base):
         }
 
 
-class ListeningProgress(Base):
+class ListeningProgress(AudioBase):
     """Tracks user's listening position within an audiobook."""
 
     __tablename__ = "audiobooks_progress"

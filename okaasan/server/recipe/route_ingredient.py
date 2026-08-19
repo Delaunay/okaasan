@@ -9,9 +9,15 @@ from ..decorators import expose
 
 router = APIRouter()
 
+_SessionLocal = None  # set by server.py at startup, bound to recipes.db
 
-def get_db(request: Request):
-    yield from request.app.state.get_db()
+
+def get_db():
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @router.get("/ingredients/{start:int}/{end:int}")

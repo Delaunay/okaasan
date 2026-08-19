@@ -16,16 +16,25 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "Engine | None" = None) -> None:
+def register_integrations(
+    app: "FastAPI",
+    engine: "Engine",
+    *,
+    private_engine: "Engine | None" = None,
+    recipes_engine: "Engine | None" = None,
+    audio_engine: "Engine | None" = None,
+    video_engine: "Engine | None" = None,
+    health_engine: "Engine | None" = None,
+) -> None:
     """Discover and mount all available integration routers."""
 
     # --- USDA (FoodData Central API + local CSV) ---
     try:
         from .route_usda import create_usda_router
 
-        usda_router = create_usda_router(engine)
+        usda_router = create_usda_router(recipes_engine or engine)
         app.include_router(usda_router)
-    except Exception as exc: 
+    except Exception as exc:
         log.warning("USDA routes not available: %s", exc)
 
     # --- Google Calendar ---
@@ -36,7 +45,7 @@ def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "
 
         from .gcalendar import GCalSyncScheduler
 
-        _gcal_scheduler = GCalSyncScheduler(app.state.SessionLocal)
+        _gcal_scheduler = GCalSyncScheduler(app.state.CalendarSessionLocal)
 
         @app.on_event("startup")
         async def _start_gcal_sync():
@@ -57,7 +66,7 @@ def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "
     try:
         from ..health.routes import create_health_router
 
-        health_router = create_health_router(private_engine or engine)
+        health_router = create_health_router(health_engine or private_engine or engine)
         app.include_router(health_router)
     except Exception as exc:
         log.warning("Health data routes not available: %s", exc)
@@ -90,7 +99,9 @@ def register_integrations(app: "FastAPI", engine: "Engine", *, private_engine: "
     try:
         from .qbittorrent import create_qbittorrent_router
 
-        qbt_router = create_qbittorrent_router(private_engine or engine, engine)
+        qbt_router = create_qbittorrent_router(
+            private_engine or engine, video_engine or engine, audio_engine or engine,
+        )
         app.include_router(qbt_router)
     except Exception as exc:
         log.warning("qBittorrent routes not available: %s", exc)

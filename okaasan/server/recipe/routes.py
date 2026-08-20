@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 import traceback
 
-from sqlalchemy import select
+from sqlalchemy import select, event
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, with_loader_criteria
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 _SessionLocal = None  # set by server.py at startup, bound to recipes.db
@@ -13,6 +13,22 @@ _SessionLocal = None  # set by server.py at startup, bound to recipes.db
 from .models import Recipe, Ingredient, Category, RecipeIngredient, IngredientComposition
 from .nutrition_calculator import calculate_recipe_nutrition
 from ..decorators import expose
+from ..query_context import is_public_only
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _filter_out_hellofresh_recipes(execute_state):
+    """Exclude HelloFresh-imported recipes from the static build — they're
+    personal meal-planning history, not content meant to be public — while
+    still showing them in the live/interactive app."""
+    if execute_state.is_select and is_public_only():
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                Recipe,
+                Recipe.source.is_distinct_from("hellofresh"),
+                include_aliases=True,
+            )
+        )
 
 log = logging.getLogger("okaasan.recipes")
 

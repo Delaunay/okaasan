@@ -323,6 +323,7 @@ const RecipeList = () => {
         </HStack>
       </Box>
 
+      {!isStatic && (
       <Box>
         <Text fontSize="xs" color="gray.500" mb={1}>Source</Text>
         <HStack gap={2} flexWrap="wrap">
@@ -346,6 +347,7 @@ const RecipeList = () => {
           ))}
         </HStack>
       </Box>
+      )}
     </Flex>
   );
 

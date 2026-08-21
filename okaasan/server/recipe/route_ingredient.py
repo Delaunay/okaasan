@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, event
+from sqlalchemy.orm import Session, with_loader_criteria
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from .models import Ingredient, RecipeIngredient, IngredientComposition
+from .models import Ingredient, Recipe, RecipeIngredient, IngredientComposition
 from ..decorators import expose
+from ..query_context import is_public_only
 
 router = APIRouter()
 
@@ -18,6 +19,27 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _filter_out_unused_ingredients(execute_state):
+    """In the static build, only show ingredients referenced by a visible
+    (non-HelloFresh) recipe — HelloFresh's ~14k-recipe catalog otherwise
+    drags in nearly every ingredient in the database."""
+    if execute_state.is_select and is_public_only():
+        visible_ingredient_ids = (
+            select(RecipeIngredient.ingredient_id)
+            .join(Recipe, Recipe._id == RecipeIngredient.recipe_id)
+            .where(Recipe.source.is_distinct_from("hellofresh"))
+            .where(RecipeIngredient.ingredient_id.isnot(None))
+        )
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                Ingredient,
+                Ingredient._id.in_(visible_ingredient_ids),
+                include_aliases=True,
+            )
+        )
 
 
 @router.get("/ingredients/{start:int}/{end:int}")

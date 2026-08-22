@@ -5,7 +5,9 @@ import { ArrowLeft, Star, Calendar, Clock, Globe, ChevronDown, ChevronRight, Tv,
 import { recipeAPI, isStaticMode, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
 import VideoPlayerModal from './VideoPlayerModal';
-import { torrentSearchPath } from '../../utils/torrentSearch';
+import DiscoverModal from '../torrents/DiscoverModal';
+import { useDiscoverModal } from '../../hooks/useDiscoverModal';
+import { episodeQuery, seasonQuery } from '../../utils/torrentSearch';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
@@ -35,6 +37,7 @@ interface PlayerState {
 const ShowsDetail: React.FC = () => {
   const { mediaType, tmdbId } = useParams<{ mediaType: string; tmdbId: string }>();
   const navigate = useNavigate();
+  const discoverModal = useDiscoverModal();
   const [data, setData] = useState<DetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +121,8 @@ const ShowsDetail: React.FC = () => {
           onClose={() => setPlayer(null)}
         />
       )}
+
+      <DiscoverModal query={discoverModal.query} onClose={discoverModal.close} />
 
       {/* Backdrop */}
       {backdropUrl && (
@@ -246,7 +251,7 @@ const ShowsDetail: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate(torrentSearchPath(title, year))}
+              onClick={() => discoverModal.open(title, year)}
             >
               <Download size={16} />
               <Text ml={1}>Find in Downloads</Text>
@@ -368,12 +373,14 @@ const ShowsDetail: React.FC = () => {
           {/* Seasons & Episodes */}
           {data.media_type === 'show' && tmdb?.seasons && tmdb.seasons.length > 0 && (
             <SeasonsBreakdown
+              title={title}
               tmdbId={data.tmdb_id}
               mediaId={data.trakt?.id}
               seasons={tmdb.seasons}
               watchedSeasons={(data as any).watched_seasons || {}}
               libraryFiles={libraryFiles}
               onPlay={() => openPlayer(title)}
+              onOpenDiscover={discoverModal.open}
             />
           )}
 
@@ -443,13 +450,15 @@ interface WatchedSeasonInfo {
 }
 
 const SeasonsBreakdown: React.FC<{
+  title: string;
   tmdbId: number;
   mediaId?: number;
   seasons: SeasonInfo[];
   watchedSeasons: Record<number, WatchedSeasonInfo>;
   libraryFiles: LibraryFile[];
   onPlay: () => void;
-}> = ({ tmdbId, mediaId, seasons, watchedSeasons, libraryFiles, onPlay }) => {
+  onOpenDiscover: (title: string, extra?: string | number) => void;
+}> = ({ title, tmdbId, mediaId, seasons, watchedSeasons, libraryFiles, onPlay, onOpenDiscover }) => {
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<Record<number, EpisodeDetail[]>>({});
   const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
@@ -505,37 +514,52 @@ const SeasonsBreakdown: React.FC<{
       <VStack align="stretch" gap={1}>
         {regularSeasons.map(season => (
           <Box key={season.season_number}>
-            <Button
-              variant="ghost"
-              w="100%"
-              justifyContent="flex-start"
-              onClick={() => toggleSeason(season.season_number)}
-              size="sm"
-              px={3}
-              py={2}
-              h="auto"
-              borderRadius="md"
-              _hover={{ bg: 'var(--hover-bg)' }}
-            >
-              <HStack gap={2} w="100%">
-                {expandedSeason === season.season_number ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {watchedSeasons[season.season_number]?.complete ? (
-                  <CheckCircle size={16} color="green" />
-                ) : (
-                  <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
-                )}
-                <Text fontSize="sm" fontWeight="medium">{season.name || `Season ${season.season_number}`}</Text>
-                {watchedSeasons[season.season_number] && !watchedSeasons[season.season_number].complete && (
-                  <Text fontSize="xs" color="var(--muted-text)">
-                    ({watchedSeasons[season.season_number].watched}/{watchedSeasons[season.season_number].total})
-                  </Text>
-                )}
-                <Badge colorPalette="gray" fontSize="xs" ml="auto">{season.episode_count} eps</Badge>
-                {season.air_date && (
-                  <Text fontSize="xs" color="var(--muted-text)">{season.air_date.slice(0, 4)}</Text>
-                )}
-              </HStack>
-            </Button>
+            <HStack gap={1}>
+              <Button
+                variant="ghost"
+                flex="1"
+                minW="0"
+                justifyContent="flex-start"
+                onClick={() => toggleSeason(season.season_number)}
+                size="sm"
+                px={3}
+                py={2}
+                h="auto"
+                borderRadius="md"
+                _hover={{ bg: 'var(--hover-bg)' }}
+              >
+                <HStack gap={2} w="100%">
+                  {expandedSeason === season.season_number ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  {watchedSeasons[season.season_number]?.complete ? (
+                    <CheckCircle size={16} color="green" />
+                  ) : (
+                    <Box w="16px" h="16px" borderRadius="full" border="1.5px solid" borderColor="var(--border-color)" />
+                  )}
+                  <Text fontSize="sm" fontWeight="medium">{season.name || `Season ${season.season_number}`}</Text>
+                  {watchedSeasons[season.season_number] && !watchedSeasons[season.season_number].complete && (
+                    <Text fontSize="xs" color="var(--muted-text)">
+                      ({watchedSeasons[season.season_number].watched}/{watchedSeasons[season.season_number].total})
+                    </Text>
+                  )}
+                  <Badge colorPalette="gray" fontSize="xs" ml="auto">{season.episode_count} eps</Badge>
+                  {season.air_date && (
+                    <Text fontSize="xs" color="var(--muted-text)">{season.air_date.slice(0, 4)}</Text>
+                  )}
+                </HStack>
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                title="Find full season in Downloads"
+                onClick={() => onOpenDiscover(title, seasonQuery(season.season_number))}
+                p={1}
+                minW="auto"
+                h="auto"
+                flexShrink={0}
+              >
+                <Download size={14} />
+              </Button>
+            </HStack>
 
             {expandedSeason === season.season_number && (
               <Box pl={6} pr={2} py={2}>
@@ -593,6 +617,17 @@ const SeasonsBreakdown: React.FC<{
                             <Play size={14} />
                           </Button>
                         )}
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          title="Find episode in Downloads"
+                          onClick={() => onOpenDiscover(title, episodeQuery(season.season_number, ep.episode_number))}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                        >
+                          <Download size={14} />
+                        </Button>
                       </HStack>
                       );
                     })}
@@ -606,24 +641,39 @@ const SeasonsBreakdown: React.FC<{
         ))}
         {specials && (
           <Box>
-            <Button
-              variant="ghost"
-              w="100%"
-              justifyContent="flex-start"
-              onClick={() => toggleSeason(0)}
-              size="sm"
-              px={3}
-              py={2}
-              h="auto"
-              borderRadius="md"
-              _hover={{ bg: 'var(--hover-bg)' }}
-            >
-              <HStack gap={2} w="100%">
-                {expandedSeason === 0 ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <Text fontSize="sm" fontWeight="medium">Specials</Text>
-                <Badge colorPalette="gray" fontSize="xs" ml="auto">{specials.episode_count} eps</Badge>
-              </HStack>
-            </Button>
+            <HStack gap={1}>
+              <Button
+                variant="ghost"
+                flex="1"
+                minW="0"
+                justifyContent="flex-start"
+                onClick={() => toggleSeason(0)}
+                size="sm"
+                px={3}
+                py={2}
+                h="auto"
+                borderRadius="md"
+                _hover={{ bg: 'var(--hover-bg)' }}
+              >
+                <HStack gap={2} w="100%">
+                  {expandedSeason === 0 ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Text fontSize="sm" fontWeight="medium">Specials</Text>
+                  <Badge colorPalette="gray" fontSize="xs" ml="auto">{specials.episode_count} eps</Badge>
+                </HStack>
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                title="Find full season in Downloads"
+                onClick={() => onOpenDiscover(title, seasonQuery(0))}
+                p={1}
+                minW="auto"
+                h="auto"
+                flexShrink={0}
+              >
+                <Download size={14} />
+              </Button>
+            </HStack>
 
             {expandedSeason === 0 && (
               <Box pl={6} pr={2} py={2}>
@@ -659,6 +709,17 @@ const SeasonsBreakdown: React.FC<{
                             )}
                           </HStack>
                         </Box>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          title="Find episode in Downloads"
+                          onClick={() => onOpenDiscover(title, episodeQuery(0, ep.episode_number))}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                        >
+                          <Download size={14} />
+                        </Button>
                       </HStack>
                     ))}
                   </VStack>

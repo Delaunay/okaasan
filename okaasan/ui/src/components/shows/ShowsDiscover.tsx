@@ -4,7 +4,8 @@ import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Image, Badge, 
 import { TrendingUp, Star, Film, Tv, Compass, Search, Eye, Bookmark, CheckCircle, Calendar, Clapperboard, Download } from 'lucide-react';
 import { recipeAPI } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
-import { torrentSearchPath } from '../../utils/torrentSearch';
+import DiscoverModal from '../torrents/DiscoverModal';
+import { useDiscoverModal } from '../../hooks/useDiscoverModal';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w300';
 
@@ -49,6 +50,7 @@ const ShowsDiscover: React.FC = () => {
   // from it directly, so coming back from a detail page doesn't re-trigger
   // the loading spinner or a fresh fetch — see the effects further down.
   const [cachedState] = useState<CachedDiscoverState | null>(loadCachedState);
+  const discoverModal = useDiscoverModal();
 
   const [items, setItems] = useState<TMDBItem[]>(() => cachedState?.items ?? []);
   const [loading, setLoading] = useState(() => !cachedState);
@@ -284,6 +286,8 @@ const ShowsDiscover: React.FC = () => {
 
   return (
     <VStack gap={6} align="stretch" p={4}>
+      <DiscoverModal query={discoverModal.query} onClose={discoverModal.close} />
+
       <HStack>
         <Compass size={24} />
         <Heading size="lg" color="var(--heading-color)">Discover</Heading>
@@ -366,6 +370,7 @@ const ShowsDiscover: React.FC = () => {
                           isOnWatchlist={isOnWatchlist}
                           onAddToWatchlist={() => handleAddToWatchlist(item)}
                           onMarkWatched={() => handleMarkWatched(item)}
+                          onOpenDiscover={discoverModal.open}
                         />
                       );
                     })}
@@ -395,6 +400,7 @@ const ShowsDiscover: React.FC = () => {
                           isOnWatchlist={isOnWatchlist}
                           onAddToWatchlist={() => handleAddToWatchlist(item)}
                           onMarkWatched={() => handleMarkWatched(item)}
+                          onOpenDiscover={discoverModal.open}
                         />
                       );
                     })}
@@ -415,6 +421,7 @@ const ShowsDiscover: React.FC = () => {
                     isOnWatchlist={isOnWatchlist}
                     onAddToWatchlist={() => handleAddToWatchlist(item)}
                     onMarkWatched={() => handleMarkWatched(item)}
+                    onOpenDiscover={discoverModal.open}
                   />
                 );
               })}
@@ -445,9 +452,10 @@ interface DiscoverCardProps {
   isOnWatchlist: boolean;
   onAddToWatchlist: () => void;
   onMarkWatched: () => void;
+  onOpenDiscover: (title: string, extra?: string | number) => void;
 }
 
-const DiscoverCard: React.FC<DiscoverCardProps> = ({ item, isWatched, isOnWatchlist, onAddToWatchlist, onMarkWatched }) => {
+const DiscoverCard: React.FC<DiscoverCardProps> = ({ item, isWatched, isOnWatchlist, onAddToWatchlist, onMarkWatched, onOpenDiscover }) => {
   const title = item.title || item.name || 'Unknown';
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const poster = item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
@@ -527,22 +535,21 @@ const DiscoverCard: React.FC<DiscoverCardProps> = ({ item, isWatched, isOnWatchl
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <Link to={torrentSearchPath(title, year)}>
-          <Button
-            size="xs"
-            variant="ghost"
-            title="Find in Downloads"
-            p={1}
-            minW="auto"
-            h="auto"
-            borderRadius="full"
-            bg="rgba(0,0,0,0.5)"
-            color="white"
-            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
-          >
-            <Download size={14} />
-          </Button>
-        </Link>
+        <Button
+          size="xs"
+          variant="ghost"
+          title="Find in Downloads"
+          onClick={() => onOpenDiscover(title, year)}
+          p={1}
+          minW="auto"
+          h="auto"
+          borderRadius="full"
+          bg="rgba(0,0,0,0.5)"
+          color="white"
+          _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+        >
+          <Download size={14} />
+        </Button>
       </Box>
 
       <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>

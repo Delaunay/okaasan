@@ -414,6 +414,25 @@ const Layout: FC<LayoutProps> = ({ children }) => {
     }
     if (path === '/') {
       document.title = 'Home';
+      return;
+    }
+    // Nothing matched exactly — this is a dynamic/detail route not in the
+    // nav (e.g. /shows/detail/tv/123, /recipes/42, /music/track/9). Fall
+    // back to the owning section's title by matching the URL's first path
+    // segment, instead of silently leaving whatever page we navigated from.
+    // Pages that want a more specific title (e.g. the show's own name) set
+    // document.title themselves once their data loads, which then wins.
+    const pathSegment = path.split('/')[1];
+    if (pathSegment) {
+      for (const section of visibleSections) {
+        const sectionSegment = section.href.split('/')[1];
+        const matches = sectionSegment === pathSegment
+          || section.items.some(item => item.href.split('/')[1] === pathSegment);
+        if (matches) {
+          document.title = section.title;
+          return;
+        }
+      }
     }
   }, [location.pathname, visibleSections]);
 

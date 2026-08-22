@@ -65,6 +65,16 @@ export function resolveMediaUrl(path: string | null | undefined): string | undef
   return `${SITE_BASE}/api/${path}`;
 }
 
+/** Build a fully-qualified URL for an /api/... path — needed anywhere the
+ * URL is handed to something outside the page itself (e.g. a vlc:// link
+ * opening the desktop VLC app), since a relative path means nothing there. */
+export function absoluteApiUrl(path: string): string {
+  const base = API_BASE_URL.startsWith('http')
+    ? API_BASE_URL
+    : `${window.location.origin}${API_BASE_URL}`;
+  return `${base}${path}`;
+}
+
 export { isStaticMode };
 
 /** Extend a bare YYYY-MM-DD date to end-of-day for chart domain bounds. */

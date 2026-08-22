@@ -303,9 +303,40 @@ DIRECT_AUDIO = {"mp3", "m4a", "m4b", "aac", "ogg", "opus", "flac"}
 # Public entry points
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def stream_video(file_path: str, range_header: str | None = None) -> Response:
-    """Stream a video file — direct if browser-native, VLC transcode otherwise."""
+def stream_video(
+    file_path: str,
+    range_header: str | None = None,
+    mode: str = "auto",
+    remuxed_path: str | None = None,
+) -> Response:
+    """Stream a video file.
+
+    mode:
+      "auto"      — direct if browser-native, VLC transcode otherwise (default)
+      "direct"    — force direct byte serving regardless of extension
+      "remux"     — serve remuxed_path (a stream-copied MP4, cached) if the
+                    caller has already ensured it exists; fast and seekable,
+                    fixes container-only incompatibilities. Ensuring the
+                    remux involves a blocking ffmpeg call, so it must happen
+                    *before* this — see media_transcode.ensure_remuxed and
+                    call it via asyncio.to_thread from the route. Falls back
+                    to the VLC live-transcode path if remuxed_path is None
+                    (i.e. the caller's remux attempt failed).
+      "transcode" — force the existing full VLC live-transcode fallback
+    """
     ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+
+    if mode == "direct":
+        ct = VIDEO_CONTENT_TYPES.get(ext, "application/octet-stream")
+        return direct_stream(file_path, range_header, ct)
+    if mode == "remux":
+        if remuxed_path:
+            return direct_stream(remuxed_path, range_header, "video/mp4")
+        log.warning("No remux available for %s — falling back to VLC transcode", file_path)
+        return vlc_video_stream(file_path, range_header)
+    if mode == "transcode":
+        return vlc_video_stream(file_path, range_header)
+
     if ext in DIRECT_VIDEO:
         ct = VIDEO_CONTENT_TYPES.get(ext, "video/mp4")
         return direct_stream(file_path, range_header, ct)

@@ -1,6 +1,22 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Box, HStack, VStack, Text, Button, Flex } from '@chakra-ui/react';
-import { X, Play, Pause, SkipForward, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Box, HStack, VStack, Text, Button, Flex, Input, Spinner } from '@chakra-ui/react';
+import { X, Play, Pause, SkipForward, ToggleLeft, ToggleRight, Cast, Copy, Check, Captions, Download } from 'lucide-react';
+import { absoluteApiUrl, recipeAPI } from '../../services/api';
+
+interface LocalSubtitle {
+  language: string;
+  file_name: string;
+}
+
+interface SubtitleResult {
+  id: number | string;
+  file_id: number;
+  file_name: string | null;
+  release: string | null;
+  language: string | null;
+  download_count: number;
+  ratings: number;
+}
 
 export interface EpisodeFile {
   id: number;
@@ -28,11 +44,31 @@ function epLabel(f: EpisodeFile): string {
   return `File #${f.id}`;
 }
 
+type StreamMode = 'auto' | 'remux' | 'transcode';
+
+const STREAM_MODE_LABELS: Record<StreamMode, string> = {
+  auto: 'Auto',
+  remux: 'Compatibility',
+  transcode: 'Transcode',
+};
+
 const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClose }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [autoNext, setAutoNext] = useState(() => localStorage.getItem(AUTO_NEXT_KEY) === 'true');
+  const [streamMode, setStreamMode] = useState<StreamMode>('auto');
+  const [urlCopied, setUrlCopied] = useState(false);
+
+  const [subtitlesOpen, setSubtitlesOpen] = useState(false);
+  const [localSubtitles, setLocalSubtitles] = useState<LocalSubtitle[]>([]);
+  const [activeSubtitleLang, setActiveSubtitleLang] = useState<string | null>(null);
+  const [subtitleQuery, setSubtitleQuery] = useState('');
+  const [subtitleLanguage, setSubtitleLanguage] = useState('en');
+  const [subtitleResults, setSubtitleResults] = useState<SubtitleResult[]>([]);
+  const [subtitleSearching, setSubtitleSearching] = useState(false);
+  const [subtitleSearchError, setSubtitleSearchError] = useState<string | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<number | null>(null);
 
   const killVlc = useCallback(() => {
     // Stop the video element first to sever the HTTP connection
@@ -50,7 +86,108 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
   }, []);
 
   const currentFile = files[currentIndex] || null;
-  const streamUrl = currentFile && playing ? `/api/shows/library/stream/${currentFile.id}` : '';
+  const streamUrl = currentFile && playing
+    ? `/api/shows/library/stream/${currentFile.id}${streamMode !== 'auto' ? `?mode=${streamMode}` : ''}`
+    : '';
+
+  // mode=direct: raw bytes, no server-side remux/transcode — VLC decodes
+  // whatever the file actually is, so let it, rather than paying the CPU
+  // cost of a remux/transcode server-side for a client that doesn't need it.
+  const vlcStreamUrl = useCallback(() => {
+    if (!currentFile) return null;
+    return absoluteApiUrl(`/shows/library/stream/${currentFile.id}?mode=direct`);
+  }, [currentFile]);
+
+  const streamToVlc = useCallback(() => {
+    const url = vlcStreamUrl();
+    if (!url) return;
+    // vlc: isn't a navigable URL — window.open would leave behind a blank
+    // tab once the browser hands off to VLC, so set location directly
+    // (same reasoning as magnet: links elsewhere in the app). This only
+    // works if the OS/browser has VLC registered as the vlc:// handler —
+    // if it isn't, "Copy Stream URL" below is the reliable fallback
+    // (paste into VLC's Open Network Stream dialog).
+    window.location.href = `vlc://${url}`;
+  }, [vlcStreamUrl]);
+
+  const copyVlcUrl = useCallback(async () => {
+    const url = vlcStreamUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setUrlCopied(true);
+    setTimeout(() => setUrlCopied(false), 2000);
+  }, [vlcStreamUrl]);
+
+  const refreshLocalSubtitles = useCallback(async (fileId: number) => {
+    try {
+      const data = await recipeAPI.request<{ subtitles: LocalSubtitle[] }>(
+        `/shows/library/${fileId}/subtitles`
+      );
+      setLocalSubtitles(data.subtitles || []);
+    } catch {
+      setLocalSubtitles([]);
+    }
+  }, []);
+
+  // Reset per-episode subtitle state and pick up whatever's already saved
+  // next to the new file whenever the selected episode changes.
+  useEffect(() => {
+    setActiveSubtitleLang(null);
+    setSubtitleResults([]);
+    setSubtitleSearchError(null);
+    if (currentFile) {
+      refreshLocalSubtitles(currentFile.id);
+    } else {
+      setLocalSubtitles([]);
+    }
+  }, [currentFile?.id, refreshLocalSubtitles]);
+
+  const searchSubtitles = useCallback(async () => {
+    if (!currentFile) return;
+    setSubtitleSearching(true);
+    setSubtitleSearchError(null);
+    setSubtitleResults([]);
+    try {
+      const params = new URLSearchParams({ language: subtitleLanguage });
+      if (subtitleQuery.trim()) params.set('query', subtitleQuery.trim());
+      const data = await recipeAPI.request<{ results: SubtitleResult[] }>(
+        `/shows/library/${currentFile.id}/subtitles/search?${params}`
+      );
+      setSubtitleResults(data.results || []);
+    } catch (e) {
+      setSubtitleSearchError(e instanceof Error ? e.message : 'Search failed');
+    } finally {
+      setSubtitleSearching(false);
+    }
+  }, [currentFile, subtitleLanguage, subtitleQuery]);
+
+  const downloadSubtitle = useCallback(async (result: SubtitleResult) => {
+    if (!currentFile) return;
+    setDownloadingFileId(result.file_id);
+    try {
+      await recipeAPI.request(`/shows/library/${currentFile.id}/subtitles/download`, {
+        method: 'POST',
+        body: JSON.stringify({ file_id: result.file_id, language: result.language || subtitleLanguage }),
+      });
+      await refreshLocalSubtitles(currentFile.id);
+      setActiveSubtitleLang(result.language || subtitleLanguage);
+    } catch (e) {
+      setSubtitleSearchError(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setDownloadingFileId(null);
+    }
+  }, [currentFile, subtitleLanguage, refreshLocalSubtitles]);
 
   const toggleAutoNext = useCallback(() => {
     setAutoNext(prev => {
@@ -127,6 +264,17 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
     }
   }, [streamUrl]);
 
+  // Keep the browser's native text tracks in sync with which subtitle
+  // (if any) is selected — changing a <track>'s `default` attribute alone
+  // doesn't retroactively update a track that's already loaded.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    for (const t of Array.from(video.textTracks)) {
+      t.mode = activeSubtitleLang && t.language === activeSubtitleLang ? 'showing' : 'disabled';
+    }
+  }, [activeSubtitleLang, localSubtitles, streamUrl]);
+
   return (
     <Box
       position="fixed"
@@ -148,6 +296,162 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
           )}
         </Box>
         <HStack gap={3}>
+          <HStack gap={0} borderRadius="md" overflow="hidden" border="1px solid" borderColor="whiteAlpha.300">
+            {(Object.keys(STREAM_MODE_LABELS) as StreamMode[]).map(mode => (
+              <Box
+                key={mode}
+                as="button"
+                px={2}
+                py={1}
+                fontSize="xs"
+                color={streamMode === mode ? 'black' : 'whiteAlpha.800'}
+                bg={streamMode === mode ? 'white' : 'transparent'}
+                cursor="pointer"
+                onClick={() => setStreamMode(mode)}
+                title={
+                  mode === 'auto' ? 'Direct if the browser supports it, transcode otherwise'
+                    : mode === 'remux' ? 'Fast container fix (no re-encode) — use if playback fails in Auto'
+                    : 'Full re-encode — use if Compatibility mode also fails'
+                }
+              >
+                {STREAM_MODE_LABELS[mode]}
+              </Box>
+            ))}
+          </HStack>
+          {currentFile && (
+            <Box position="relative">
+              <Button
+                size="sm"
+                variant="ghost"
+                color="white"
+                _hover={{ bg: 'whiteAlpha.200' }}
+                onClick={() => setSubtitlesOpen(prev => !prev)}
+                title="Subtitles"
+              >
+                <Captions size={16} />
+                <Text ml={1} fontSize="sm">Subtitles{activeSubtitleLang ? ` (${activeSubtitleLang})` : ''}</Text>
+              </Button>
+              {subtitlesOpen && (
+                <Box
+                  position="absolute"
+                  top="100%"
+                  right={0}
+                  mt={1}
+                  w="340px"
+                  maxH="400px"
+                  overflowY="auto"
+                  bg="gray.900"
+                  border="1px solid"
+                  borderColor="whiteAlpha.300"
+                  borderRadius="md"
+                  p={3}
+                  zIndex={10}
+                  boxShadow="lg"
+                >
+                  <Text fontSize="xs" fontWeight="semibold" color="whiteAlpha.700" mb={2}>ON THIS FILE</Text>
+                  <VStack align="stretch" gap={1} mb={3}>
+                    <HStack
+                      px={2} py={1} borderRadius="sm" cursor="pointer"
+                      bg={activeSubtitleLang === null ? 'whiteAlpha.200' : 'transparent'}
+                      _hover={{ bg: 'whiteAlpha.100' }}
+                      onClick={() => setActiveSubtitleLang(null)}
+                    >
+                      <Text fontSize="sm" color="white">Off</Text>
+                    </HStack>
+                    {localSubtitles.map(sub => (
+                      <HStack
+                        key={sub.language}
+                        px={2} py={1} borderRadius="sm" cursor="pointer"
+                        bg={activeSubtitleLang === sub.language ? 'whiteAlpha.200' : 'transparent'}
+                        _hover={{ bg: 'whiteAlpha.100' }}
+                        onClick={() => setActiveSubtitleLang(sub.language)}
+                      >
+                        <Text fontSize="sm" color="white">{sub.language}</Text>
+                      </HStack>
+                    ))}
+                    {localSubtitles.length === 0 && (
+                      <Text fontSize="xs" color="whiteAlpha.600">None saved yet</Text>
+                    )}
+                  </VStack>
+
+                  <Text fontSize="xs" fontWeight="semibold" color="whiteAlpha.700" mb={2}>SEARCH ONLINE</Text>
+                  <HStack mb={2}>
+                    <Input
+                      size="sm"
+                      placeholder={title}
+                      value={subtitleQuery}
+                      onChange={e => setSubtitleQuery(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') searchSubtitles(); }}
+                      bg="whiteAlpha.100"
+                      color="white"
+                    />
+                    <Input
+                      size="sm"
+                      w="60px"
+                      value={subtitleLanguage}
+                      onChange={e => setSubtitleLanguage(e.target.value)}
+                      bg="whiteAlpha.100"
+                      color="white"
+                      title="Language code, e.g. en, fr, es"
+                    />
+                    <Button size="sm" onClick={searchSubtitles} disabled={subtitleSearching}>
+                      {subtitleSearching ? <Spinner size="xs" /> : 'Go'}
+                    </Button>
+                  </HStack>
+
+                  {subtitleSearchError && (
+                    <Text fontSize="xs" color="red.300" mb={2}>{subtitleSearchError}</Text>
+                  )}
+
+                  <VStack align="stretch" gap={1}>
+                    {subtitleResults.map(r => (
+                      <HStack key={r.id} justify="space-between" px={2} py={1} borderRadius="sm" _hover={{ bg: 'whiteAlpha.100' }}>
+                        <Box flex={1} minW={0}>
+                          <Text fontSize="xs" color="white" lineClamp={1}>{r.release || r.file_name || 'Unknown release'}</Text>
+                          <Text fontSize="2xs" color="whiteAlpha.600">{r.language} · {r.download_count} downloads</Text>
+                        </Box>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          color="white"
+                          onClick={() => downloadSubtitle(r)}
+                          disabled={downloadingFileId === r.file_id}
+                        >
+                          {downloadingFileId === r.file_id ? <Spinner size="xs" /> : <Download size={14} />}
+                        </Button>
+                      </HStack>
+                    ))}
+                  </VStack>
+                </Box>
+              )}
+            </Box>
+          )}
+          {currentFile && (
+            <HStack gap={0}>
+              <Button
+                size="sm"
+                variant="ghost"
+                color="white"
+                _hover={{ bg: 'whiteAlpha.200' }}
+                onClick={streamToVlc}
+                title="Open in VLC (requires VLC registered as the vlc:// handler)"
+              >
+                <Cast size={16} />
+                <Text ml={1} fontSize="sm">Stream to VLC</Text>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                color="white"
+                _hover={{ bg: 'whiteAlpha.200' }}
+                onClick={copyVlcUrl}
+                title="Copy stream URL — paste into VLC's Open Network Stream dialog if the button above doesn't work"
+                px={2}
+              >
+                {urlCopied ? <Check size={16} color="lightgreen" /> : <Copy size={16} />}
+              </Button>
+            </HStack>
+          )}
           <HStack gap={1} cursor="pointer" onClick={toggleAutoNext} opacity={0.8} _hover={{ opacity: 1 }}>
             {autoNext ? <ToggleRight size={20} color="white" /> : <ToggleLeft size={20} color="gray" />}
             <Text fontSize="xs" color={autoNext ? 'white' : 'gray'}>Auto-Next</Text>
@@ -172,7 +476,17 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
             ref={videoRef}
             controls
             style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }}
-          />
+          >
+            {currentFile && localSubtitles.map(sub => (
+              <track
+                key={sub.language}
+                kind="subtitles"
+                src={`/api/shows/library/${currentFile.id}/subtitles/${sub.language}.vtt`}
+                srcLang={sub.language}
+                label={sub.language}
+              />
+            ))}
+          </video>
           {!playing && (
             <Box
               position="absolute"

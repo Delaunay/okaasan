@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import {
     Settings as SettingsLucide, FolderGit2, Download, Send, Sparkles,
-    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music, Share2,
+    Ruler, FolderOpen, LayoutDashboard, CalendarDays, MapPin, Film, Tv, HardDrive, Podcast, Layers, Gamepad2, BookOpen, Headphones, Music, Share2, Captions,
 } from 'lucide-react';
 import { isStaticMode, recipeAPI } from '../../services/api';
 import { TelegramSettings } from '../common/TelegramSettings';
@@ -92,6 +92,14 @@ const Settings: React.FC = () => {
                 icon: <Film size={20} />,
                 badge: 'Integration',
                 onOpen: () => navigate('/settings/tmdb'),
+            },
+            {
+                id: 'opensubtitles',
+                title: 'Subtitles (OpenSubtitles)',
+                description: 'Add your OpenSubtitles API key to search and download subtitles from the player',
+                icon: <Captions size={20} />,
+                badge: 'Integration',
+                onOpen: () => navigate('/settings/opensubtitles'),
             },
             {
                 id: 'anilist',

@@ -86,8 +86,13 @@ const cardBg = 'var(--card-bg)';
 const border = 'var(--border-color)';
 const mutedText = 'var(--muted-text)';
 
-const SearchPanel: React.FC = () => {
-  const [query, setQuery] = useState('');
+interface SearchPanelProps {
+  initialQuery?: string;
+  onAdded?: () => void;
+}
+
+const SearchPanel: React.FC<SearchPanelProps> = ({ initialQuery, onAdded }) => {
+  const [query, setQuery] = useState(initialQuery ?? '');
   const [category, setCategory] = useState('');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -167,11 +172,12 @@ const SearchPanel: React.FC = () => {
 
   // Landing here with e.g. /torrents/discover?q=Some+Show — pre-fill and
   // run the search immediately, so linking in from another page "just works".
+  // When embedded in a modal, initialQuery is passed directly instead.
   const [searchParams] = useSearchParams();
   const autoSearchedRef = useRef(false);
   useEffect(() => {
     if (autoSearchedRef.current) return;
-    const q = searchParams.get('q');
+    const q = initialQuery ?? searchParams.get('q');
     if (q) {
       autoSearchedRef.current = true;
       setQuery(q);
@@ -208,6 +214,7 @@ const SearchPanel: React.FC = () => {
       const body = new FormData();
       body.append('magnet_url', magnetOrUrl);
       await recipeAPI.request('/torrents/add', { method: 'POST', body });
+      onAdded?.();
     } catch (err) {
       console.error('Failed to add torrent:', err);
     } finally {
@@ -348,8 +355,11 @@ const SearchPanel: React.FC = () => {
                         <Box
                           as="a"
                           href={r.download_url || r.magnet || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          // magnet: isn't a navigable URL — target="_blank" would
+                          // leave behind a blank tab once the browser hands off
+                          // to the torrent client, so only use it for real
+                          // .torrent file URLs.
+                          {...(r.download_url ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                           display="inline-flex"
                           alignItems="center"
                           justifyContent="center"
@@ -357,7 +367,7 @@ const SearchPanel: React.FC = () => {
                           h="24px"
                           borderRadius="sm"
                           _hover={{ bg: 'var(--hover-bg)' }}
-                          title="Download .torrent file"
+                          title={r.download_url ? 'Download .torrent file' : 'Open magnet link'}
                         >
                           <ExternalLink size={14} />
                         </Box>
@@ -557,11 +567,25 @@ const IndexerPanel: React.FC = () => {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
-const DiscoverPage: React.FC = () => {
+interface DiscoverPageProps {
+  /** Pre-fills and auto-runs a search — used when opened from another page
+   * (a "Find in Downloads" button) instead of the standalone /torrents/discover
+   * route's own ?q= query param. */
+  initialQuery?: string;
+  /** True when rendered inside DiscoverModal rather than as its own routed
+   * page — swaps the full-viewport height for one that fits a dialog, and
+   * drops the page heading. */
+  embedded?: boolean;
+  /** Called after a torrent is successfully added — DiscoverModal uses this
+   * to close itself so the user can get back to browsing. */
+  onAdded?: () => void;
+}
+
+const DiscoverPage: React.FC<DiscoverPageProps> = ({ initialQuery, embedded, onAdded }) => {
   return (
-    <Flex gap={0} align="stretch" height="calc(100vh - 100px)">
+    <Flex gap={0} align="stretch" height={embedded ? '100%' : 'calc(100vh - 100px)'}>
       <Box flex="1" minW="0" overflowY="auto" pr={4}>
-        <Heading size="lg" mb={6}>Discover</Heading>
+        {!embedded && <Heading size="lg" mb={6}>Discover</Heading>}
 
         <Box
           p={4}
@@ -570,7 +594,7 @@ const DiscoverPage: React.FC = () => {
           borderColor={border}
           borderRadius="md"
         >
-          <SearchPanel />
+          <SearchPanel initialQuery={initialQuery} onAdded={onAdded} />
         </Box>
       </Box>
 

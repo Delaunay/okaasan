@@ -15,6 +15,7 @@ from ..paths import private_folder, public_folder, cache_folder
 from .models import Media, WatchHistory, WatchlistItem, UserRating, Collection, CollectionItem
 from .tmdb import TMDBClient
 from .posters import PosterStore
+from .opensubtitles import OpenSubtitlesClient
 
 log = logging.getLogger("okaasan.shows")
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/shows", tags=["shows"])
 
 _tmdb: TMDBClient | None = None
 _posters: PosterStore | None = None
+_opensubtitles: OpenSubtitlesClient | None = None
 
 _SessionLocal = None  # set by server.py at startup, bound to video.db
 
@@ -71,6 +73,33 @@ def _get_tmdb_client_for_import(static_folder: str) -> TMDBClient:
     if _tmdb is None:
         _init_tmdb(static_folder)
     return _tmdb
+
+
+def _init_opensubtitles() -> OpenSubtitlesClient:
+    import json as _json
+    global _opensubtitles
+
+    api_key = username = password = None
+    config_path = private_folder() / "_opensubtitles.json"
+    if config_path.is_file():
+        try:
+            with open(config_path) as f:
+                cfg = _json.load(f)
+                api_key = cfg.get("api_key")
+                username = cfg.get("username")
+                password = cfg.get("password")
+        except (ValueError, OSError):
+            pass
+
+    _opensubtitles = OpenSubtitlesClient(api_key=api_key, username=username, password=password)
+    return _opensubtitles
+
+
+def _get_opensubtitles() -> OpenSubtitlesClient:
+    global _opensubtitles
+    if _opensubtitles is None:
+        _init_opensubtitles()
+    return _opensubtitles
 
 
 # ── Overview ────────────────────────────────────────────────────────
@@ -952,6 +981,212 @@ async def configure_tmdb(request: Request):
     return {"configured": True}
 
 
+# ── Subtitles (OpenSubtitles.com) ──────────────────────────────────
+
+def _subtitle_sidecar_path(video_path: str, language: str) -> str:
+    """Sidecar subtitle path next to the video, e.g. movie.mkv -> movie.en.srt.
+    This is the convention VLC/Plex/Jellyfin all auto-detect."""
+    base, _ = os.path.splitext(video_path)
+    return f"{base}.{language}.srt"
+
+
+def _list_sidecar_subtitles(video_path: str) -> list[dict]:
+    """Find every {basename}.{lang}.srt sitting next to the video."""
+    base, _ = os.path.splitext(video_path)
+    base_name = os.path.basename(base)
+    directory = os.path.dirname(video_path)
+    found = []
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        return []
+    for name in entries:
+        if not name.startswith(base_name + ".") or not name.endswith(".srt"):
+            continue
+        language = name[len(base_name) + 1: -len(".srt")]
+        if not language or "." in language:
+            continue
+        found.append({"language": language, "file_name": name})
+    return found
+
+
+def _srt_to_vtt(srt_text: str) -> str:
+    """Minimal SRT -> WebVTT conversion (what HTML5 <track> requires)."""
+    import re
+    body = srt_text.replace("\r\n", "\n").replace("\r", "\n")
+    body = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", body)
+    return "WEBVTT\n\n" + body
+
+
+@router.post("/subtitles/configure")
+async def configure_opensubtitles(request: Request):
+    """Save OpenSubtitles credentials to private config."""
+    data = await request.json()
+    api_key = (data.get("api_key") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="api_key is required")
+
+    config_path = private_folder() / "_opensubtitles.json"
+    existing = {}
+    if config_path.is_file():
+        try:
+            with open(config_path) as f:
+                existing = json.load(f)
+        except (ValueError, OSError):
+            pass
+
+    existing["api_key"] = api_key
+    if username:
+        existing["username"] = username
+    if password:
+        existing["password"] = password
+
+    with open(config_path, "w") as f:
+        json.dump(existing, f)
+
+    global _opensubtitles
+    _opensubtitles = OpenSubtitlesClient(
+        api_key=existing.get("api_key"),
+        username=existing.get("username"),
+        password=existing.get("password"),
+    )
+    return {"configured": True}
+
+
+@router.get("/subtitles/status")
+def opensubtitles_status():
+    return {"configured": _get_opensubtitles().available}
+
+
+@router.get("/library/{file_id}/subtitles")
+def list_library_subtitles(request: Request, file_id: int):
+    """List subtitle files already saved next to this video."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        mf = db.query(MediaFile).filter_by(id=file_id).first()
+        if not mf:
+            raise HTTPException(status_code=404, detail="File not found")
+        file_path = mf.file_path
+    finally:
+        db.close()
+
+    return {"subtitles": _list_sidecar_subtitles(file_path)}
+
+
+@router.get("/library/{file_id}/subtitles/search")
+def search_library_subtitles(
+    request: Request,
+    file_id: int,
+    language: str = Query("en"),
+    query: str | None = Query(None, description="Override the auto-derived title"),
+):
+    """Search OpenSubtitles for this file's title/season/episode."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    client = _get_opensubtitles()
+    if not client.available:
+        raise HTTPException(status_code=503, detail="OpenSubtitles is not configured. Add an API key in Settings.")
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        mf = db.query(MediaFile).filter_by(id=file_id).first()
+        if not mf:
+            raise HTTPException(status_code=404, detail="File not found")
+        search_title = query or mf.title or os.path.splitext(os.path.basename(mf.file_path))[0]
+        season, episode = mf.season, mf.episode
+    finally:
+        db.close()
+
+    try:
+        results = client.search(search_title, season_number=season, episode_number=episode, languages=language)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OpenSubtitles search failed: {e}")
+
+    return {"results": results, "query": search_title}
+
+
+@router.post("/library/{file_id}/subtitles/download")
+async def download_library_subtitle(request: Request, file_id: int):
+    """Download a chosen subtitle and save it next to the video file."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+
+    data = await request.json()
+    subtitle_file_id = data.get("file_id")
+    language = (data.get("language") or "en").strip()
+    if not subtitle_file_id:
+        raise HTTPException(status_code=400, detail="file_id is required")
+
+    client = _get_opensubtitles()
+    if not client.available:
+        raise HTTPException(status_code=503, detail="OpenSubtitles is not configured. Add an API key in Settings.")
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        mf = db.query(MediaFile).filter_by(id=file_id).first()
+        if not mf:
+            raise HTTPException(status_code=404, detail="File not found")
+        video_path = mf.file_path
+    finally:
+        db.close()
+
+    if not os.path.isfile(video_path):
+        raise HTTPException(status_code=404, detail="Video file no longer exists on disk")
+
+    import asyncio
+    try:
+        # httpx network calls block — keep them off the event loop.
+        content, _remote_name = await asyncio.to_thread(client.download, subtitle_file_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OpenSubtitles download failed: {e}")
+
+    sidecar_path = _subtitle_sidecar_path(video_path, language)
+    try:
+        with open(sidecar_path, "wb") as f:
+            f.write(content)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save subtitle: {e}")
+
+    return {"saved": True, "language": language, "file_name": os.path.basename(sidecar_path)}
+
+
+@router.get("/library/{file_id}/subtitles/{language}.vtt")
+def get_library_subtitle_vtt(request: Request, file_id: int, language: str):
+    """Serve a saved sidecar subtitle as WebVTT, for the player's <track>."""
+    from .library_models import MediaFile
+    from sqlalchemy.orm import sessionmaker
+    from fastapi.responses import Response
+
+    Session = sessionmaker(bind=request.app.state.private_engine)
+    db = Session()
+    try:
+        mf = db.query(MediaFile).filter_by(id=file_id).first()
+        if not mf:
+            raise HTTPException(status_code=404, detail="File not found")
+        video_path = mf.file_path
+    finally:
+        db.close()
+
+    sidecar_path = _subtitle_sidecar_path(video_path, language)
+    if not os.path.isfile(sidecar_path):
+        raise HTTPException(status_code=404, detail="Subtitle not found")
+
+    with open(sidecar_path, "r", encoding="utf-8", errors="replace") as f:
+        srt_text = f.read()
+
+    return Response(content=_srt_to_vtt(srt_text), media_type="text/vtt")
+
+
 # ── Anime Metadata (Kitsu) ────────────────────────────────────────
 
 @router.get("/anime/status")
@@ -1774,11 +2009,17 @@ def library_files_by_tmdb(request: Request, tmdb_id: int):
 
 
 @router.get("/library/stream/{file_id}")
-async def library_stream(request: Request, file_id: int):
-    """Stream a video file (transcoded)."""
+async def library_stream(
+    request: Request,
+    file_id: int,
+    mode: str = Query("auto", description="auto | direct | remux | transcode"),
+):
+    """Stream a video file (direct, remuxed, or transcoded — see mode)."""
+    import asyncio
     from .library_models import MediaFile
     from .streamer import get_streamer
     from sqlalchemy.orm import sessionmaker
+    from ..paths import cache_folder
 
     Session = sessionmaker(bind=request.app.state.private_engine)
     db = Session()
@@ -1793,9 +2034,19 @@ async def library_stream(request: Request, file_id: int):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File no longer exists on disk")
 
+    if mode not in ("auto", "direct", "remux", "transcode"):
+        raise HTTPException(status_code=400, detail="mode must be one of: auto, direct, remux, transcode")
+
+    remuxed_path = None
+    if mode == "remux":
+        from ..media_transcode import ensure_remuxed
+        # ensure_remuxed blocks on ffmpeg — never call it directly on the
+        # event loop, or it stalls every other request until it's done.
+        remuxed_path = await asyncio.to_thread(ensure_remuxed, str(cache_folder()), file_path)
+
     range_header = request.headers.get("range")
     streamer = get_streamer(file_path)
-    return streamer.stream(file_path, range_header)
+    return streamer.stream(file_path, range_header, mode=mode, remuxed_path=remuxed_path)
 
 
 @router.post("/library/stream/stop")

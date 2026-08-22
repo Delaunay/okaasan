@@ -68,7 +68,10 @@ const MagnetLink: React.FC<{ magnet: string }> = ({ magnet }) => {
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    window.open(magnet, '_blank');
+    // magnet: isn't a navigable URL — window.open would leave behind a blank
+    // tab once the browser hands off to the torrent client. Setting location
+    // directly triggers the protocol handler without opening a new window.
+    window.location.href = magnet;
   };
 
   const handleCopy = async (e: React.MouseEvent) => {

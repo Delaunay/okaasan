@@ -10,8 +10,14 @@ def get_streamer(file_path: str) -> "_VLCVideoProxy":
     return _VLCVideoProxy()
 
 
-class _VLCVideoProxy: 
+class _VLCVideoProxy:
     """Thin adapter preserving the .stream() interface for existing call sites."""
 
-    def stream(self, file_path: str, range_header: str | None = None) -> Response:
-        return stream_video(file_path, range_header)
+    def stream(
+        self,
+        file_path: str,
+        range_header: str | None = None,
+        mode: str = "auto",
+        remuxed_path: str | None = None,
+    ) -> Response:
+        return stream_video(file_path, range_header, mode=mode, remuxed_path=remuxed_path)

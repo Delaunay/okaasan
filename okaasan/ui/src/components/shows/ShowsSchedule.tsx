@@ -4,7 +4,9 @@ import { Box, Flex, Grid, Heading, Text, VStack, HStack, Spinner, Badge, Image, 
 import { Calendar, Play, CheckCircle, X, Lightbulb, Download } from 'lucide-react';
 import { recipeAPI, resolveMediaUrl } from '../../services/api';
 import TMDBAttribution from './TMDBAttribution';
-import { torrentSearchPath, episodeQuery } from '../../utils/torrentSearch';
+import DiscoverModal from '../torrents/DiscoverModal';
+import { useDiscoverModal } from '../../hooks/useDiscoverModal';
+import { episodeQuery } from '../../utils/torrentSearch';
 
 interface EpisodeInfo {
   season: number;
@@ -73,6 +75,7 @@ const ShowsSchedule: React.FC = () => {
   const [data, setData] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const discoverModal = useDiscoverModal();
 
   const fetchData = useCallback((silent = false) => {
     if (!silent) setLoading(true);
@@ -190,6 +193,8 @@ const ShowsSchedule: React.FC = () => {
 
   return (
     <VStack gap={8} align="stretch" p={4}>
+      <DiscoverModal query={discoverModal.query} onClose={discoverModal.close} />
+
       <HStack>
         <Calendar size={24} />
         <Heading size="lg" color="var(--heading-color)">Schedule</Heading>
@@ -223,6 +228,7 @@ const ShowsSchedule: React.FC = () => {
                       item={item}
                       isToday={day === days[0]}
                       onMarkWatched={() => handleMarkUpcomingWatched(item)}
+                      onOpenDiscover={discoverModal.open}
                     />
                   ))
                 ) : (
@@ -261,6 +267,7 @@ const ShowsSchedule: React.FC = () => {
                 onMarkWatched={() => handleMarkEpisodeWatched(item)}
                 onMarkCompleted={() => handleMarkShowCompleted(item)}
                 onDrop={() => handleDropShow(item)}
+                onOpenDiscover={discoverModal.open}
               />
             ))}
           </Grid>
@@ -285,6 +292,7 @@ const ShowsSchedule: React.FC = () => {
                 onMarkWatched={() => handleMarkEpisodeWatched(item)}
                 onMarkCompleted={() => handleMarkShowCompleted(item)}
                 onDrop={() => handleDropShow(item)}
+                onOpenDiscover={discoverModal.open}
               />
             ))}
           </Grid>
@@ -294,7 +302,12 @@ const ShowsSchedule: React.FC = () => {
   );
 };
 
-const UpcomingCard: React.FC<{ item: UpcomingItem; isToday: boolean; onMarkWatched: () => void }> = ({ item, isToday, onMarkWatched }) => {
+const UpcomingCard: React.FC<{
+  item: UpcomingItem;
+  isToday: boolean;
+  onMarkWatched: () => void;
+  onOpenDiscover: (title: string, extra?: string | number) => void;
+}> = ({ item, isToday, onMarkWatched, onOpenDiscover }) => {
   const poster = resolvePoster(item.poster_path);
   const to = `/shows/detail/tv/${item.tmdb_id}`;
 
@@ -344,22 +357,21 @@ const UpcomingCard: React.FC<{ item: UpcomingItem; isToday: boolean; onMarkWatch
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <Link to={torrentSearchPath(item.title, episodeQuery(item.episode.season, item.episode.episode))}>
-          <Button
-            size="xs"
-            variant="ghost"
-            title="Find in Downloads"
-            p={1}
-            minW="auto"
-            h="auto"
-            borderRadius="full"
-            bg="rgba(0,0,0,0.5)"
-            color="white"
-            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
-          >
-            <Download size={14} />
-          </Button>
-        </Link>
+        <Button
+          size="xs"
+          variant="ghost"
+          title="Find in Downloads"
+          onClick={() => onOpenDiscover(item.title, episodeQuery(item.episode.season, item.episode.episode))}
+          p={1}
+          minW="auto"
+          h="auto"
+          borderRadius="full"
+          bg="rgba(0,0,0,0.5)"
+          color="white"
+          _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+        >
+          <Download size={14} />
+        </Button>
       </Box>
       <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>
         {poster ? (
@@ -386,6 +398,7 @@ interface ContinueCardProps {
   onMarkWatched: () => void;
   onMarkCompleted: () => void;
   onDrop: () => void;
+  onOpenDiscover: (title: string, extra?: string | number) => void;
 }
 
 const SHUFFLE_KEYFRAMES = `
@@ -398,7 +411,7 @@ const SHUFFLE_KEYFRAMES = `
   100% { transform: translateY(0) rotateX(0) scale(1); opacity: 1; }
 }`;
 
-const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMarkCompleted, onDrop }) => {
+const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMarkCompleted, onDrop, onOpenDiscover }) => {
   const poster = resolvePoster(item.poster_path);
   const to = `/shows/detail/tv/${item.tmdb_id}`;
   const epKey = `${item.next_episode.season}-${item.next_episode.episode}`;
@@ -488,22 +501,21 @@ const ContinueCard: React.FC<ContinueCardProps> = ({ item, onMarkWatched, onMark
         </Box>
         {/* Bottom-left on poster: find next episode in Downloads */}
         <Box position="absolute" bottom={1} left={1} zIndex={2} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-          <Link to={torrentSearchPath(item.title, episodeQuery(item.next_episode.season, item.next_episode.episode))}>
-            <Button
-              size="xs"
-              variant="ghost"
-              title="Find in Downloads"
-              p={1}
-              minW="auto"
-              h="auto"
-              borderRadius="full"
-              bg="rgba(0,0,0,0.5)"
-              color="white"
-              _hover={{ bg: 'rgba(0,0,0,0.7)' }}
-            >
-              <Download size={14} />
-            </Button>
-          </Link>
+          <Button
+            size="xs"
+            variant="ghost"
+            title="Find in Downloads"
+            onClick={() => onOpenDiscover(item.title, episodeQuery(item.next_episode.season, item.next_episode.episode))}
+            p={1}
+            minW="auto"
+            h="auto"
+            borderRadius="full"
+            bg="rgba(0,0,0,0.5)"
+            color="white"
+            _hover={{ bg: 'rgba(0,0,0,0.7)' }}
+          >
+            <Download size={14} />
+          </Button>
         </Box>
 
         <Link to={to} style={{ textDecoration: 'none', color: 'inherit' }}>

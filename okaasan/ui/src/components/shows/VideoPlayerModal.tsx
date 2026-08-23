@@ -101,14 +101,21 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
   const streamToVlc = useCallback(() => {
     const url = vlcStreamUrl();
     if (!url) return;
-    // vlc: isn't a navigable URL — window.open would leave behind a blank
-    // tab once the browser hands off to VLC, so set location directly
-    // (same reasoning as magnet: links elsewhere in the app). This only
-    // works if the OS/browser has VLC registered as the vlc:// handler —
-    // if it isn't, "Copy Stream URL" below is the reliable fallback
-    // (paste into VLC's Open Network Stream dialog).
-    window.location.href = `vlc://${url}`;
-  }, [vlcStreamUrl]);
+    // vlc:// isn't registered as a protocol handler out of the box on most
+    // systems (needs a browser extension + native host + manual browser
+    // config) — a downloaded .m3u playlist is a plain file, and VLC already
+    // registers itself as the default handler for .m3u/.pls on install, so
+    // this "just works" with no extra setup.
+    const blob = new Blob([`#EXTM3U\n${url}\n`], { type: 'audio/x-mpegurl' });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = `${title.replace(/[^\w.-]+/g, '_') || 'stream'}.m3u`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  }, [vlcStreamUrl, title]);
 
   const copyVlcUrl = useCallback(async () => {
     const url = vlcStreamUrl();
@@ -434,10 +441,10 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
                 color="white"
                 _hover={{ bg: 'whiteAlpha.200' }}
                 onClick={streamToVlc}
-                title="Open in VLC (requires VLC registered as the vlc:// handler)"
+                title="Download a .m3u playlist for this stream — opens in VLC automatically on most systems"
               >
                 <Cast size={16} />
-                <Text ml={1} fontSize="sm">Stream to VLC</Text>
+                <Text ml={1} fontSize="sm">Open in VLC</Text>
               </Button>
               <Button
                 size="sm"
@@ -445,7 +452,7 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ title, files, onClo
                 color="white"
                 _hover={{ bg: 'whiteAlpha.200' }}
                 onClick={copyVlcUrl}
-                title="Copy stream URL — paste into VLC's Open Network Stream dialog if the button above doesn't work"
+                title="Copy stream URL — paste into VLC's Open Network Stream dialog if the playlist download doesn't auto-open"
                 px={2}
               >
                 {urlCopied ? <Check size={16} color="lightgreen" /> : <Copy size={16} />}

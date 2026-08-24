@@ -41,9 +41,9 @@ const SleepOverlayChart: React.FC<Props> = ({ start, end }) => {
                 field: 'start_h',
                 type: 'quantitative',
                 title: null,
-                scale: { domain: [21, 37] },
+                scale: { domain: [18, 39], clamp: true },
                 axis: {
-                    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+                    values: [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38],
                     labelExpr: "datum.value < 24 ? datum.value + ':00' : (datum.value - 24) + ':00'",
                     orient: 'bottom',
                     grid: true,

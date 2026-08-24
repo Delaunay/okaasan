@@ -23,7 +23,7 @@ const SleepChart: React.FC<Props> = ({ start, end }) => {
         height: 250,
         hconcat: [
             {
-                mark: { type: 'bar' },
+                mark: { type: 'bar', clip: true },
                 height: 250,
                 width: 450,
                 encoding: {

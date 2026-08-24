@@ -93,6 +93,18 @@ export function healthDataUrl(endpoint: string, params: Record<string, string | 
   return `${API_BASE_URL}/health/data/data/${endpoint}${query ? `?${query}` : ''}`;
 }
 
+export async function updateHealthActivity(id: number, changes: { activity_type?: string; duration_min?: number }): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/health/data/activities/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(formatApiError(errorData, response.status));
+  }
+}
+
 function formatApiError(data: any, status: number): string {
   const d = data?.detail;
   if (typeof d === 'string') return d;

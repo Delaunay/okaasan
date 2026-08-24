@@ -101,6 +101,24 @@ def create_health_router(engine) -> APIRouter:
             q = q.filter(HealthActivity.start_time <= e)
         return [a.to_json() for a in q.order_by(desc(HealthActivity.start_time)).all()]
 
+    @router.put("/activities/{activity_id}")
+    async def update_activity(activity_id: int, request: Request, db: Session = Depends(get_db)):
+        activity = db.query(HealthActivity).filter(HealthActivity._id == activity_id).first()
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
+        body = await request.json()
+        if "activity_type" in body:
+            activity.activity_type = body["activity_type"]
+        if "duration_min" in body:
+            duration_min = body["duration_min"]
+            activity.duration_seconds = int(round(duration_min * 60))
+            if activity.start_time:
+                activity.end_time = activity.start_time + timedelta(seconds=activity.duration_seconds)
+
+        db.commit()
+        return activity.to_json()
+
     @router.get("/summary")
     def get_summary(date: Optional[str] = None, db: Session = Depends(get_db)):
         if date:

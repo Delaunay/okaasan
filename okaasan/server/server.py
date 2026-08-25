@@ -470,7 +470,7 @@ def create_app() -> FastAPI:
         {"title": "Inventory & Shopping",   "href": "/inventory-shopping",  "items": ["Receipts", "Pantry", "Budget"]},
         {"title": "Planning",              "href": "/planning-section",    "items": ["Calendar", "Routine", "Tasks", "Projects"]},
         {"title": "Home Management",       "href": "/home-management",     "items": ["Computers", "Home", "Sensors", "Switches", "AI"]},
-        {"title": "Money",                 "href": "/investing",           "items": ["Overview", "Economics", "Retirement", "Mortgage", "Options", "Microstructure", "Simulation"]},
+        {"title": "Money",                 "href": "/investing",           "items": ["Overview", "Economics", "Retirement", "Options", "Microstructure", "Simulation"]},
         {"title": "Health",                "href": "/health",              "items": ["Dashboard"]},
         {"title": "Shows & Movies",        "href": "/shows",               "items": ["Overview", "Discover", "History", "Watchlist", "Stats", "Collections", "Library"]},
         {"title": "Music",                 "href": "/music",               "items": ["Overview", "Discover", "Library", "Playlists", "Stats", "Schedule"]},
@@ -486,7 +486,7 @@ def create_app() -> FastAPI:
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
-        {"title": "Scratch",               "href": "/scratch",             "items": ["Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost", "Resource Cycle"]},
+        {"title": "Scratch",               "href": "/scratch",             "items": ["Mortgage Planner", "Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost", "Resource Cycle"]},
     ]
 
     def _sidebar_config_path():

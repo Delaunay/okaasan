@@ -147,7 +147,6 @@ const getStaticSidebarSections = () => [
       { name: 'Overview', href: '/investing' },
       { name: 'Economics', href: '/investing/economics' },
       { name: 'Retirement', href: '/investing/retirement' },
-      { name: 'Mortgage', href: '/investing/mortgage' },
       { name: 'Options', href: '/investing/options' },
       { name: 'Microstructure', href: '/investing/microstructure' },
       { name: 'Simulation', href: '/investing/simulation' },
@@ -263,6 +262,7 @@ const getStaticSidebarSections = () => [
     title: 'Scratch',
     href: '/scratch',
     items: [
+      { name: 'Mortgage Planner', href: '/scratch/mortgage-planner' },
       { name: 'Code Visualization', href: '/scratch/code-viz' },
       { name: 'Article Blocks', href: '/scratch/article-blocks' },
       { name: 'Filament Math', href: '/scratch/filament-math' },

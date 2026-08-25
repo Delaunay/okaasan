@@ -235,7 +235,7 @@ const MortgagePlanner: React.FC = () => {
     if (!name) return;
     await privateJsonStore.put(COLLECTION, name, inputs);
     await loadScenarios();
-    navigate(`/investing/mortgage/${encodeURIComponent(name)}`, { replace: true });
+    navigate(`/scratch/mortgage-planner/${encodeURIComponent(name)}`, { replace: true });
   };
 
   const handleDelete = async () => {
@@ -245,7 +245,7 @@ const MortgagePlanner: React.FC = () => {
     setScenarioName('');
     setInputs(DEFAULTS);
     await loadScenarios();
-    navigate('/investing/mortgage', { replace: true });
+    navigate('/scratch/mortgage-planner', { replace: true });
   };
 
   const result = useMemo(() => computeMortgage(inputs), [inputs]);
@@ -526,7 +526,7 @@ const MortgagePlanner: React.FC = () => {
   return (
     <VStack align="stretch" gap={6} p={0}>
       <HStack gap={3}>
-        <Button variant="ghost" size="sm" onClick={() => navigate('/investing')}>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/scratch')}>
           <ArrowLeft size={16} />
         </Button>
         <Heading size="xl" color="var(--heading-color)">Mortgage Planner</Heading>
@@ -558,7 +558,7 @@ const MortgagePlanner: React.FC = () => {
             size="xs"
             variant={s === scenarioName ? 'solid' : 'outline'}
             colorPalette={s === scenarioName ? 'blue' : undefined}
-            onClick={() => navigate(`/investing/mortgage/${encodeURIComponent(s)}`)}
+            onClick={() => navigate(`/scratch/mortgage-planner/${encodeURIComponent(s)}`)}
           >
             <FolderOpen size={12} /> {s}
           </Button>

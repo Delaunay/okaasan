@@ -101,7 +101,6 @@ import InvestingOverview from './components/investing/InvestingOverview';
 import TickerDetail from './components/investing/TickerDetail';
 import EconomicsOverview from './components/investing/EconomicsOverview';
 import RetirementPlanner from './components/investing/RetirementPlanner';
-import MortgagePlanner from './components/investing/MortgagePlanner';
 import OptionsPage from './components/investing/OptionsPage';
 import MarketMicrostructure from './components/investing/MarketMicrostructure';
 import MarketSimulation from './components/investing/MarketSimulation';
@@ -115,6 +114,7 @@ import SmartHomePage from './components/smarthome/SmartHomePage';
 import SensorsPage from './components/smarthome/SensorsPage';
 import SensorDetailPage from './components/smarthome/SensorDetailPage';
 import AlertsPage from './components/alerts/AlertsPage';
+import MortgagePlanner from './components/scratch/MortgagePlanner';
 import CodeVisualization from './components/scratch/CodeVisualization';
 import FilamentMath from './components/scratch/FilamentMath';
 import WoodPlanner from './components/scratch/WoodPlanner';
@@ -266,8 +266,6 @@ function MainApp() {
         <Route path="/investing/economics" element={<EconomicsOverview />} />
         <Route path="/investing/retirement" element={<RetirementPlanner />} />
         <Route path="/investing/retirement/:scenario" element={<RetirementPlanner />} />
-        <Route path="/investing/mortgage" element={<MortgagePlanner />} />
-        <Route path="/investing/mortgage/:scenario" element={<MortgagePlanner />} />
         <Route path="/investing/options" element={<OptionsPage />} />
         <Route path="/investing/microstructure" element={<MarketMicrostructure />} />
         <Route path="/investing/simulation" element={<MarketSimulation />} />
@@ -295,6 +293,8 @@ function MainApp() {
         {/* Alerts */}
         <Route path="/alerts" element={<AlertsPage />} />
 
+        <Route path="/scratch/mortgage-planner" element={<MortgagePlanner />} />
+        <Route path="/scratch/mortgage-planner/:scenario" element={<MortgagePlanner />} />
         <Route path="/scratch/code-viz" element={<CodeVisualization />} />
         <Route path="/scratch/filament-math" element={<FilamentMath />} />
         <Route path="/scratch/wood-planner" element={<WoodPlanner />} />

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from traceback import print_exc
 from typing import TYPE_CHECKING
 
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import DiscoverBase, SearchResult, DHTTorrent, IndexerConfig
+from .models import DiscoverBase, SearchResult, DHTTorrent, IndexerConfig, DownloadedRelease
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -36,6 +37,7 @@ async def search_torrents(
     q: str = Query(..., min_length=1),
     categories: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    force: bool = Query(False),
     db: Session = Depends(_get_db),
 ):
     from . import search as search_module
@@ -44,6 +46,18 @@ async def search_torrents(
         cats = None
         if categories:
             cats = [int(c.strip()) for c in categories.split(",") if c.strip()]
+
+        if not force:
+            cached = search_module.find_recent_search(db, q, cats)
+            if cached is not None:
+                cached_results, age_seconds = cached
+                return {
+                    "query": q,
+                    "count": len(cached_results),
+                    "results": cached_results,
+                    "cached": True,
+                    "age_seconds": age_seconds,
+                }
 
         results = await search_module.search(q, categories=cats, db=db, limit=limit)
         return {"query": q, "count": len(results), "results": results}
@@ -57,6 +71,7 @@ async def search_torrents_stream(
     q: str = Query(..., min_length=1),
     categories: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    force: bool = Query(False),
     db: Session = Depends(_get_db),
 ):
     from . import search as search_module
@@ -66,6 +81,20 @@ async def search_torrents_stream(
         cats = [int(c.strip()) for c in categories.split(",") if c.strip()]
 
     async def event_generator():
+        if not force:
+            cached = search_module.find_recent_search(db, q, cats)
+            if cached is not None:
+                cached_results, age_seconds = cached
+                payload = json.dumps({
+                    "cached": True,
+                    "age_seconds": age_seconds,
+                    "count": len(cached_results),
+                    "results": cached_results,
+                })
+                yield f"data: {payload}\n\n"
+                yield f"data: {json.dumps({'done': True, 'total': len(cached_results)})}\n\n"
+                return
+
         total = 0
         try:
             async for indexer_id, results in search_module.search_stream(
@@ -303,13 +332,104 @@ def search_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------- Downloaded-release tracking ----------
+
+@router.post("/discover/downloaded")
+async def mark_downloaded(request: Request, db: Session = Depends(_get_db)):
+    try:
+        data = await request.json()
+        title = data.get("title")
+        action = data.get("action")
+        if not title or action not in ("download_file", "add_qbittorrent"):
+            raise HTTPException(status_code=400, detail="title and a valid action are required")
+
+        infohash = data.get("infohash")
+        normalized_title = data.get("normalized_title")
+        season = data.get("season")
+        episode = data.get("episode")
+
+        existing = None
+        if infohash:
+            existing = db.query(DownloadedRelease).filter(
+                DownloadedRelease.infohash == infohash
+            ).first()
+        elif normalized_title:
+            existing = db.query(DownloadedRelease).filter(
+                DownloadedRelease.normalized_title == normalized_title,
+                DownloadedRelease.season == season,
+                DownloadedRelease.episode == episode,
+            ).first()
+
+        if existing:
+            existing.action = action
+            existing.downloaded_at = datetime.now(timezone.utc)
+        else:
+            db.add(DownloadedRelease(
+                infohash=infohash,
+                normalized_title=normalized_title,
+                season=season,
+                episode=episode,
+                title=title,
+                action=action,
+            ))
+        db.commit()
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/discover/downloaded")
+def list_downloaded(
+    limit: int = Query(2000, ge=1, le=5000),
+    db: Session = Depends(_get_db),
+):
+    try:
+        rows = (
+            db.query(DownloadedRelease)
+            .order_by(DownloadedRelease.downloaded_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [r.to_json() for r in rows]
+    except Exception as e:
+        print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------- Router factory ----------
+
+def _ensure_search_result_columns(discover_engine: "Engine") -> None:
+    """`create_all` only creates missing tables, it never alters an existing
+    one — so a `search_results` table provisioned before query_normalized/
+    searched_categories existed needs them added by hand."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(discover_engine)
+    if "search_results" not in inspector.get_table_names():
+        return  # brand new table, create_all already gave it every column
+
+    existing_columns = {c["name"] for c in inspector.get_columns("search_results")}
+    with discover_engine.begin() as conn:
+        if "query_normalized" not in existing_columns:
+            conn.execute(text("ALTER TABLE search_results ADD COLUMN query_normalized VARCHAR(500)"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_search_results_query_normalized "
+                "ON search_results (query_normalized)"
+            ))
+        if "searched_categories" not in existing_columns:
+            conn.execute(text("ALTER TABLE search_results ADD COLUMN searched_categories VARCHAR(100)"))
+
 
 def create_discover_router(discover_engine: "Engine") -> APIRouter:
     global _discover_engine
     _discover_engine = discover_engine
 
     DiscoverBase.metadata.create_all(bind=discover_engine)
+    _ensure_search_result_columns(discover_engine)
 
     from .crawler import init_crawler
     init_crawler(discover_engine)

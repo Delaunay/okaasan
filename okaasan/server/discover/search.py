@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import sessionmaker, Session
 
 from .models import SearchResult, IndexerConfig
+from .release_parser import parse_release_title
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +73,24 @@ def list_configured() -> list[dict[str, str]]:
     return pk.list_configured()
 
 
-def _release_to_dict(r, query: str) -> dict:
-    return {
+def normalize_query(query: str) -> str:
+    return re.sub(r"\s+", " ", query.strip().lower())
+
+
+def _categories_key(categories: list[int] | None) -> str | None:
+    if not categories:
+        return None
+    return ",".join(str(c) for c in sorted(categories))
+
+
+def _release_to_dict(r, query: str, categories: list[int] | None = None) -> dict:
+    result_categories = list(r.category) if r.category else None
+    # A result's own category (from the indexer) is a stronger signal than
+    # what the user searched for — an "All" search can still return a
+    # clearly-TV or clearly-movie result.
+    bias_categories = result_categories or categories
+
+    out = {
         "title": r.title,
         "infohash": r.info_hash,
         "magnet": r.magnet_uri,
@@ -87,6 +105,8 @@ def _release_to_dict(r, query: str) -> dict:
         "published_at": r.publish_date.isoformat() if r.publish_date else None,
         "query": query,
     }
+    out.update(parse_release_title(r.title, bias_categories))
+    return out
 
 
 async def search(
@@ -99,10 +119,10 @@ async def search(
     pk = _get_pyackett()
     results = await pk.search(query, categories=categories, limit=limit)
 
-    out = [_release_to_dict(r, query) for r in results]
+    out = [_release_to_dict(r, query, categories) for r in results]
 
     if db is not None:
-        _cache_results(db, query, out)
+        _cache_results(db, query, out, categories)
 
     return out
 
@@ -144,12 +164,12 @@ async def search_stream(
     all_results = []
     for coro in asyncio.as_completed(tasks):
         indexer_id, results = await coro
-        items = [_release_to_dict(r, query) for r in results]
+        items = [_release_to_dict(r, query, categories) for r in results]
         all_results.extend(items)
         yield indexer_id, items
 
     if db is not None:
-        _cache_results(db, query, all_results)
+        _cache_results(db, query, all_results, categories)
 
 
 async def resolve_download(indexer_id: str, details_url: str) -> str | None:
@@ -157,9 +177,11 @@ async def resolve_download(indexer_id: str, details_url: str) -> str | None:
     return await pk.resolve_download(indexer_id, details_url)
 
 
-def _cache_results(db: Session, query: str, results: list[dict]):
+def _cache_results(db: Session, query: str, results: list[dict], categories: list[int] | None = None):
     """Persist search results to the discover DB for history/dedup."""
     now = datetime.now(timezone.utc)
+    query_normalized = normalize_query(query)
+    categories_key = _categories_key(categories)
     for item in results:
         try:
             pub = None
@@ -181,6 +203,8 @@ def _cache_results(db: Session, query: str, results: list[dict]):
                 published_at=pub,
                 searched_at=now,
                 query=query,
+                query_normalized=query_normalized,
+                searched_categories=categories_key,
             )
             db.add(row)
         except Exception:
@@ -190,3 +214,60 @@ def _cache_results(db: Session, query: str, results: list[dict]):
     except Exception:
         db.rollback()
         log.warning("Failed to commit cached search results", exc_info=True)
+
+
+# How long a previous search "covers" a repeat of the same query/categories
+# before we go live against indexers again.
+CACHE_WINDOW_MINUTES = 20
+
+
+def _row_to_dict(r: SearchResult, categories: list[int] | None) -> dict:
+    # SearchResult only persists the raw indexer fields, not the parsed ones
+    # (season/episode/resolution/...) — re-derive them from the stored title
+    # so cached results carry the same fields a live search would return.
+    data = r.to_json()
+    row_categories = None
+    if r.category:
+        try:
+            row_categories = [int(c) for c in r.category.split(",") if c.strip()]
+        except ValueError:
+            row_categories = None
+    data.update(parse_release_title(r.title, row_categories or categories))
+    return data
+
+
+def find_recent_search(
+    db: Session, query: str, categories: list[int] | None = None
+) -> tuple[list[dict], float] | None:
+    """Return (cached_results, age_seconds) if this query/categories combo was
+    searched within CACHE_WINDOW_MINUTES, else None."""
+    query_normalized = normalize_query(query)
+    categories_key = _categories_key(categories)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_WINDOW_MINUTES)
+
+    latest = (
+        db.query(SearchResult)
+        .filter(
+            SearchResult.query_normalized == query_normalized,
+            SearchResult.searched_categories == categories_key,
+            SearchResult.searched_at >= cutoff,
+        )
+        .order_by(SearchResult.searched_at.desc())
+        .first()
+    )
+    if latest is None:
+        return None
+
+    # Every row from one search burst shares the exact same searched_at
+    # timestamp (see _cache_results above), so this fetches that whole batch.
+    rows = (
+        db.query(SearchResult)
+        .filter(
+            SearchResult.query_normalized == query_normalized,
+            SearchResult.searched_categories == categories_key,
+            SearchResult.searched_at == latest.searched_at,
+        )
+        .all()
+    )
+    age_seconds = (datetime.now(timezone.utc) - latest.searched_at.replace(tzinfo=timezone.utc)).total_seconds()
+    return [_row_to_dict(r, categories) for r in rows], age_seconds

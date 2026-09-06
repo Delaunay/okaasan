@@ -36,6 +36,12 @@ class SearchResult(DiscoverBase):
     published_at = Column(DateTime, nullable=True)
     searched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     query = Column(String(500), nullable=True, index=True)
+    # Normalized form of `query` (lowercased/trimmed/whitespace-collapsed) plus
+    # the sorted, comma-joined torznab category codes used for that search —
+    # both populated at cache-write time so a later search can cheaply check
+    # "did we already search this recently" without re-hitting indexers.
+    query_normalized = Column(String(500), nullable=True, index=True)
+    searched_categories = Column(String(100), nullable=True)
 
     __table_args__ = (
         Index("ix_search_query_title", "query", "title"),
@@ -106,6 +112,36 @@ class DHTTorrent(DiscoverBase):
             if self.raw_metadata:
                 data["raw_metadata"] = self.raw_metadata
         return data
+
+
+class DownloadedRelease(DiscoverBase):
+    """A release the user has downloaded (file link opened, or added to
+    qBittorrent) — used to filter already-grabbed episodes/movies out of
+    future search results."""
+
+    __tablename__ = "downloaded_releases"
+
+    id = Column(Integer, primary_key=True)
+    infohash = Column(String(64), nullable=True, index=True)
+    normalized_title = Column(String(500), nullable=True, index=True)
+    season = Column(Integer, nullable=True)
+    episode = Column(Integer, nullable=True)
+    title = Column(String(1000), nullable=False)
+    action = Column(String(20), nullable=False)  # "download_file" | "add_qbittorrent"
+    downloaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_downloaded_title_season_episode", "normalized_title", "season", "episode"),
+    )
+
+    def to_json(self):
+        return {
+            "id": self.id,
+            "infohash": self.infohash,
+            "normalized_title": self.normalized_title,
+            "season": self.season,
+            "episode": self.episode,
+        }
 
 
 class IndexerConfig(DiscoverBase):

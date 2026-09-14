@@ -43,6 +43,7 @@ import HealthSettings from './components/health/HealthSettings';
 import HealthDetailView from './components/health/HealthDetailView';
 import HealthActivities from './components/health/HealthActivities';
 import ArticleTestPage from './components/content/ArticleTestPage';
+import IndependencePage from './components/independence/IndependencePage';
 import ArticleView from './components/content/ArticleView';
 import FeedPage from './components/feed/FeedPage';
 import SectionView from './components/content/SectionView';
@@ -292,6 +293,14 @@ function MainApp() {
 
         {/* Alerts */}
         <Route path="/alerts" element={<AlertsPage />} />
+
+        {/* Independence / Homesteading */}
+        <Route path="/independence/water" element={<IndependencePage topic="water" />} />
+        <Route path="/independence/energy" element={<IndependencePage topic="energy" />} />
+        <Route path="/independence/heating" element={<IndependencePage topic="heating" />} />
+        <Route path="/independence/construction" element={<IndependencePage topic="construction" />} />
+        <Route path="/independence/waste" element={<IndependencePage topic="waste" />} />
+        <Route path="/independence/food" element={<IndependencePage topic="food" />} />
 
         <Route path="/scratch/mortgage-planner" element={<MortgagePlanner />} />
         <Route path="/scratch/mortgage-planner/:scenario" element={<MortgagePlanner />} />

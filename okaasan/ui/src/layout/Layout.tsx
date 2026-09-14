@@ -114,6 +114,19 @@ const getStaticSidebarSections = () => [
     ]
   },
   {
+    title: 'Independence',
+    href: '/independence',
+    isSelected: (location: Location) => location.pathname.startsWith('/independence'),
+    items: [
+      { name: 'Water', href: '/independence/water', description: 'Wells, rainwater, and greywater/blackwater handling' },
+      { name: 'Energy & Electricity', href: '/independence/energy', description: 'Appliance loads, solar, hydro, wind, and battery setup' },
+      { name: 'Heating', href: '/independence/heating', description: 'Electricity, gas, and wood' },
+      { name: 'Construction & Insulation', href: '/independence/construction', description: 'Milling lumber and natural insulation' },
+      { name: 'Waste', href: '/independence/waste', description: 'Composting' },
+      { name: 'Food', href: '/independence/food', description: 'Garden, greenhouse, livestock, hydroponics, aquaponics' },
+    ],
+  },
+  {
     title: 'World News',
     href: '/news',
     isSelected: (location: Location) => location.pathname.startsWith('/news'),

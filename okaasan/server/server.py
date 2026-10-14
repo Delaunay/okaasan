@@ -486,7 +486,7 @@ def create_app() -> FastAPI:
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
         {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
-        {"title": "Scratch",               "href": "/scratch",             "items": ["Mortgage Planner", "Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost", "Resource Cycle"]},
+        {"title": "Scratch",               "href": "/scratch",             "items": ["Mortgage Planner", "Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost", "Resource Cycle", "Crew Sleep"]},
     ]
 
     def _sidebar_config_path():

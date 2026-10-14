@@ -285,7 +285,10 @@ const getStaticSidebarSections = () => [
       { name: 'PyTorch Wheels', href: '/scratch/pytorch-wheels' },
       { name: 'Machine Designer', href: '/scratch/machine-designer' },
       { name: 'Resource Cycle', href: '/scratch/resource-cycle' },
+      { name: 'Money Cycle', href: '/scratch/money-cycle' },
+      { name: 'Blog Plan', href: '/scratch/blog-plan' },
       { name: 'Climate Map', href: '/scratch/climate-map' },
+      { name: 'Crew Sleep', href: '/scratch/crew-sleep' },
     ]
   },
   {

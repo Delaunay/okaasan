@@ -124,7 +124,10 @@ import PrintCostEstimator from './components/scratch/PrintCostEstimator';
 import PyTorchWheels from './components/scratch/PyTorchWheels';
 import MachineDesigner from './components/scratch/MachineDesigner';
 import ResourceCycle from './components/scratch/ResourceCycle';
+import MoneyCycle from './components/scratch/MoneyCycle';
+import BlogPlan from './components/scratch/BlogPlan';
 import ClimateMap from './components/scratch/ClimateMap';
+import CrewSleep from './components/scratch/CrewSleep';
 import { BudgetProvider } from './services/BudgetContext';
 import { Toaster } from './components/ui/toaster';
 import './App.css';
@@ -316,8 +319,13 @@ function MainApp() {
         <Route path="/scratch/machine-designer" element={<MachineDesigner />} />
         <Route path="/scratch/resource-cycle" element={<ResourceCycle />} />
         <Route path="/scratch/resource-cycle/:product" element={<ResourceCycle />} />
+        <Route path="/scratch/money-cycle" element={<MoneyCycle />} />
+        <Route path="/scratch/money-cycle/:company" element={<MoneyCycle />} />
+        <Route path="/scratch/blog-plan" element={<BlogPlan />} />
         <Route path="/scratch/climate-map" element={<ClimateMap />} />
         <Route path="/scratch/climate-map/:deck" element={<ClimateMap />} />
+        <Route path="/scratch/crew-sleep" element={<CrewSleep />} />
+        <Route path="/scratch/crew-sleep/:profile" element={<CrewSleep />} />
 
         {/* Test pages */}
         <Route path="/scratch/article-blocks" element={<ArticleTestPage />} />

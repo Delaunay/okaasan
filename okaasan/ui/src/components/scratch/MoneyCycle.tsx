@@ -4,6 +4,7 @@ import {
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { jsonStore, isStaticMode } from '../../services/jsonstore';
+import SupplyChain, { SupplyChainData, emptyChain, normalizeChain } from './SupplyChain';
 import {
   Save, FolderOpen, Plus, Trash2, ChevronRight, CheckCircle2, Circle, ExternalLink,
 } from 'lucide-react';
@@ -87,6 +88,7 @@ export interface MoneyCycleCompany {
   nodes: CycleNode[];
   edges: CycleEdge[];
   evidence: Evidence[];
+  chain: SupplyChainData;
 }
 
 const COLLECTION = 'money-cycle';
@@ -325,6 +327,7 @@ function defaultCompany(): MoneyCycleCompany {
     nodes: NODE_ORDER.map(templateNode),
     edges: defaultEdges(),
     evidence: [],
+    chain: emptyChain(),
   };
 }
 
@@ -387,6 +390,7 @@ function normalizeCompany(data: Partial<MoneyCycleCompany>, fallbackName: string
       note: ev.note || '',
       signal: ev.signal === 'pos' || ev.signal === 'neg' ? ev.signal : 'neu',
     })),
+    chain: normalizeChain(data.chain),
   };
 }
 
@@ -952,6 +956,7 @@ const MoneyCycle: React.FC = () => {
   const [dirty, setDirty] = useState(false);
   const [editing, setEditing] = useState(false);
   const [evidenceFilter, setEvidenceFilter] = useState<string>('all');
+  const [view, setView] = useState<'cycle' | 'chain'>('cycle');
   const creatingNew = useRef(false);
 
   const nodes = company?.nodes || [];
@@ -1308,7 +1313,32 @@ const MoneyCycle: React.FC = () => {
               </Box>
             </Flex>
 
+            <HStack gap={1}>
+              {([['cycle', 'Money cycle'], ['chain', 'Supply chain']] as const).map(([id, label]) => (
+                <Button
+                  key={id}
+                  size="sm"
+                  variant={view === id ? 'solid' : 'outline'}
+                  colorPalette={view === id ? 'blue' : undefined}
+                  onClick={() => setView(id)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </HStack>
+
+            {view === 'chain' && (
+              <SupplyChain
+                chain={company.chain}
+                editing={editing}
+                canEdit={canEdit}
+                onToggleEdit={() => setEditing((v) => !v)}
+                onChange={(chain) => patchCompany({ chain })}
+              />
+            )}
+
             {/* Bottom: node detail | graph */}
+            {view === 'cycle' && (
             <Flex direction={{ base: 'column', lg: 'row' }} gap={5} align="stretch">
               <VStack
                 align="stretch"
@@ -1709,6 +1739,7 @@ const MoneyCycle: React.FC = () => {
                 </Box>
               </Box>
             </Flex>
+            )}
 
             {/* Evidence log */}
             <Box p={4} borderRadius="lg" border="1px solid" borderColor="var(--border-color)" bg="var(--card-bg)">

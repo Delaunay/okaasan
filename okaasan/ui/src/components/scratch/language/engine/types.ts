@@ -1,9 +1,11 @@
 // The contract between the language-independent trainer and a language pack.
 //
-// A pack owns its data and turns it into generic exercises (choice, write,
-// order, draw, match, ...). The engine runs lessons and quizzes, keeps
-// progress, tracks which items get confused with which, and plays audio,
-// without knowing anything about the language.
+// A pack is a folder (website/uploads/language/<name>/): pack.json describes
+// it, data/*.json holds the content, audio/ the sound packs. Levels are either
+// generic (dialogue, items: built by the engine from JSON alone) or come from
+// a language module, the code that knows a language's own rules. The engine
+// runs lessons and quizzes, keeps progress and a spaced-repetition schedule,
+// tracks which items get confused with which, and plays audio.
 import type React from 'react';
 import type { Stroke } from './strokes';
 
@@ -18,8 +20,16 @@ export interface Stat {
   bad: number;
 }
 
+// Spaced repetition: an item answered right moves up a box and comes back
+// later; answered wrong, it drops to box 0 and is due again right away.
+export interface Review {
+  box: number;
+  due: number;          // epoch ms
+}
+
 export interface Progress {
   stats: Record<string, Stat>;          // per item id
+  srs: Record<string, Review>;          // per item id
   confusions: Record<string, number>;   // 'a|b' (sorted) -> times one was taken for the other
   lessons: Record<string, number>;      // unit id -> lessons completed
   xp: number;
@@ -38,6 +48,14 @@ export interface Prompt {
   audioButton?: 'big' | 'small' | 'none';  // default: big when nothing else is shown
   autoplay?: boolean;
   cloze?: { before: string; after: string };  // the blank shows the chosen option
+  bubbles?: Line[];     // chat lines shown above the answer
+}
+
+export interface Line {
+  who: string;
+  text: string;
+  rom?: string;
+  en?: string;
 }
 
 export interface Option {
@@ -79,6 +97,7 @@ interface Graded {
 export type Ex =
   | { kind: 'card'; card: Card }
   | { kind: 'rule'; title: string; text: string }
+  | { kind: 'dialogue'; title: string; lines: Line[] }
   | (Graded & { kind: 'choice'; options: Option[]; answer: string })
   | (Graded & { kind: 'write'; accept: string[] })
   | (Graded & { kind: 'order'; tokens: string[] })
@@ -106,6 +125,8 @@ export interface Ctx {
   weakness(id: string): number;
   // Keys this one has been taken for, most often first.
   confusedWith(key: string): string[];
+  // Due for review (spaced repetition), or never seen.
+  isDue(id: string): boolean;
 }
 
 export interface Keyboard {
@@ -169,4 +190,31 @@ export interface LanguagePack {
   // Exercises that put the given keys against each other.
   drill?(keys: string[], ctx: Ctx): Ex[];
   lessonsPerUnit?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Loading a pack
+// ---------------------------------------------------------------------------
+
+export interface PackManifest {
+  id: string;
+  name: string;
+  nativeName: string;
+  font: string;
+  lang: string;
+  audio: { dir: string; preview: string };
+  storage: { collection: string; key: string; local: string };
+  keyboard: string;                      // path of { rows, map, hint }
+  data: Record<string, string>;          // key -> path of a JSON file
+  levels: { id: string; title: string; module?: string; type?: 'dialogue' | 'items'; data?: string }[];
+}
+
+// The code side of a language: what JSON alone cannot express.
+export interface LanguageModule {
+  init(data: Record<string, any>): void;            // the loaded data files, by key
+  levels: Record<string, (id: string, title: string) => LevelDef>;
+  compose?(keys: string[]): string;                 // typed symbols -> text (default: joined)
+  normalize?(s: string): string;                    // for comparing typed answers
+  describe?(key: string): Described | null;
+  drill?(keys: string[], ctx: Ctx): Ex[];
 }

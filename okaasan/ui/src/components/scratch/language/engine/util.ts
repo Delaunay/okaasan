@@ -1,4 +1,4 @@
-import type { Ctx, Progress, SoundPack, Stat } from './types';
+import type { Answer, Ctx, Progress, Review, SoundPack, Stat } from './types';
 
 export function shuffle<T>(xs: T[]): T[] {
   const a = xs.slice();
@@ -20,8 +20,39 @@ export function pickWeighted<T>(items: T[], weight: (x: T) => number): T {
 }
 
 export const EMPTY_PROGRESS: Progress = {
-  stats: {}, confusions: {}, lessons: {}, xp: 0, streak: 0, lastDay: '', bestQuiz: {},
+  stats: {}, srs: {}, confusions: {}, lessons: {}, xp: 0, streak: 0, lastDay: '', bestQuiz: {},
 };
+
+// ---------------------------------------------------------------------------
+// Spaced repetition (Leitner boxes): right moves an item up one box and it
+// comes back after that box's interval; wrong sends it back to box 0, due now.
+// ---------------------------------------------------------------------------
+
+const DAY = 86_400_000;
+export const INTERVALS_DAYS = [0, 1, 3, 7, 14, 30, 90];
+
+// One update per item per session: any miss counts as a miss.
+export function schedule(srs: Record<string, Review>, answers: Answer[], now = Date.now()): Record<string, Review> {
+  const missed = new Set(answers.filter((a) => !a.ok).map((a) => a.key));
+  const next = { ...srs };
+  for (const key of new Set(answers.map((a) => a.key))) {
+    const box = missed.has(key) ? 0 : Math.min((srs[key]?.box ?? 0) + 1, INTERVALS_DAYS.length - 1);
+    next[key] = { box, due: now + INTERVALS_DAYS[box] * DAY };
+  }
+  return next;
+}
+
+export const isDueAt = (r: Review | undefined, now = Date.now()) => !r || r.due <= now;
+
+export const dueCount = (p: Progress, keep: (k: string) => boolean, now = Date.now()) =>
+  Object.entries(p.srs).filter(([k, r]) => keep(k) && r.due <= now).length;
+
+// Due items weigh more the longer they are overdue; items not due yet much less.
+function dueFactor(r: Review | undefined, now: number) {
+  if (!r) return 1;
+  if (r.due > now) return 0.25;
+  return 1.5 + Math.min(5, (now - r.due) / DAY) * 0.2;
+}
 
 export const confusionKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -39,12 +70,15 @@ export function makeCtx(progress: Progress, canListen: boolean, soundPack: Sound
     (partners[b] ||= []).push([a, n]);
   }
   const total = (k: string) => (partners[k] || []).reduce((s, [, n]) => s + n, 0);
+  const now = Date.now();
   return {
     progress,
     canListen,
     soundPack,
-    // Each confusion makes an item come back more often, up to 3x.
-    weakness: (id) => statWeakness(progress.stats[id]) * (1 + 0.5 * Math.min(4, total(id))),
+    // Each confusion makes an item come back more often, up to 3x; due items
+    // come first, items reviewed recently wait.
+    weakness: (id) => statWeakness(progress.stats[id]) * (1 + 0.5 * Math.min(4, total(id))) * dueFactor(progress.srs[id], now),
+    isDue: (id) => isDueAt(progress.srs[id], now),
     confusedWith: (key) => (partners[key] || []).slice().sort((x, y) => y[1] - x[1]).map(([k]) => k),
   };
 }

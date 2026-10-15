@@ -1,16 +1,11 @@
 // Turns the Korean data into the engine's generic exercises.
 import type { Ctx, Ex, Feedback, MatchPair, Option, Skill } from '../engine/types';
 import { pickDistractors, pickWeighted, shuffle } from '../engine/util';
-import { JAMO, JAMO_BY, SIMILAR, UNITS, WORDS, WORD_BY, WORDS_UNIT, Word, homophones, jamoOf, soundOf } from './alphabet';
-import { ALT_STROKES, STROKES } from './strokes';
+import { JAMO, JAMO_BY, LETTER_NAMES, SIMILAR, UNITS, WORDS, WORD_BY, WORDS_UNIT, Word, homophones, jamoOf, soundOf } from './alphabet';
+import { STROKES, strokeVariants } from './strokes';
 import { NEW_WORDS_PER_LESSON, VOCAB, VOCAB_BY, VOCAB_REVIEW, VOCAB_UNITS, Vocab, synonyms, vkey } from './vocab';
-import { CLOZE_BY, CONJ_BY, CONJ_RULES, GRAMMAR_UNITS, PARTICLES, SENTENCE_BY, particleReason } from './grammar';
-
-export const LETTER_NAMES: Record<string, string> = {
-  'ㄱ': '기역', 'ㄲ': '쌍기역', 'ㄴ': '니은', 'ㄷ': '디귿', 'ㄸ': '쌍디귿', 'ㄹ': '리을', 'ㅁ': '미음',
-  'ㅂ': '비읍', 'ㅃ': '쌍비읍', 'ㅅ': '시옷', 'ㅆ': '쌍시옷', 'ㅇ': '이응', 'ㅈ': '지읒', 'ㅉ': '쌍지읒',
-  'ㅊ': '치읓', 'ㅋ': '키읔', 'ㅌ': '티읕', 'ㅍ': '피읖', 'ㅎ': '히읗',
-};
+import { CLOZE_BY, CONJ_BY, CONJ_RULES, FormKind, GRAMMAR_UNITS, PARTICLES, SENTENCE_BY, parseFormId, particleReason } from './grammar';
+import { FORMS_BY } from './tenses';
 
 const LESSON_SIZE = 12;
 const VOCAB_LESSON_SIZE = 14;
@@ -85,9 +80,8 @@ const asGlyphs = (keys: string[], withAudio = false): Option[] =>
   keys.map((k) => ({ key: k, label: k, script: true, audio: withAudio ? soundOf(k) : undefined }));
 
 export function soundNote(ch: string, ctx: Ctx) {
-  const j = JAMO_BY[ch];
   if (ctx.soundPack.names && LETTER_NAMES[ch]) return `this pack says the letter name, ${LETTER_NAMES[ch]}`;
-  return j.sayNote ?? (j.kind === 'consonant' ? `${soundOf(ch)}: ${ch} + ㅏ` : `${soundOf(ch)}: silent ㅇ + ${ch}`);
+  return JAMO_BY[ch].sayNote;
 }
 
 export function letterCard(ch: string, ctx: Ctx): Ex {
@@ -111,7 +105,7 @@ export function letterEx(ch: string, pool: string[], ctx: Ctx, opts: { kind?: Le
     return {
       kind: 'draw', id: ch, skill: 'write', feedback,
       prompt: { title: 'Draw this letter, in stroke order', text: j.rom, audio: sound, audioButton: 'small' },
-      variants: [STROKES[ch], ...(ALT_STROKES[ch] ? [ALT_STROKES[ch]] : [])],
+      variants: strokeVariants(ch),
       guided: opts.guided ?? (ctx.progress.stats[ch]?.ok || 0) < 2,
     };
   }
@@ -187,7 +181,7 @@ export function letterLesson(unitId: string, ctx: Ctx): Ex[] {
   return [...intro, ...shuffle(quiz)];
 }
 
-export const LETTER_QUIZZES: { id: string; title: string; letters: string[] }[] = [
+export const LETTER_QUIZZES = (): { id: string; title: string; letters: string[] }[] => [
   { id: 'all', title: 'Whole alphabet', letters: JAMO.map((j) => j.ch) },
   { id: 'consonant', title: 'Consonants', letters: JAMO.filter((j) => j.kind === 'consonant').map((j) => j.ch) },
   { id: 'vowel', title: 'Vowels', letters: JAMO.filter((j) => j.kind === 'vowel').map((j) => j.ch) },
@@ -306,8 +300,50 @@ export function vocabQuiz(scope: string, ctx: Ctx): Ex[] {
 export const particleKey = (p: string) => `pt:${p}`;
 export const formKey = (f: string) => `cf:${f}`;
 
+const FORM_TITLES: Record<FormKind, [string, string]> = {
+  past: ['Which is the past tense?', 'Write the past tense'],
+  future: ['Which is the future?', 'Write the future'],
+  prog: ['Which means "doing it right now"?', 'Write "doing it right now" (고 있어요)'],
+  neg: ['Make it negative with 안', 'Make it negative with 안'],
+  negji: ['Make it negative with 지 않아요', 'Make it negative with 지 않아요'],
+};
+
+// Tenses: the other forms of the same verb as choices. Negation: the classic
+// mistakes (안 in the wrong place, 안아요 for 않아요).
+function formEx(id: string, recall: boolean): Ex {
+  const { kind, dict } = parseFormId(id);
+  const f = FORMS_BY[dict];
+  const polite = CONJ_BY[`c:${dict}`]?.polite ?? dict;
+  const answer = f[kind]!;
+  const stem = dict.slice(0, -1);
+  const feedback: Feedback = { head: `${dict} → ${answer}`, detail: VOCAB_BY[dict]?.en };
+  const prompt = { glyph: kind === 'neg' || kind === 'negji' ? polite : dict, sub: VOCAB_BY[dict]?.en };
+  if (recall || Math.random() < 0.5) {
+    return { kind: 'write', id, skill: 'write', feedback, accept: [answer], audioAfter: answer, prompt: { ...prompt, title: FORM_TITLES[kind][1] } };
+  }
+  let wrong: string[];
+  if (kind === 'neg') {
+    const noun = answer.endsWith(' 안 해요') && answer !== '안 해요' ? answer.slice(0, -' 안 해요'.length) : null;
+    wrong = f.type === 'x'
+      ? [polite, `안 ${polite}`, `안 ${answer}`]   // 안 있어요, 안 이에요: 있다 and 이다 have their own negatives
+      : [polite, noun ? `안 ${polite}` : `${polite} 안`, `${stem}지 안아요`, `안 ${stem}지 않아요`];
+  } else if (kind === 'negji') {
+    wrong = [`${stem}지 안아요`, `${stem}지 않요`, `${stem}지 안 해요`];
+  } else {
+    // Other tenses of the same verb, plus a naive past (가요 → 가었어요).
+    wrong = [polite, f.past, f.future, f.prog, `${polite.replace(/요$/, '')}었어요`].filter((x): x is string => !!x && x !== answer);
+  }
+  const choices = shuffle([answer, ...shuffle(Array.from(new Set(wrong.filter((w) => w !== answer)))).slice(0, 3)]);
+  return {
+    kind: 'choice', id, skill: 'grammar', feedback, answer: formKey(answer), audioAfter: answer,
+    prompt: { ...prompt, title: FORM_TITLES[kind][0] },
+    options: choices.map((x) => ({ key: formKey(x), label: x, script: true })),
+  };
+}
+
 // `recall` asks for the typed polite form (quizzes).
 export function grammarEx(id: string, ctx: Ctx, recall = false): Ex {
+  if (id.startsWith('t:')) return formEx(id, recall);
   if (id.startsWith('p:')) {
     const c = CLOZE_BY[id];
     const confused = ctx.confusedWith(particleKey(c.particle)).map((k) => k.slice(3)).filter((p) => PARTICLES[p]).slice(0, 1);
@@ -399,7 +435,7 @@ export function drill(keys: string[], ctx: Ctx): Ex[] {
     const conj = Object.keys(CONJ_BY).find((id) => id === k || CONJ_BY[id].polite === form || CONJ_BY[id].wrong.includes(form));
     if (conj) out.push(grammarEx(conj, ctx));
   }
-  for (const k of keys.filter((x) => x.startsWith('p:') || x.startsWith('o:'))) out.push(grammarEx(k, ctx));
+  for (const k of keys.filter((x) => x.startsWith('p:') || x.startsWith('o:') || x.startsWith('t:'))) out.push(grammarEx(k, ctx));
   if (letters.length >= MATCH_MIN) out.push({ kind: 'match', pairs: letters.slice(0, MATCH_MAX).map(letterPair) });
   const board = matchBoard(vocab, () => 1, vocabPair, synonyms);
   if (board) out.push(board);

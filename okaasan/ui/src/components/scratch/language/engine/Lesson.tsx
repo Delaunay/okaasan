@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Flex, Grid, Heading, HStack, Text, VStack } from '@chakra-ui/react';
 import { BookOpen, Check, GraduationCap, Star, X } from 'lucide-react';
-import type { Answer, Card, Ex, Prompt, Skill } from './types';
+import type { Answer, Card, Ex, Line, Prompt, Skill } from './types';
 import { SKILL_LABEL } from './types';
 import { shuffle } from './util';
 import { StrokeAnim, StrokePad } from './strokes';
@@ -53,12 +53,40 @@ function CardView({ card, replayKey }: { card: Card; replayKey: number }) {
   );
 }
 
+// Chat-style lines; B speaks from the right.
+function Bubbles({ lines, showEn }: { lines: Line[]; showEn?: boolean }) {
+  const { pack } = useTrainer();
+  const first = lines[0]?.who;
+  return (
+    <VStack align="stretch" gap={2} w="100%">
+      {lines.map((l, i) => {
+        const right = l.who !== first;
+        return (
+          <Flex key={i} justify={right ? 'flex-end' : 'flex-start'} gap={2} align="center">
+            {!right && <SpeakButton text={l.text} />}
+            <Box maxW="80%" px={3} py={2} borderRadius="xl"
+              bg={right ? 'var(--panel-blue-bg)' : 'var(--surface-muted)'} border="1px solid"
+              borderColor={right ? 'var(--panel-blue-border)' : 'var(--border-color)'}>
+              <Text fontSize="10px" fontWeight={700} color="var(--muted-text)">{l.who}</Text>
+              <Text fontFamily={pack.font} fontSize="lg" color="var(--heading-color)">{l.text}</Text>
+              {showEn && l.rom && <Text fontSize="xs" color="var(--muted-text)">{l.rom}</Text>}
+              {showEn && l.en && <Text fontSize="sm" color="var(--muted-text)" fontStyle="italic">{l.en}</Text>}
+            </Box>
+            {right && <SpeakButton text={l.text} />}
+          </Flex>
+        );
+      })}
+    </VStack>
+  );
+}
+
 function PromptView({ prompt, blank, status }: { prompt: Prompt; blank?: string | null; status: Status }) {
   const { pack } = useTrainer();
-  const button = prompt.audioButton ?? (prompt.glyph || prompt.text || prompt.cloze ? 'none' : 'big');
+  const button = prompt.audioButton ?? (prompt.glyph || prompt.text || prompt.cloze || prompt.bubbles ? 'none' : 'big');
   const tone = status === 'right' ? TONES.right.color : status === 'wrong' ? TONES.wrong.color : TONES.picked.color;
   return (
     <VStack gap={2} py={1}>
+      {prompt.bubbles && <Bubbles lines={prompt.bubbles} />}
       {prompt.cloze && prompt.sub && <Text fontSize="sm" color="var(--muted-text)" fontStyle="italic" textAlign="center">{prompt.sub}</Text>}
       {prompt.glyph && (
         <Text textAlign="center" fontSize={scriptSize(prompt.glyph, ['120px', '88px', '64px', '40px'])} lineHeight={1.1} fontFamily={pack.font} color="var(--heading-color)">
@@ -169,7 +197,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
     setIdx((i) => i + 1);
   };
 
-  const canContinue = !!ex && (ex.kind === 'card' || ex.kind === 'rule' || status !== 'idle');
+  const canContinue = !!ex && (ex.kind === 'card' || ex.kind === 'rule' || ex.kind === 'dialogue' || status !== 'idle');
   const canCheck = !!ex && status === 'idle' && (
     (ex.kind === 'choice' && !!selected) || (ex.kind === 'write' && typed.length > 0) || (ex.kind === 'order' && built.length === ex.tokens.length)
   );
@@ -339,7 +367,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
 
       <VStack flex={1} gap={5} px={4} py={4} align="stretch">
         <Heading size="md" color="var(--heading-color)">
-          {ex.kind === 'card' ? 'New' : ex.kind === 'rule' ? 'Grammar note' : ex.kind === 'match' ? 'Tap the matching pairs' : ex.prompt.title}
+          {ex.kind === 'card' ? 'New' : ex.kind === 'rule' ? 'Grammar note' : ex.kind === 'dialogue' ? ex.title : ex.kind === 'match' ? 'Tap the matching pairs' : ex.prompt.title}
         </Heading>
 
         {ex.kind === 'card' && <CardView card={ex.card} replayKey={idx} />}
@@ -349,6 +377,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
             <Text color="var(--heading-color)" fontFamily={pack.font} lineHeight={1.7}>{ex.text}</Text>
           </Box>
         )}
+        {ex.kind === 'dialogue' && <Bubbles lines={ex.lines} showEn />}
         {'prompt' in ex && <PromptView prompt={ex.prompt} blank={blank} status={status} />}
 
         {ex.kind === 'choice' && <Grid templateColumns="1fr 1fr" gap={3}>{ex.options.map(tile)}</Grid>}

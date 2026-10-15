@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Box, Button, Flex, Grid, Heading, HStack, Text, VStack } from '@chakra-ui/react';
 import { Flame, GraduationCap, RotateCcw, Shuffle, Star, Volume2 } from 'lucide-react';
 import { privateJsonStore } from '../../../../services/jsonstore';
-import type { Answer, Ex, LanguagePack, Progress } from './types';
-import { EMPTY_PROGRESS, confusionKey, makeCtx, topConfusions } from './util';
+import type { Answer, Ex, LanguageModule, LanguagePack, Progress } from './types';
+import { EMPTY_PROGRESS, confusionKey, dueCount, makeCtx, schedule, topConfusions } from './util';
+import { loadPack } from './load';
 import { useSpeaker } from './audio';
 import { Lesson } from './Lesson';
 import { DescribedItem, TrainerContext, UnitCard } from './widgets';
@@ -22,7 +23,19 @@ interface Running {
   quizId?: string;   // keeps the best score
 }
 
-export function LanguageTrainer({ pack }: { pack: LanguagePack }) {
+// `dir`: the pack folder under the site's uploads, e.g. 'uploads/language/korean/'.
+export function LanguageTrainer({ dir, module }: { dir: string; module: LanguageModule }) {
+  const [pack, setPack] = useState<LanguagePack | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    loadPack(dir, module).then(setPack).catch((e) => setError(String(e)));
+  }, [dir, module]);
+  if (error) return <Box p={6}><Text color="var(--panel-red-text)">Could not load the language pack: {error}</Text></Box>;
+  if (!pack) return <Box p={6}><Text color="var(--muted-text)">Loading…</Text></Box>;
+  return <TrainerView pack={pack} />;
+}
+
+function TrainerView({ pack }: { pack: LanguagePack }) {
   const speaker = useSpeaker(pack.audio, `${pack.storage.local}.pack`);
   const [progress, setProgress] = useState<Progress>(EMPTY_PROGRESS);
   const [view, setView] = useState<'learn' | 'reference'>('learn');
@@ -74,6 +87,7 @@ export function LanguageTrainer({ pack }: { pack: LanguagePack }) {
     const right = answers.filter((a) => a.ok).length;
     const next: Progress = {
       stats,
+      srs: schedule(progress.srs, answers),
       confusions,
       lessons: r.unitId ? { ...progress.lessons, [r.unitId]: (progress.lessons[r.unitId] || 0) + 1 } : progress.lessons,
       xp: progress.xp + 10 + right,
@@ -90,6 +104,7 @@ export function LanguageTrainer({ pack }: { pack: LanguagePack }) {
   };
 
   const confusedPairs = topConfusions(progress, (k) => level.owns(k) && !!pack.describe(k));
+  const due = dueCount(progress, level.owns);
   const Reference = level.reference?.Component;
 
   return (
@@ -185,8 +200,13 @@ export function LanguageTrainer({ pack }: { pack: LanguagePack }) {
 
                   {level.review && level.review.available(ctx) && (
                     <Flex p={3} gap={3} align="center" borderRadius="lg" bg="var(--surface-muted)" border="1px solid" borderColor="var(--border-color)">
-                      <Text flex={1} fontSize="sm" color="var(--muted-text)">{level.review.blurb}</Text>
-                      <Button size="sm" colorPalette="purple" onClick={() => run({ title: 'Review', exercises: level.review!.build(ctx) })}>
+                      <Box flex={1}>
+                        <Text fontSize="sm" fontWeight={600} color={due ? 'var(--panel-purple-text)' : 'var(--muted-text)'}>
+                          {due ? `${due} due for review` : 'Nothing due right now'}
+                        </Text>
+                        <Text fontSize="sm" color="var(--muted-text)">{level.review.blurb}</Text>
+                      </Box>
+                      <Button size="sm" colorPalette="purple" variant={due ? 'solid' : 'outline'} onClick={() => run({ title: 'Review', exercises: level.review!.build(ctx) })}>
                         <RotateCcw size={14} /> Review
                       </Button>
                     </Flex>

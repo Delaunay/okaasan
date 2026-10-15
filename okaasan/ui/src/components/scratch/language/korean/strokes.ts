@@ -1,57 +1,13 @@
-// Stroke data for Hangul letters, hand-drawn in a 100x100 box. It is only
-// used to check the order and direction of strokes, not to match a font.
-import { ln, ring, Pt, Stroke } from '../engine/strokes';
+// Stroke order per letter (data/strokes.json): polylines in a 100x100 box,
+// in writing order, used to check order and direction, not to match a font.
+import type { Stroke } from '../engine/strokes';
 
-// Two narrow copies side by side: ㄱ -> ㄲ.
-const pair = (s: Stroke[]): Stroke[] =>
-  [2, 50].flatMap((off) => s.map((st) => st.map(([x, y]) => [off + x * 0.48, y] as Pt)));
+export let STROKES: Record<string, Stroke[]> = {};
+export let ALT_STROKES: Record<string, Stroke[]> = {};  // other accepted orders
 
-export const STROKES: Record<string, Stroke[]> = {
-  'ㄱ': [ln(22, 25, 76, 25, 74, 55, 66, 80)],
-  'ㄴ': [ln(26, 20, 26, 76, 80, 76)],
-  'ㄷ': [ln(24, 24, 76, 24), ln(24, 24, 24, 76, 80, 76)],
-  'ㄹ': [ln(24, 20, 74, 20, 74, 48), ln(24, 48, 74, 48), ln(24, 48, 24, 78, 78, 78)],
-  'ㅁ': [ln(26, 22, 26, 78), ln(26, 22, 74, 22, 74, 78), ln(26, 78, 74, 78)],
-  'ㅂ': [ln(28, 18, 28, 80), ln(72, 18, 72, 80), ln(28, 48, 72, 48), ln(28, 80, 72, 80)],
-  'ㅅ': [ln(52, 18, 42, 50, 20, 80), ln(46, 46, 80, 80)],
-  'ㅇ': [ring(50, 50, 28)],
-  'ㅈ': [ln(22, 24, 74, 24, 52, 52, 22, 80), ln(50, 52, 80, 80)],
-  'ㅊ': [ln(50, 8, 50, 20), ln(22, 30, 74, 30, 52, 56, 22, 82), ln(50, 56, 80, 82)],
-  'ㅋ': [ln(22, 22, 76, 22, 74, 55, 66, 80), ln(22, 50, 74, 50)],
-  'ㅌ': [ln(24, 20, 76, 20), ln(24, 48, 76, 48), ln(24, 20, 24, 78, 80, 78)],
-  'ㅍ': [ln(20, 22, 80, 22), ln(38, 22, 36, 76), ln(62, 22, 64, 76), ln(16, 78, 84, 78)],
-  'ㅎ': [ln(50, 8, 50, 20), ln(22, 30, 78, 30), ring(50, 62, 20)],
+export function initStrokes(d: { strokes: Record<string, Stroke[]>; alt: Record<string, Stroke[]> }) {
+  STROKES = d.strokes;
+  ALT_STROKES = d.alt;
+}
 
-  'ㅏ': [ln(44, 10, 44, 90), ln(44, 48, 72, 48)],
-  'ㅑ': [ln(42, 10, 42, 90), ln(42, 36, 70, 36), ln(42, 60, 70, 60)],
-  'ㅓ': [ln(28, 48, 56, 48), ln(56, 10, 56, 90)],
-  'ㅕ': [ln(28, 36, 58, 36), ln(28, 60, 58, 60), ln(58, 10, 58, 90)],
-  'ㅗ': [ln(50, 36, 50, 64), ln(12, 64, 88, 64)],
-  'ㅛ': [ln(38, 36, 38, 64), ln(62, 36, 62, 64), ln(12, 64, 88, 64)],
-  'ㅜ': [ln(12, 38, 88, 38), ln(50, 38, 50, 72)],
-  'ㅠ': [ln(12, 38, 88, 38), ln(38, 38, 38, 72), ln(62, 38, 62, 72)],
-  'ㅡ': [ln(12, 50, 88, 50)],
-  'ㅣ': [ln(50, 10, 50, 90)],
-  'ㅐ': [ln(34, 10, 34, 90), ln(34, 48, 60, 48), ln(66, 10, 66, 90)],
-  'ㅒ': [ln(32, 10, 32, 90), ln(32, 36, 58, 36), ln(32, 60, 58, 60), ln(66, 10, 66, 90)],
-  'ㅔ': [ln(22, 48, 46, 48), ln(46, 10, 46, 90), ln(70, 10, 70, 90)],
-  'ㅖ': [ln(20, 36, 46, 36), ln(20, 60, 46, 60), ln(46, 10, 46, 90), ln(70, 10, 70, 90)],
-  'ㅘ': [ln(32, 42, 32, 66), ln(8, 66, 58, 66), ln(70, 8, 70, 92), ln(70, 46, 90, 46)],
-  'ㅙ': [ln(26, 42, 26, 66), ln(6, 66, 48, 66), ln(58, 8, 58, 92), ln(58, 46, 74, 46), ln(82, 8, 82, 92)],
-  'ㅚ': [ln(34, 42, 34, 66), ln(8, 66, 62, 66), ln(76, 8, 76, 92)],
-  'ㅝ': [ln(8, 40, 60, 40), ln(32, 40, 32, 74), ln(46, 56, 68, 56), ln(68, 8, 68, 92)],
-  'ㅞ': [ln(6, 40, 50, 40), ln(28, 40, 28, 74), ln(40, 56, 58, 56), ln(58, 8, 58, 92), ln(82, 8, 82, 92)],
-  'ㅟ': [ln(8, 40, 62, 40), ln(35, 40, 35, 74), ln(76, 8, 76, 92)],
-  'ㅢ': [ln(8, 60, 62, 60), ln(76, 8, 76, 92)],
-};
-STROKES['ㄲ'] = pair(STROKES['ㄱ']);
-STROKES['ㄸ'] = pair(STROKES['ㄷ']);
-STROKES['ㅃ'] = pair(STROKES['ㅂ']);
-STROKES['ㅆ'] = pair(STROKES['ㅅ']);
-STROKES['ㅉ'] = pair(STROKES['ㅈ']);
-
-// Some schools teach ㅈ/ㅊ with a separate top bar; accept both.
-export const ALT_STROKES: Record<string, Stroke[]> = {
-  'ㅈ': [ln(22, 22, 78, 22), ln(52, 22, 42, 52, 20, 80), ln(46, 50, 80, 80)],
-  'ㅊ': [ln(50, 8, 50, 20), ln(22, 30, 78, 30), ln(52, 30, 42, 58, 20, 82), ln(46, 56, 80, 82)],
-};
+export const strokeVariants = (ch: string): Stroke[][] => [STROKES[ch], ...(ALT_STROKES[ch] ? [ALT_STROKES[ch]] : [])];

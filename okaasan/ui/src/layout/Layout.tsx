@@ -289,6 +289,7 @@ const getStaticSidebarSections = () => [
       { name: 'Blog Plan', href: '/scratch/blog-plan' },
       { name: 'Climate Map', href: '/scratch/climate-map' },
       { name: 'Crew Sleep', href: '/scratch/crew-sleep' },
+      { name: 'Hangul', href: '/scratch/korean' },
     ]
   },
   {

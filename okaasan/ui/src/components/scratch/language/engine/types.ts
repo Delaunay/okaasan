@@ -69,6 +69,7 @@ export interface Feedback {
   head: string;         // in the target script, shown bold
   detail?: string;
   note?: string;
+  sentence?: Example;   // shown word by word instead of head and detail when glossed
 }
 
 export interface Card {
@@ -76,7 +77,34 @@ export interface Card {
   audio?: string;
   strokes?: Stroke[];   // stroke-order animation
   lines: { text: string; tone?: 'title' | 'body' | 'small' }[];
-  example?: { text: string; rom?: string; en: string };
+  example?: Example;
+}
+
+export interface Example {
+  text: string;
+  rom?: string;
+  en: string;
+}
+
+// Word-by-word analysis of sentences (data/gloss.json, optional): each
+// sentence is split into segments tagged with a part of speech, so the
+// sentence, its literal translation (in the target language's word order)
+// and its translation can be coloured the same way.
+export interface GlossPos {
+  label: string;
+  color: string;        // blue, green, orange, purple, red, teal or muted
+  tag?: boolean;        // grammatical piece (particle, ending): shown as a small tag
+}
+
+// [text, pos, literal meaning, matching words of the translation]
+// text starting with '-' is attached to the previous segment (no space);
+// literal left out (null) on a tag = the pos label; translation left out =
+// the literal without its parentheses, '' = no counterpart.
+export type GlossSeg = [string, string, (string | null)?, string?];
+
+export interface Glosses {
+  pos: Record<string, GlossPos>;
+  sentences: Record<string, GlossSeg[]>;
 }
 
 export interface MatchPair {
@@ -190,6 +218,7 @@ export interface LanguagePack {
   // Exercises that put the given keys against each other.
   drill?(keys: string[], ctx: Ctx): Ex[];
   lessonsPerUnit?: number;
+  gloss?: Glosses;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +234,7 @@ export interface PackManifest {
   audio: { dir: string; preview: string };
   storage: { collection: string; key: string; local: string };
   keyboard: string;                      // path of { rows, map, hint }
-  data: Record<string, string>;          // key -> path of a JSON file
+  data: Record<string, string>;          // key -> path of a JSON file; 'gloss' is read by the engine
   levels: { id: string; title: string; module?: string; type?: 'dialogue' | 'items'; data?: string }[];
 }
 

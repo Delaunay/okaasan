@@ -60,6 +60,7 @@ export interface GrammarData {
 }
 
 export let SENTENCE_BY: Record<string, Sentence> = {};
+export let GRAMMAR_SENTENCES: Sentence[] = [];   // the grammar guide's own examples
 export let PARTICLES: Record<string, ParticleInfo> = {};
 export let CLOZES: Cloze[] = [];
 export let CLOZE_BY: Record<string, Cloze> = {};
@@ -104,6 +105,7 @@ export function initGrammar(d: GrammarData) {
   }
   for (const sn of d.sentences) { sentences.push([sn.ko, sn]); unitOf[sn.ko] = 'grammar'; }
   SENTENCE_BY = Object.fromEntries(sentences);
+  GRAMMAR_SENTENCES = d.sentences;
 
   PARTICLES = d.particles;
   CLOZES = d.cloze.flatMap(parseCloze);

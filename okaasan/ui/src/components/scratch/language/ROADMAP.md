@@ -26,6 +26,11 @@ Intermediate → Intermediate High.
 | 5 Numbers | Sino/native, 만/억, money, hours, minutes, counters, phone numbers | korean-numbers |
 | 6 Frequent words | 230 most frequent subtitle words | FrequencyWords ko_50k |
 
+Every example sentence and dialogue line is glossed (`data/gloss.json`): parts
+coloured by part of speech, a word-for-word line in Korean order, and the
+translation coloured the same way. Shown on word cards, dialogues, answer
+feedback and the reference pages. New sentences need a gloss entry to get it.
+
 ## Next: Beginner gaps (the guide's level 1 checklist)
 
 1. **Question words**: 뭐, 어디, 언제, 왜, 누구, 몇, 얼마 as a grammar unit with

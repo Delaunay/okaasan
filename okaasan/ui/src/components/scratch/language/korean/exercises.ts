@@ -352,7 +352,7 @@ export function grammarEx(id: string, ctx: Ctx, recall = false): Ex {
       kind: 'choice', id, skill: 'grammar', answer: particleKey(c.particle), audioAfter: c.sentence.ko,
       prompt: { title: 'Fill in the particle', sub: c.sentence.en, cloze: { before: c.before, after: c.after } },
       options: choices.map((p) => ({ key: particleKey(p), label: p, script: true })),
-      feedback: { head: c.sentence.ko, detail: c.sentence.en, note: particleReason(c.particle, c.before) },
+      feedback: { head: c.sentence.ko, detail: c.sentence.en, note: particleReason(c.particle, c.before), sentence: { text: c.sentence.ko, rom: c.sentence.rom, en: c.sentence.en } },
     };
   }
   if (id.startsWith('c:')) {
@@ -370,7 +370,7 @@ export function grammarEx(id: string, ctx: Ctx, recall = false): Ex {
   }
   const ko = id.slice(2);
   const sn = SENTENCE_BY[ko];
-  const feedback: Feedback = { head: ko, detail: sn.en, note: sn.rom };
+  const feedback: Feedback = { head: ko, detail: sn.en, note: sn.rom, sentence: { text: ko, rom: sn.rom, en: sn.en } };
   if (ctx.canListen && ko.split(' ').length <= 4 && Math.random() < 0.25) {
     return { kind: 'write', id, skill: 'write', feedback, accept: [ko], prompt: { title: 'Write the sentence you hear', audio: ko, autoplay: true } };
   }

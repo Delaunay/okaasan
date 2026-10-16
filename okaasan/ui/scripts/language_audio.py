@@ -80,14 +80,21 @@ def download(root, pack, pid):
     print(f"{pid}: {len(list(folder.glob('*.mp3')))} clips")
 
 
+# The first pack is the page's default and missing clips fall back down the
+# list: real recordings first, then the generated voices, and last the packs
+# whose letter clips say the letter's name (only right when chosen).
 def write_manifest(root, pack):
     audio = root / pack["audio"]["dir"]
-    packs = [{"id": s["id"], "label": s["label"]} for s in pack.get("tts", []) if (audio / s["id"]).is_dir()]
+    recorded, names = [], []
     for pid in pack.get("downloads", []):
         if (audio / pid).is_dir():
             src = json.loads((audio / f"{pid}.sources.json").read_text())
-            packs.append({"id": pid, "label": src["label"], **({"names": True} if src.get("names") else {})})
-    (audio / "packs.json").write_text(json.dumps(packs, indent=2, ensure_ascii=False) + "\n")
+            if src.get("names"):
+                names.append({"id": pid, "label": src["label"], "names": True})
+            else:
+                recorded.append({"id": pid, "label": src["label"]})
+    tts = [{"id": s["id"], "label": s["label"]} for s in pack.get("tts", []) if (audio / s["id"]).is_dir()]
+    (audio / "packs.json").write_text(json.dumps(recorded + tts + names, indent=2, ensure_ascii=False) + "\n")
 
 
 async def main(args):

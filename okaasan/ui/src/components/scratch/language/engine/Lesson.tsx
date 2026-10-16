@@ -8,6 +8,7 @@ import type { Answer, Card, Ex, Line, Prompt, Skill } from './types';
 import { SKILL_LABEL } from './types';
 import { shuffle } from './util';
 import { StrokeAnim, StrokePad } from './strokes';
+import { Sentence } from './gloss';
 import { DescribedItem, MatchBoard, OrderBox, SpeakButton, Status, WriteBox, scriptSize, useTrainer } from './widgets';
 
 const TONES = {
@@ -41,11 +42,7 @@ function CardView({ card, replayKey }: { card: Card; replayKey: number }) {
         {card.example && (
           <HStack gap={3} p={3} borderRadius="lg" bg="var(--surface-muted)" border="1px solid" borderColor="var(--border-color)" align="start" w="100%">
             <SpeakButton text={card.example.text} />
-            <VStack align="start" gap={0}>
-              <Text fontFamily={pack.font} fontSize="md" color="var(--heading-color)">{card.example.text}</Text>
-              {card.example.rom && <Text fontSize="xs" color="var(--muted-text)">{card.example.rom}</Text>}
-              <Text fontSize="sm" color="var(--muted-text)" fontStyle="italic">{card.example.en}</Text>
-            </VStack>
+            <Sentence ex={card.example} />
           </HStack>
         )}
       </VStack>
@@ -68,9 +65,9 @@ function Bubbles({ lines, showEn }: { lines: Line[]; showEn?: boolean }) {
               bg={right ? 'var(--panel-blue-bg)' : 'var(--surface-muted)'} border="1px solid"
               borderColor={right ? 'var(--panel-blue-border)' : 'var(--border-color)'}>
               <Text fontSize="10px" fontWeight={700} color="var(--muted-text)">{l.who}</Text>
-              <Text fontFamily={pack.font} fontSize="lg" color="var(--heading-color)">{l.text}</Text>
-              {showEn && l.rom && <Text fontSize="xs" color="var(--muted-text)">{l.rom}</Text>}
-              {showEn && l.en && <Text fontSize="sm" color="var(--muted-text)" fontStyle="italic">{l.en}</Text>}
+              {showEn && l.en
+                ? <Sentence ex={{ text: l.text, rom: l.rom, en: l.en }} size="lg" />
+                : <Text fontFamily={pack.font} fontSize="lg" color="var(--heading-color)">{l.text}</Text>}
             </Box>
             {right && <SpeakButton text={l.text} />}
           </Flex>
@@ -340,13 +337,14 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
     }
     if (!graded(ex) || !('feedback' in ex)) return null;
     const f = ex.feedback;
+    const glossed = f.sentence && pack.gloss?.sentences[f.sentence.text];
     return (
       <>
         {ex.kind === 'write' && status === 'wrong' && typed.length > 0 && (
           <>You wrote <b style={{ fontFamily: pack.font }}>{pack.keyboard.compose(typed)}</b>. </>
         )}
-        <b style={{ fontFamily: pack.font }}>{f.head}</b>{f.detail && <> · {f.detail}</>}
-        {f.note && <Text as="span" display="block" fontSize="xs" color="var(--muted-text)" mt={1}>{f.note}</Text>}
+        {glossed ? <Sentence ex={f.sentence!} size="sm" /> : <><b style={{ fontFamily: pack.font }}>{f.head}</b>{f.detail && <> · {f.detail}</>}</>}
+        {f.note && !(glossed && f.note === f.sentence!.rom) && <Text as="span" display="block" fontSize="xs" color="var(--muted-text)" mt={1}>{f.note}</Text>}
       </>
     );
   };
@@ -423,7 +421,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
                   {status === 'right' ? <Check size={20} /> : <X size={20} />}
                   <Text fontWeight={700}>{status === 'right' ? 'Correct!' : ex.kind === 'match' ? 'Almost!' : 'Correct answer:'}</Text>
                 </HStack>
-                <Text fontSize="sm" color="var(--heading-color)">{feedback()}</Text>
+                <Box fontSize="sm" color="var(--heading-color)">{feedback()}</Box>
               </>
             )}
           </Box>

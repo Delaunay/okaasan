@@ -10,6 +10,7 @@ import { Box, Grid, HStack, Text, VStack } from '@chakra-ui/react';
 import type { Ctx, Described, Ex, Feedback, LevelDef, Line, Option, Skill, UnitDef } from './types';
 import { pickDistractors, pickWeighted, shuffle } from './util';
 import { SpeakButton, masteryTone, useTrainer } from './widgets';
+import { GlossLegend, Sentence } from './gloss';
 
 const LESSON_SIZE = 12;
 const MATCH_MAX = 8;
@@ -184,7 +185,7 @@ const asLine = (l: DialogueLine): Line => ({ who: l.who, text: l.ko, rom: l.rom,
 function lineEx(id: string, ctx: Ctx, skill?: Skill): Ex {
   const l = registry.lines[id];
   const allIds = Object.keys(registry.lines);
-  const feedback: Feedback = { head: l.ko, detail: l.en, note: l.rom };
+  const feedback: Feedback = { head: l.ko, detail: l.en, note: l.rom, sentence: { text: l.ko, rom: l.rom, en: l.en } };
   const confused = ctx.confusedWith(id).filter((k) => registry.lines[k]).slice(0, 1);
   const tokens = l.ko.split(' ');
   const kinds: [string, number][] = [
@@ -244,9 +245,9 @@ function dialogueQuiz(units: DialogueUnit[], ctx: Ctx): Ex[] {
 
 function DialoguesReference({ units }: { units: DialogueUnit[] }) {
   return function Reference() {
-    const { pack } = useTrainer();
     return (
       <VStack align="stretch" gap={5}>
+        <GlossLegend />
         {units.map((u) => (
           <Box key={u.id}>
             <Text fontWeight={700} color="var(--heading-color)" mb={2}>{u.title}</Text>
@@ -255,11 +256,7 @@ function DialoguesReference({ units }: { units: DialogueUnit[] }) {
                 <HStack key={i} gap={3} align="start">
                   <SpeakButton text={l.ko} />
                   <Text fontWeight={700} color="var(--muted-text)" minW="16px">{l.who}</Text>
-                  <VStack align="start" gap={0}>
-                    <Text fontFamily={pack.font} color="var(--heading-color)">{l.ko}</Text>
-                    {l.rom && <Text fontSize="xs" color="var(--muted-text)">{l.rom}</Text>}
-                    <Text fontSize="sm" color="var(--muted-text)" fontStyle="italic">{l.en}</Text>
-                  </VStack>
+                  <Sentence ex={{ text: l.ko, rom: l.rom, en: l.en }} />
                 </HStack>
               ))}
             </VStack>

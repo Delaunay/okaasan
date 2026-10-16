@@ -9,10 +9,11 @@ import { RotateCcw } from 'lucide-react';
 import type { Ctx, Described, LanguageModule, LevelDef } from '../engine/types';
 import { StrokeAnim, StrokePad } from '../engine/strokes';
 import { SpeakButton, masteryTone, useTrainer } from '../engine/widgets';
+import { GlossLegend, Sentence } from '../engine/gloss';
 import { GROUPS, JAMO, JAMO_BY, LETTER_NAMES, UNITS, WORD_BY, WORDS_UNIT, initAlphabet, soundOf } from './alphabet';
 import { STROKES, initStrokes, strokeVariants } from './strokes';
 import { VOCAB, VOCAB_BY, VOCAB_REVIEW, VOCAB_UNITS, initVocab, normalize, vkey } from './vocab';
-import { CLOZE_BY, CONJ_BY, CONJ_RULES, CONJ_UNITS, GRAMMAR_UNITS, PARTICLES, RULES, SENTENCE_BY, initGrammar, parseFormId } from './grammar';
+import { CLOZE_BY, CONJ_BY, CONJ_RULES, CONJ_UNITS, GRAMMAR_SENTENCES, GRAMMAR_UNITS, PARTICLES, RULES, SENTENCE_BY, initGrammar, parseFormId } from './grammar';
 import { FORMS_BY } from './tenses';
 import { composeKeys } from './hangul';
 import {
@@ -96,6 +97,7 @@ function WordList({ ctx }: { ctx: Ctx }) {
   const { pack, speak } = useTrainer();
   return (
     <VStack align="stretch" gap={5}>
+      <GlossLegend />
       {VOCAB_UNITS.map((u) => (
         <Box key={u.id}>
           <Text fontSize="xs" fontWeight={700} textTransform="uppercase" letterSpacing="wider" color="var(--muted-text)" mb={2}>{u.title}</Text>
@@ -112,10 +114,10 @@ function WordList({ ctx }: { ctx: Ctx }) {
                     </VStack>
                   </HStack>
                   {w.ex && (
-                    <Box as="button" onClick={() => speak(w.ex!.ko)} textAlign="left" mt={1}>
-                      <Text fontSize="xs" fontFamily={pack.font} color="var(--muted-text)">{w.ex.ko}</Text>
-                      <Text fontSize="xs" color="var(--muted-text)" fontStyle="italic">{w.ex.en}</Text>
-                    </Box>
+                    <HStack gap={2} mt={1} align="start">
+                      <SpeakButton text={w.ex.ko} />
+                      <Sentence ex={{ text: w.ex.ko, en: w.ex.en }} size="sm" />
+                    </HStack>
                   )}
                 </Box>
               );
@@ -132,6 +134,18 @@ function GrammarNotes() {
   const rules = RULES;
   return (
     <VStack align="stretch" gap={4}>
+      <Box>
+        <Text fontSize="xs" fontWeight={700} textTransform="uppercase" letterSpacing="wider" color="var(--muted-text)" mb={2}>Sentence patterns</Text>
+        <GlossLegend />
+        <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={2} mt={2}>
+          {GRAMMAR_SENTENCES.map((sn) => (
+            <HStack key={sn.ko} gap={2} p={2} align="start" borderRadius="lg" border="1px solid" borderColor="var(--border-color)" bg="var(--card-bg)">
+              <SpeakButton text={sn.ko} />
+              <Sentence ex={{ text: sn.ko, rom: sn.rom, en: sn.en }} />
+            </HStack>
+          ))}
+        </Grid>
+      </Box>
       {rules.map((r) => (
         <Box key={r.title} p={4} borderRadius="lg" bg="var(--surface-muted)" border="1px solid" borderColor="var(--border-color)">
           <Text fontWeight={700} color="var(--heading-color)" mb={1}>{r.title}</Text>

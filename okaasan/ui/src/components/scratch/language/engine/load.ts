@@ -43,6 +43,7 @@ export async function loadPack(dir: string, module: LanguageModule): Promise<Lan
     keyboard: { ...keyboard, compose: module.compose ?? ((k) => k.join('')) },
     normalize: module.normalize ?? defaultNormalize,
     levels,
+    gloss: data.gloss as LanguagePack['gloss'],
     describe: (k) => module.describe?.(k) ?? describeGeneric(k),
     drill: (keys, ctx) => shuffle([...(module.drill?.(keys, ctx) ?? []), ...drillGeneric(keys, ctx)]).slice(0, 24),
   };

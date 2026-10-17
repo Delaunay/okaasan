@@ -485,7 +485,6 @@ def create_app() -> FastAPI:
         {"title": "Socials",               "href": "/socials",             "items": ["Overview", "Instagram", "Facebook", "LinkedIn"]},
         {"title": "Notes",                 "href": "/content"},
         {"title": "Units",                 "href": "/units",               "items": ["Unit Conversions", "Unit Manager"]},
-        {"title": "Expense Tracker",       "href": "/expense-tracker",     "items": ["Entries", "Summary", "Tax Summary", "Types", "From", "Bank", "Details"]},
         {"title": "Scratch",               "href": "/scratch",             "items": ["Mortgage Planner", "Code Visualization", "Article Blocks", "Filament Math", "Wood Planner", "Brainstorm", "Print Cost", "Resource Cycle", "Crew Sleep"]},
     ]
 
@@ -596,7 +595,7 @@ def create_app() -> FastAPI:
     _DEFAULT_STATIC_HIDDEN = [
         "Downloads", "Feed", "World News", "Socials",
         "Planning", "Inventory & Shopping", "Home Management",
-        "Health", "Investing", "Expense Tracker",
+        "Health", "Investing",
     ]
 
     @app.get("/sidebar")

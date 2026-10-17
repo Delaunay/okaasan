@@ -1,4 +1,4 @@
-import { HashRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import {
   ChakraProvider,
   createSystem,
@@ -26,7 +26,6 @@ import WeeklyPrep from './components/meal-planning/WeeklyPrep';
 import GroceryReceipts from './components/inventory/GroceryReceipts';
 import Pantry from './components/inventory/Pantry';
 import Budget from './components/budget/Budget';
-import BudgetSheet from './components/budget/BudgetSheet';
 import Settings from './components/settings/Settings';
 import GitSettings from './components/settings/GitSettings';
 import UpdateSettings from './components/settings/UpdateSettings';
@@ -128,16 +127,8 @@ import MoneyCycle from './components/scratch/MoneyCycle';
 import BlogPlan from './components/scratch/BlogPlan';
 import ClimateMap from './components/scratch/ClimateMap';
 import CrewSleep from './components/scratch/CrewSleep';
-import KoreanAlphabet from './components/scratch/KoreanAlphabet';
-import { BudgetProvider } from './services/BudgetContext';
 import { Toaster } from './components/ui/toaster';
 import './App.css';
-
-function ExpenseTrackerRedirect() {
-  const { tab } = useParams<{ tab: string }>();
-  const year = localStorage.getItem('expense-tracker-year') || String(new Date().getFullYear());
-  return <Navigate to={`/expense-tracker/${year}/${tab || 'entries'}`} replace />;
-}
 
 const system = createSystem(defaultConfig);
 
@@ -205,9 +196,6 @@ function MainApp() {
         <Route path="/settings/library" element={isStaticMode() ? <Navigate to="/settings" replace /> : <LibrarySettings />} />
         <Route path="/api-tester" element={isStaticMode() ? <Navigate to="/settings" replace /> : <ApiTester />} />
         <Route path="/article" element={<ArticleView />} />
-        {/* Expense Tracker */}
-        <Route path="/expense-tracker/:tab" element={<ExpenseTrackerRedirect />} />
-        <Route path="/expense-tracker/:year/:tab" element={<BudgetProvider><BudgetSheet /></BudgetProvider>} />
 
         {/* Health */}
         <Route path="/health/dashboard" element={<HealthDashboard />} />
@@ -327,7 +315,6 @@ function MainApp() {
         <Route path="/scratch/climate-map/:deck" element={<ClimateMap />} />
         <Route path="/scratch/crew-sleep" element={<CrewSleep />} />
         <Route path="/scratch/crew-sleep/:profile" element={<CrewSleep />} />
-        <Route path="/scratch/korean" element={<KoreanAlphabet />} />
 
         {/* Test pages */}
         <Route path="/scratch/article-blocks" element={<ArticleTestPage />} />

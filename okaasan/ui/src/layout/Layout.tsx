@@ -258,20 +258,6 @@ const getStaticSidebarSections = () => [
     fetch: getArticles
   },
   {
-    title: 'Expense Tracker',
-    href: '/expense-tracker',
-    isSelected: (location: Location) => location.pathname.startsWith('/expense-tracker'),
-    items: [
-      { name: 'Entries', href: '/expense-tracker/entries' },
-      { name: 'Summary', href: '/expense-tracker/summary' },
-      { name: 'Tax Summary', href: '/expense-tracker/tax' },
-      { name: 'Types', href: '/expense-tracker/types' },
-      { name: 'From', href: '/expense-tracker/from' },
-      { name: 'Bank', href: '/expense-tracker/bank' },
-      { name: 'Details', href: '/expense-tracker/details' },
-    ]
-  },
-  {
     title: 'Scratch',
     href: '/scratch',
     items: [
@@ -289,7 +275,6 @@ const getStaticSidebarSections = () => [
       { name: 'Blog Plan', href: '/scratch/blog-plan' },
       { name: 'Climate Map', href: '/scratch/climate-map' },
       { name: 'Crew Sleep', href: '/scratch/crew-sleep' },
-      { name: 'Hangul', href: '/scratch/korean' },
     ]
   },
   {

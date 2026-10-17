@@ -1,12 +1,12 @@
 // Runs a list of exercises: lessons re-ask what was missed at the end, quizzes
 // (exam) do not and end with a per-skill summary. Wrong picks are reported as
 // confusions between the expected key and the one taken for it.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Flex, Grid, Heading, HStack, Text, VStack } from '@chakra-ui/react';
 import { BookOpen, Check, GraduationCap, Star, X } from 'lucide-react';
 import type { Answer, Card, Ex, Line, Prompt, Skill } from './types';
 import { SKILL_LABEL } from './types';
-import { shuffle } from './util';
+import { dayStr, shuffle } from './util';
 import { StrokeAnim, StrokePad } from './strokes';
 import { Sentence } from './gloss';
 import { DescribedItem, MatchBoard, OrderBox, SpeakButton, Status, WriteBox, scriptSize, useTrainer } from './widgets';
@@ -111,14 +111,45 @@ function PromptView({ prompt, blank, status }: { prompt: Prompt; blank?: string 
   );
 }
 
+// Study time, counted second by second while the lesson is running, the page
+// is visible and in use: a minute without a key press, click or scroll pauses
+// it. Seconds are kept per day, for a lesson that runs past midnight.
+const IDLE_MS = 60_000;
+
+function useStudyClock(running: boolean) {
+  const spent = useRef<Record<string, number>>({});
+  const [seconds, setSeconds] = useState(0);
+  const on = useRef(running);
+  on.current = running;
+  useEffect(() => {
+    let last = Date.now();
+    const poke = () => { last = Date.now(); };
+    const events = ['keydown', 'pointerdown', 'wheel'] as const;
+    events.forEach((e) => window.addEventListener(e, poke, { passive: true }));
+    const timer = setInterval(() => {
+      if (!on.current || document.hidden || Date.now() - last > IDLE_MS) return;
+      const d = dayStr(new Date());
+      spent.current[d] = (spent.current[d] || 0) + 1;
+      setSeconds((n) => n + 1);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      events.forEach((e) => window.removeEventListener(e, poke));
+    };
+  }, []);
+  return { spent: spent.current, seconds };
+}
+
+const clockText = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
 const graded = (e: Ex) => e.kind === 'choice' || e.kind === 'write' || e.kind === 'order' || e.kind === 'draw';
 
 export function Lesson({ title, exercises, exam, onExit, onFinish }: {
   title: string;
   exercises: Ex[];
   exam?: boolean;
-  onExit: () => void;
-  onFinish: (answers: Answer[], confusions: [string, string][]) => void;
+  onExit: (spent: Record<string, number>) => void;
+  onFinish: (answers: Answer[], confusions: [string, string][], spent: Record<string, number>) => void;
 }) {
   const { pack, speak } = useTrainer();
   const [queue, setQueue] = useState<Ex[]>(exercises);
@@ -131,6 +162,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
   const [built, setBuilt] = useState<number[]>([]);
   const [matchMissed, setMatchMissed] = useState<string[]>([]);
   const ex = queue[idx] as Ex | undefined;
+  const clock = useStudyClock(!!ex);
 
   const tokens = ex?.kind === 'order' ? ex.tokens : null;
   // Shuffled chips, never in the answer's order.
@@ -153,7 +185,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
 
   const record = (ok: boolean, e: Ex, takenFor?: string) => {
     if (status !== 'idle' || !('id' in e)) return;
-    setAnswers((a) => [...a, { key: e.id, ok, skill: e.skill }]);
+    setAnswers((a) => [...a, { key: e.id, ok, skill: e.skill, option: e.kind === 'choice' && e.answer !== e.id ? e.answer : undefined }]);
     if (takenFor && e.kind === 'choice') setConfusions((c) => [...c, [e.answer, takenFor]]);
     setStatus(ok ? 'right' : 'wrong');
     if (!ok && !exam) {
@@ -240,7 +272,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
         <Text fontSize="5xl" fontWeight={700} color={pct >= 80 ? 'var(--panel-green-text)' : pct >= 50 ? 'var(--panel-orange-text)' : 'var(--panel-red-text)'}>
           {right}/{answers.length}
         </Text>
-        <Text color="var(--muted-text)">{pct}% correct</Text>
+        <Text color="var(--muted-text)">{pct}% correct in {clockText(clock.seconds)}</Text>
         <HStack gap={3} wrap="wrap" justify="center">
           {bySkill.map(({ sk, n, ok }) => (
             <VStack key={sk} gap={0} px={4} py={2} borderRadius="lg" border="1px solid" borderColor="var(--border-color)" bg="var(--surface-muted)">
@@ -264,7 +296,7 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
         ) : (
           <Text color="var(--panel-green-text)" fontWeight={600}>Perfect, no mistakes.</Text>
         )}
-        <Button colorPalette="purple" size="lg" onClick={() => onFinish(answers, confusions)}>Done</Button>
+        <Button colorPalette="purple" size="lg" onClick={() => onFinish(answers, confusions, clock.spent)}>Done</Button>
       </VStack>
     );
   }
@@ -282,8 +314,9 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
             <Text fontSize="2xl" fontWeight={700} color="var(--panel-green-text)">{answers.length ? Math.round((Math.min(right, firstTry) / Math.max(firstTry, 1)) * 100) : 100}%</Text>
             <Text fontSize="xs" color="var(--muted-text)">accuracy</Text>
           </VStack>
+          <VStack gap={0}><Text fontSize="2xl" fontWeight={700} color="var(--panel-blue-text)">{clockText(clock.seconds)}</Text><Text fontSize="xs" color="var(--muted-text)">time</Text></VStack>
         </HStack>
-        <Button colorPalette="green" size="lg" onClick={() => onFinish(answers, confusions)}>Continue</Button>
+        <Button colorPalette="green" size="lg" onClick={() => onFinish(answers, confusions, clock.spent)}>Continue</Button>
       </VStack>
     );
   }
@@ -356,11 +389,12 @@ export function Lesson({ title, exercises, exam, onExit, onFinish }: {
   return (
     <Flex direction="column" minH="100%" maxW="640px" mx="auto" w="100%">
       <HStack px={4} py={3} gap={3}>
-        <Box as="button" onClick={onExit} color="var(--muted-text)" title="Quit lesson"><X size={22} /></Box>
+        <Box as="button" onClick={() => onExit(clock.spent)} color="var(--muted-text)" title="Quit lesson"><X size={22} /></Box>
         <Box flex={1} h="14px" bg="var(--surface-muted)" borderRadius="full" overflow="hidden">
           <Box h="100%" w={`${progress * 100}%`} bg="var(--panel-green-text)" borderRadius="full" transition="width 0.3s" />
         </Box>
         <Text fontSize="xs" color="var(--muted-text)">{title}</Text>
+        <Text fontSize="xs" color="var(--muted-text)" fontVariantNumeric="tabular-nums" title="Study time (pauses after a minute without activity)">{clockText(clock.seconds)}</Text>
       </HStack>
 
       <VStack flex={1} gap={5} px={4} py={4} align="stretch">

@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Box, Flex, Heading, Text, VStack, HStack, Input, Button, Dialog, Portal, CloseButton } from '@chakra-ui/react';
 import {
   Save, Trash2, FolderOpen, Plus, Moon, Sun, Coffee, Plane, BedDouble, AlarmClock, Clock,
   ChevronDown, ChevronRight, Glasses, Sparkles, MapPin, X, Download, Upload, Settings,
-  PlaneTakeoff, PlaneLanding, ShieldCheck, ShieldAlert, Pencil,
+  PlaneTakeoff, PlaneLanding, ShieldCheck, ShieldAlert, Pencil, Armchair, Pill,
 } from 'lucide-react';
 import VegaPlot from '../health/VegaPlot';
 import { VegaProvider } from '../../contexts/VegaContext';
@@ -14,13 +14,12 @@ import {
   PlanItem, EventKind, PlanEvent, Trip,
   MIN, HOUR, DAY, SLEEP_KINDS, DEFAULT_NAP_OPTIONS, KNOWN_AIRPORTS, ALL_TZ, TRIP_BEFORE, TRIP_AFTER,
   uid, baseCodes, validTz, wallParts, wallToUtc, utcToWall, clock, dayLabel, addDays, hm, intersect, overlapAll,
-  fmtH, fmtShift, parseDur, fmtDur, nightsIn, driftHours, eveningOf, tzOffsetMin,
+  overlap, fmtH, fmtShift, parseDur, fmtDur, nightsIn, driftHours, eveningOf, tzOffsetMin, coreOf,
   newAirport, networkAirports, networkRoutes, mergeNetwork, normalizeProfile, routeFor, defaultBreaks,
   readProfiles, writeProfiles, readDraft, writeDraft,
   parseRotation, planFlight, planGrounds, restChecks, tripEvents, expectedSleep, exampleProfile,
 } from './crewSleepLogic';
 
-const BASE = '/scratch/crew-sleep';
 
 // ---------------------------------------------------------------------------
 // Presentation of plan events
@@ -28,12 +27,14 @@ const BASE = '/scratch/crew-sleep';
 
 const EVENT_META: Record<EventKind, { label: string; icon: React.ReactNode }> = {
   sleep: { label: 'Sleep', icon: <BedDouble size={16} /> },
-  anchor: { label: 'Anchor sleep: protect it, top up later', icon: <Moon size={16} /> },
+  anchor: { label: 'Anchor sleep', icon: <Moon size={16} /> },
   nap: { label: 'Nap', icon: <AlarmClock size={16} /> },
   inflight: { label: 'Bunk rest', icon: <Plane size={16} /> },
+  strategic: { label: 'Strategic nap in the crew lounge', icon: <Armchair size={16} /> },
   light: { label: 'Get bright light, go outside', icon: <Sun size={16} /> },
   dim: { label: 'Dim lights, sunglasses outside', icon: <Glasses size={16} /> },
   caffeine: { label: 'No more caffeine', icon: <Coffee size={16} /> },
+  melatonin: { label: 'Melatonin', icon: <Pill size={16} /> },
   wakeup: { label: 'Start getting ready', icon: <Clock size={16} /> },
   depart: { label: 'Departure', icon: <PlaneTakeoff size={16} /> },
   arrive: { label: 'Arrival', icon: <PlaneLanding size={16} /> },
@@ -114,12 +115,14 @@ const tdStyle: React.CSSProperties = { padding: '3px 6px', fontSize: 12, vertica
 // Actogram: one row per evening, 12:00 -> 12:00 home time
 // ---------------------------------------------------------------------------
 
-interface ActoColors { sleep: string; homeNight: string; localNight: string; flight: string; grid: string; rowLine: string; text: string; now: string; warn: string }
+interface ActoColors { sleep: string; anchor: string; anchorFill: string; homeNight: string; localNight: string; flight: string; grid: string; rowLine: string; text: string; now: string; warn: string }
 
 const Actogram: React.FC<{
   homeTz: string;
   dates: string[];
   nights: Night[];
+  cores: Iv[];
+  commutes: (Iv & { label: string })[];
   localNights: (Iv & { place: string })[];
   grounds: Ground[];
   flights: ParsedFlight[];
@@ -127,11 +130,19 @@ const Actogram: React.FC<{
   sleeps: ParsedSleep[];
   now: number;
   colors: ActoColors;
-}> = ({ homeTz, dates, nights, localNights, grounds, flights, plans, sleeps, now, colors }) => {
+}> = ({ homeTz, dates, nights, cores, commutes, localNights, grounds, flights, plans, sleeps, now, colors }) => {
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
-  const W = 1000, LABEL = 120, ROW = 28, TOP = 22;
-  const plotW = W - LABEL - 8;
-  const H = TOP + dates.length * ROW + 4;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => setBoxW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Phones: one label line per day above a full-width bar instead of a label column.
+  const compact = boxW > 0 && boxW < 640;
 
   const rows = useMemo(() => dates.map(d => ({
     date: d,
@@ -142,61 +153,137 @@ const Actogram: React.FC<{
   const describe = (iv: Iv, tz: string) =>
     `local ${clock(iv.start, tz)}–${clock(iv.end, tz)} · home ${clock(iv.start, homeTz)}–${clock(iv.end, homeTz)} · ${fmtH((iv.end - iv.start) / HOUR)}`;
 
-  const show = (e: React.MouseEvent, text: string) => setHover({ x: e.clientX, y: e.clientY, text });
+  // Hover on a laptop, tap on a phone; tapping elsewhere closes it.
+  const tipProps = (text: string) => ({
+    onMouseMove: (e: React.MouseEvent) => setHover({ x: e.clientX, y: e.clientY, text }),
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); setHover({ x: e.clientX, y: e.clientY, text }); },
+  });
 
-  return (
-    <Box position="relative" overflowX="auto">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 600, display: 'block' }} onMouseLeave={() => setHover(null)}>
+  const inRow = <T extends Iv>(r: Iv, list: T[]) => list.filter(iv => iv.end > r.start && iv.start < r.end);
+  const placesOf = (r: Iv) => inRow(r, grounds).filter(g => !g.isHome).map(g => g.code).join(' ');
+
+  /** Everything drawn for one day, in a box of `rowH` at (x0, y) spanning `plotW`. */
+  const layers = (r: Iv, y: number, x0: number, plotW: number, rowH: number) => {
+    const span = r.end - r.start;
+    const xOf = (t: number) => x0 + ((Math.min(Math.max(t, r.start), r.end) - r.start) / span) * plotW;
+    const mid = y + rowH / 2;
+    return (
+      <>
+        {inRow(r, nights).map(n => (
+          <rect key={n.start} x={xOf(n.start)} y={y + 1} width={xOf(n.end) - xOf(n.start)} height={rowH - 2} fill={colors.homeNight} />
+        ))}
+        {inRow(r, localNights).map(n => (
+          <rect key={`l${n.start}`} x={xOf(n.start)} y={y + 1} width={xOf(n.end) - xOf(n.start)} height={rowH - 2} fill={colors.localNight}
+            {...tipProps(`Local night at ${n.place}`)} />
+        ))}
+        {inRow(r, commutes).map(c => (
+          <line key={`c${c.start}`} x1={xOf(c.start)} x2={xOf(c.end)} y1={mid} y2={mid}
+            stroke={colors.flight} strokeWidth={3} strokeDasharray="3 3"
+            {...tipProps(`${c.label} · home ${clock(c.start, homeTz)}–${clock(c.end, homeTz)} · ${fmtDur((c.end - c.start) / MIN)}`)} />
+        ))}
+        {inRow(r, flights).map(f => (
+          <rect key={`f${f.id}`} x={xOf(f.start)} y={mid - 3} width={Math.max(2, xOf(f.end) - xOf(f.start))} height={6} rx={3} fill={colors.flight}
+            {...tipProps(`Flight ${f.label} ${f.from}→${f.to} · home ${clock(f.start, homeTz)}–${clock(f.end, homeTz)} · ${fmtH((f.end - f.start) / HOUR)}`)} />
+        ))}
+        {inRow(r, plans).flatMap(pl => {
+          // Split each recommended sleep into its anchor-core part (green) and the rest (blue).
+          const coreMin = overlapAll(pl, cores) / MIN;
+          const tip = `Recommended · ${EVENT_META[pl.kind].label} · home ${clock(pl.start, homeTz)}–${clock(pl.end, homeTz)} · ${fmtDur((pl.end - pl.start) / MIN)}`
+            + (coreMin ? ` · anchor core ${fmtDur(coreMin)}` : '');
+          const cuts = cores.flatMap(c => [c.start, c.end]).filter(t => t > pl.start && t < pl.end).sort((a, b) => a - b);
+          const edges = [pl.start, ...cuts, pl.end];
+          return edges.slice(1).map((end, k) => {
+            const piece = { start: edges[k], end };
+            const isCore = cores.some(c => overlap(c, piece) > 0);
+            return (
+              <rect key={`p${pl.start}-${k}`} x={xOf(piece.start) + 1} y={y + 7} width={Math.max(2, xOf(piece.end) - xOf(piece.start) - 2)} height={rowH - 14} rx={4}
+                fill={isCore ? colors.anchorFill : 'none'} stroke={isCore ? colors.anchor : colors.sleep} strokeWidth={isCore ? 2 : 1.5} strokeDasharray="4 3"
+                {...tipProps(tip)} />
+            );
+          });
+        })}
+        {inRow(r, sleeps).map(s => (
+          <rect key={`s${s.id}`} x={xOf(s.start)} y={y + 9} width={Math.max(2, xOf(s.end) - xOf(s.start))} height={rowH - 18} rx={4}
+            fill={colors.sleep}
+            {...tipProps(`Slept · ${describe(s, s.tz)} · ${Math.round(s.homeOverlap * 100)}% in home night`)} />
+        ))}
+        {now >= r.start && now < r.end && (
+          <line x1={xOf(now)} x2={xOf(now)} y1={y} y2={y + rowH} stroke={colors.now} strokeWidth={2} />
+        )}
+      </>
+    );
+  };
+
+  const hourLabel = (h: number) => `${String((h + 12) % 24).padStart(2, '0')}:00`;
+
+  let chart: React.ReactNode;
+  if (compact) {
+    const ROWC = 26;
+    chart = (
+      <VStack align="stretch" gap={1.5}>
+        <Box position="relative" h="14px">
+          {[0, 6, 12, 18, 24].map(h => (
+            <Text key={h} position="absolute" left={`${(h / 24) * 100}%`} fontSize="2xs" color="var(--muted-text)" lineHeight="14px"
+              transform={h === 0 ? 'none' : h === 24 ? 'translateX(-100%)' : 'translateX(-50%)'}>{hourLabel(h)}</Text>
+          ))}
+        </Box>
+        {rows.map(r => {
+          const places = placesOf(r);
+          const today = now >= r.start && now < r.end;
+          return (
+            <Box key={r.date}>
+              <Flex justify="space-between" fontSize="xs" lineHeight="1.2" mb="1px">
+                <Text fontWeight="bold" color={today ? colors.now : 'var(--heading-color)'}>{dayLabel(r.start, homeTz)}</Text>
+                {places && <Text fontWeight="bold" color="var(--muted-text)">{places}</Text>}
+              </Flex>
+              <svg width="100%" height={ROWC} viewBox={`0 0 ${boxW} ${ROWC}`} style={{ display: 'block' }}>
+                <rect x={0} y={0} width={boxW} height={ROWC} fill="none" stroke={colors.rowLine} strokeWidth={1} rx={3} />
+                {[6, 12, 18].map(h => (
+                  <line key={h} x1={(h / 24) * boxW} x2={(h / 24) * boxW} y1={0} y2={ROWC} stroke={colors.grid} strokeWidth={1} />
+                ))}
+                {layers(r, 0, 0, boxW, ROWC)}
+              </svg>
+            </Box>
+          );
+        })}
+      </VStack>
+    );
+  } else {
+    const W = 1000, LABEL = 120, ROW = 28, TOP = 22;
+    const plotW = W - LABEL - 8;
+    const H = TOP + dates.length * ROW + 4;
+    chart = (
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} onMouseLeave={() => setHover(null)}>
         {[0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => {
           const x = LABEL + (h / 24) * plotW;
           return (
             <g key={h}>
               <line x1={x} x2={x} y1={TOP - 4} y2={H - 4} stroke={colors.grid} strokeWidth={1} />
-              <text x={x} y={12} fontSize={10} textAnchor="middle" fill={colors.text}>{String((h + 12) % 24).padStart(2, '0')}:00</text>
+              <text x={x} y={12} fontSize={10} textAnchor="middle" fill={colors.text}>{hourLabel(h)}</text>
             </g>
           );
         })}
         {rows.map((r, ri) => {
           const y = TOP + ri * ROW;
-          const span = r.end - r.start;
-          const xOf = (t: number) => LABEL + ((Math.min(Math.max(t, r.start), r.end) - r.start) / span) * plotW;
-          const inRow = <T extends Iv>(list: T[]) => list.filter(iv => iv.end > r.start && iv.start < r.end);
-          const places = inRow(grounds).filter(g => !g.isHome).map(g => g.code).join(' ');
+          const places = placesOf(r);
           return (
             <g key={r.date}>
               <line x1={LABEL} x2={W - 8} y1={y + ROW} y2={y + ROW} stroke={colors.rowLine} strokeWidth={1.5} />
               <text x={4} y={y + 17} fontSize={10.5} fill={colors.text}>{dayLabel(r.start, homeTz)}</text>
               {places && <text x={LABEL - 6} y={y + 17} fontSize={9.5} textAnchor="end" fill={colors.text} fontWeight={600}>{places}</text>}
-              {inRow(nights).map(n => (
-                <rect key={n.start} x={xOf(n.start)} y={y + 1} width={xOf(n.end) - xOf(n.start)} height={ROW - 2} fill={colors.homeNight} />
-              ))}
-              {inRow(localNights).map(n => (
-                <rect key={`l${n.start}`} x={xOf(n.start)} y={y + 1} width={xOf(n.end) - xOf(n.start)} height={ROW - 2} fill={colors.localNight}
-                  onMouseMove={e => show(e, `Local night at ${n.place}`)} />
-              ))}
-              {inRow(flights).map(f => (
-                <rect key={`f${f.id}`} x={xOf(f.start)} y={y + ROW / 2 - 3} width={Math.max(2, xOf(f.end) - xOf(f.start))} height={6} rx={3} fill={colors.flight}
-                  onMouseMove={e => show(e, `Flight ${f.label} ${f.from}→${f.to} · home ${clock(f.start, homeTz)}–${clock(f.end, homeTz)} · ${fmtH((f.end - f.start) / HOUR)}`)} />
-              ))}
-              {inRow(plans).map(pl => (
-                <rect key={`p${pl.start}`} x={xOf(pl.start) + 1} y={y + 8} width={Math.max(2, xOf(pl.end) - xOf(pl.start) - 2)} height={ROW - 16} rx={4}
-                  fill="none" stroke={colors.sleep} strokeWidth={1.5} strokeDasharray="4 3"
-                  onMouseMove={e => show(e, `Recommended · ${EVENT_META[pl.kind].label} · home ${clock(pl.start, homeTz)}–${clock(pl.end, homeTz)} · ${fmtDur((pl.end - pl.start) / MIN)}`)} />
-              ))}
-              {inRow(sleeps).map(s => (
-                <rect key={`s${s.id}`} x={xOf(s.start)} y={y + 10} width={Math.max(2, xOf(s.end) - xOf(s.start))} height={ROW - 20} rx={4}
-                  fill={colors.sleep}
-                  onMouseMove={e => show(e, `Slept · ${describe(s, s.tz)} · ${Math.round(s.homeOverlap * 100)}% in home night`)} />
-              ))}
-              {now >= r.start && now < r.end && (
-                <line x1={xOf(now)} x2={xOf(now)} y1={y} y2={y + ROW} stroke={colors.now} strokeWidth={2} />
-              )}
+              {layers(r, y, LABEL, plotW, ROW)}
             </g>
           );
         })}
       </svg>
+    );
+  }
+
+  return (
+    <Box ref={boxRef} position="relative" onClick={() => setHover(null)}>
+      {chart}
       {hover && (
-        <Box position="fixed" left={`${hover.x + 12}px`} top={`${hover.y + 12}px`} zIndex={20} pointerEvents="none"
+        <Box position="fixed" left={`${Math.max(8, Math.min(hover.x + 12, window.innerWidth - 328))}px`} top={`${hover.y + 12}px`} zIndex={20} pointerEvents="none"
           bg="var(--card-bg-raised)" border="1px solid" borderColor="var(--border-color)" borderRadius="md" px={2} py={1} fontSize="xs" boxShadow="md" maxW="320px">
           {hover.text}
         </Box>
@@ -208,10 +295,12 @@ const Actogram: React.FC<{
 const ActoLegend: React.FC<{ colors: ActoColors }> = ({ colors }) => (
   <HStack gap={4} mb={2} flexWrap="wrap" fontSize="xs" color="var(--muted-text)">
     <HStack gap={1}><Box w="14px" h="8px" borderRadius="2px" border="1.5px dashed" borderColor={colors.sleep} /> <span>Recommended sleep</span></HStack>
+    <HStack gap={1}><Box w="14px" h="8px" borderRadius="2px" border="1.5px dashed" borderColor={colors.anchor} /> <span>Anchor (core) sleep</span></HStack>
     <HStack gap={1}><Box w="14px" h="8px" borderRadius="2px" bg={colors.sleep} /> <span>Slept</span></HStack>
     <HStack gap={1}><Box w="14px" h="10px" bg={colors.homeNight} /> <span>Usual home night</span></HStack>
     <HStack gap={1}><Box w="14px" h="10px" bg={colors.localNight} /> <span>Local night (layover)</span></HStack>
     <HStack gap={1}><Box w="14px" h="6px" borderRadius="3px" bg={colors.flight} /> <span>Flight</span></HStack>
+    <HStack gap={1}><Box w="14px" h="0" borderTop="3px dashed" borderColor={colors.flight} /> <span>Commute & preparation</span></HStack>
     <HStack gap={1}><Box w="2px" h="10px" bg={colors.now} /> <span>Now</span></HStack>
   </HStack>
 );
@@ -382,16 +471,22 @@ const AddTrip: React.FC<{
 // Page
 // ---------------------------------------------------------------------------
 
-const CrewSleep: React.FC = () => {
+/** `basePath` is where the page is mounted: '/scratch/crew-sleep' in the site, '' in the standalone app. */
+const CrewSleep: React.FC<{ basePath?: string }> = ({ basePath = '/scratch/crew-sleep' }) => {
   const { profile: urlProfile } = useParams<{ profile?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const rootPath = basePath || '/';
+  const profilePath = (n: string) => `${basePath}/${encodeURIComponent(n)}`;
   const [searchParams, setSearchParams] = useSearchParams();
   const days = Number(searchParams.get('days')) || 14;
   const configOpen = searchParams.get('config') === '1';
   const adding = searchParams.get('add') === '1';
   const showTips = searchParams.get('tips') !== '0';
   const editTrip = searchParams.get('edit') === '1';
+  const showPast = searchParams.get('past') === '1';
   const showLog = searchParams.get('log') === '1';
+  const tab = searchParams.get('tab') === 'history' ? 'history' : 'plan';
 
   const [p, setP] = useState<Profile>(() => normalizeProfile(urlProfile ? readProfiles()[urlProfile] ?? {} : readDraft() ?? {}));
   const [name, setName] = useState(urlProfile || '');
@@ -405,6 +500,8 @@ const CrewSleep: React.FC = () => {
 
   const colors: ActoColors = {
     sleep: useColorModeValue('#2a78d6', '#3987e5'),
+    anchor: useColorModeValue('#1baf7a', '#199e70'),
+    anchorFill: useColorModeValue('rgba(27, 175, 122, 0.12)', 'rgba(25, 158, 112, 0.2)'),
     homeNight: useColorModeValue('rgba(74, 58, 167, 0.12)', 'rgba(144, 133, 233, 0.16)'),
     localNight: useColorModeValue('rgba(235, 104, 52, 0.16)', 'rgba(217, 89, 38, 0.22)'),
     flight: useColorModeValue('#8a8984', '#8f8e88'),
@@ -483,7 +580,7 @@ const CrewSleep: React.FC = () => {
     loadedFor.current = n;
     setStatus('saved');
     refreshNames();
-    navigate(`${BASE}/${encodeURIComponent(n)}${window.location.search}`, { replace: true });
+    navigate(`${profilePath(n)}${location.search}`, { replace: true });
   };
 
   const handleDelete = () => {
@@ -493,7 +590,7 @@ const CrewSleep: React.FC = () => {
     delete store[n];
     writeProfiles(store);
     refreshNames();
-    navigate(`${BASE}${window.location.search}`, { replace: true });
+    navigate(`${rootPath}${location.search}`, { replace: true });
   };
 
   const homeTz = validTz(p.homeTz) ? p.homeTz : 'UTC';
@@ -535,7 +632,7 @@ const CrewSleep: React.FC = () => {
   const inflight = useMemo(() => flightPlans.flatMap(fp => (fp.item ? [fp.item] : [])), [flightPlans]);
   const groundPlans = useMemo(() => planGrounds(grounds, p, homeTz, options, inflight),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grounds, inflight, homeTz, options, p.bedtime, p.wake, p.targetHours, p.sleepBankMin]);
+    [grounds, inflight, homeTz, options, p.bedtime, p.wake, p.targetHours, p.sleepBankMin, p.strategicNap, p.strategicNapMin, p.reportMin, p.melatonin, p.melatoninLeadMin]);
   const rests = useMemo(() => restChecks(grounds, p),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [grounds, p.reportMin, p.debriefMin, p.restHomeMin, p.restAwayMin, p.restAtLeastDuty]);
@@ -611,6 +708,19 @@ const CrewSleep: React.FC = () => {
     const to = Math.max(range.end, trip ? trip.end + TRIP_AFTER : range.end) + DAY;
     return nightsIn(homeTz, p.bedtime, p.wake, from, to);
   }, [homeTz, p.bedtime, p.wake, range, trip]);
+
+  // Time reserved between bed and the aircraft: getting ready, commute, report (and lounge nap) before
+  // a departure; deplaning, commute, shower after an arrival.
+  const commutes = useMemo(() => groundPlans.flatMap(gp => {
+    const g = gp.ground;
+    if (!gp.window) return [];
+    const out: (Iv & { label: string })[] = [];
+    if (g.inbound) out.push({ start: g.inbound.end, end: gp.window.start, label: `Arrival ${g.code}: deplane, commute, shower` });
+    if (g.outbound) out.push({ start: gp.window.end, end: g.outbound.start, label: `Before departure from ${g.outbound.from}: get ready, commute, report` });
+    return out;
+  }), [groundPlans]);
+
+  const cores = useMemo(() => allNights.map(n => coreOf(n, p.anchorCoreMin)), [allNights, p.anchorCoreMin]);
 
   const localNights = useMemo(() => grounds.filter(g => !g.isHome).flatMap(g =>
     nightsIn(g.tz, p.bedtime, p.wake, g.start, g.end)
@@ -825,13 +935,32 @@ const CrewSleep: React.FC = () => {
     if (e.kind === 'caffeine') return `until home bedtime (${p.bedtime} home)`;
     if (e.kind === 'light') return 'your home morning: keeps your clock on home time';
     if (e.kind === 'dim') return 'the 2 h before home bedtime';
-    if (e.kind === 'anchor') return 'the part of your home night you can get';
+    if (e.kind === 'anchor') {
+      const len = (e.end - e.start) / MIN;
+      return `inside your home night, keeps your clock anchored · ${len < 180 ? 'minimum (1h30); 3h is better' : len === 180 ? 'good (3h)' : 'best: more than 3h'}`;
+    }
+    if (e.kind === 'melatonin') return `${fmtDur(p.melatoninLeadMin)} before sleeping in your home night · only as prescribed`;
+    if (e.kind === 'strategic') return 'before a night flight or long duty: set an alarm, do not go past it';
     if (e.kind === 'nap') return 'home afternoon dip, before a night duty';
     if (e.kind === 'sleep' && !bases.includes(e.place)) return 'your home night: blackout curtains, eye mask, earplugs';
     return '';
   };
 
-  const shownEvents = events.filter(e => showTips || !e.tip);
+  /** How much of the home-night anchor core a sleep covers: 1h30 minimum, 3h good, more is better. */
+  const coreLine = (e: PlanEvent) => {
+    if (!isSleepKind(e.kind) || e.kind === 'strategic') return '';
+    const m = overlapAll(e, cores) / MIN;
+    if (m < 1) return '';
+    const grade = m > 181 ? 'even better' : m >= 179 ? 'best' : m >= 90 ? 'minimum met, 3h is best' : 'below the 1h30 minimum';
+    return `anchor core ${fmtDur(m)} · ${grade}`;
+  };
+
+  const tipFiltered = events.filter(e => showTips || !e.tip);
+  // Keep the plan to what matters now: the last step that happened, then what is on and ahead.
+  // A trip that is entirely over (or not started) shows everything.
+  const firstLive = tipFiltered.findIndex(e => e.end >= now || e.start >= now);
+  const hiddenCount = firstLive > 1 ? firstLive - 1 : 0;
+  const shownEvents = showPast || hiddenCount === 0 ? tipFiltered : tipFiltered.slice(hiddenCount);
   const groups: { key: string; label: string; events: PlanEvent[] }[] = [];
   for (const e of shownEvents) {
     const day = dayLabel(e.start, e.tz);
@@ -869,7 +998,7 @@ const CrewSleep: React.FC = () => {
           </Text>
         </Box>
         <HStack gap={2} flexWrap="wrap">
-          <Button size="sm" colorPalette="blue" onClick={() => setParams({ add: adding ? null : '1' })}><Plus size={14} /> Add trip</Button>
+          <Button size="sm" colorPalette="blue" onClick={() => setParams({ add: adding ? null : '1', tab: null })}><Plus size={14} /> Add trip</Button>
           {p.pendingStart ? (
             <Button size="sm" variant="outline" onClick={endSleep}><Sun size={14} /> I woke up</Button>
           ) : (
@@ -918,6 +1047,19 @@ const CrewSleep: React.FC = () => {
         </Flex>
       </Card>
 
+      {/* Tabs */}
+      <HStack gap={0} borderBottom="2px solid" borderColor="var(--border-color)">
+        {([['plan', 'Trip plan'], ['history', 'History']] as const).map(([key, label]) => (
+          <Box key={key} as="button" px={4} py={2} mb="-2px" fontSize="sm" fontWeight="bold" cursor="pointer"
+            borderBottom="2px solid" borderColor={tab === key ? colors.sleep : 'transparent'}
+            color={tab === key ? 'var(--heading-color)' : 'var(--muted-text)'}
+            onClick={() => setParams({ tab: key === 'plan' ? null : key })}>
+            {label}
+          </Box>
+        ))}
+      </HStack>
+
+      {tab === 'plan' && (<>
       {/* New trip */}
       {(adding || !trips.length) && (
         <AddTrip p={p} homeTz={homeTz} tzOf={tzOf} cityOf={cityOf} onAdd={addTrip} onCancel={() => setParams({ add: null })} />
@@ -929,7 +1071,7 @@ const CrewSleep: React.FC = () => {
           <HStack gap={1} mb={3} flexWrap="wrap">
             {trips.filter(t => t.end > now - 14 * DAY || t.id === trip.id).map(t => (
               <Button key={t.id} size="xs" variant={t.id === trip.id ? 'solid' : 'outline'} opacity={t.end < now && t.id !== trip.id ? 0.6 : 1}
-                onClick={() => setParams({ trip: t.id, edit: null })}>
+                onClick={() => setParams({ trip: t.id, edit: null, past: null })}>
                 {dayLabel(t.start, tzOf(t.flights[0].from))} · {t.stops.join(' ') || tripTitle(t)}
               </Button>
             ))}
@@ -1035,7 +1177,7 @@ const CrewSleep: React.FC = () => {
 
           <ActoLegend colors={colors} />
           <Actogram homeTz={homeTz} dates={tripDates} nights={allNights} localNights={localNights} grounds={grounds}
-            flights={flights} plans={planSleeps} sleeps={sleeps} now={now} colors={colors} />
+            flights={flights} plans={planSleeps} cores={cores} commutes={commutes} sleeps={sleeps} now={now} colors={colors} />
 
           {/* Step by step */}
           <Flex justify="space-between" align="center" mt={5} mb={2}>
@@ -1045,6 +1187,12 @@ const CrewSleep: React.FC = () => {
               <span>Light & caffeine tips</span>
             </HStack>
           </Flex>
+          {hiddenCount > 0 && (
+            <Button size="xs" variant="ghost" mb={2} onClick={() => setParams({ past: showPast ? null : '1' })}>
+              {showPast ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {showPast ? 'Hide earlier steps' : `Show ${hiddenCount} earlier step${hiddenCount > 1 ? 's' : ''}`}
+            </Button>
+          )}
           <VStack align="stretch" gap={3}>
             {groups.map(g => (
               <Box key={g.key}>
@@ -1064,7 +1212,7 @@ const CrewSleep: React.FC = () => {
                           </HStack>
                         )}
                         <HStack gap={3} py={1.5} px={2} borderLeft="3px solid" align="flex-start"
-                          borderColor={e.warn ? colors.warn : sleepy ? colors.sleep : 'transparent'}
+                          borderColor={e.warn ? colors.warn : sleepy && overlapAll(e, cores) >= 90 * MIN ? colors.anchor : sleepy ? colors.sleep : 'transparent'}
                           opacity={past ? 0.55 : e.tip ? 0.85 : 1}>
                           <Box w="96px" flexShrink={0}>
                             <Text fontSize="sm" fontWeight="bold" fontFamily="mono">
@@ -1072,7 +1220,7 @@ const CrewSleep: React.FC = () => {
                             </Text>
                             {e.tz !== homeTz && <Text fontSize="2xs" color="var(--muted-text)">home {clock(e.start, homeTz)}</Text>}
                           </Box>
-                          <Box color={e.warn ? colors.warn : sleepy ? colors.sleep : 'var(--muted-text)'} pt="2px">
+                          <Box color={e.warn ? colors.warn : e.kind === 'anchor' ? colors.anchor : sleepy ? colors.sleep : 'var(--muted-text)'} pt="2px">
                             {e.kind === 'rest' && e.warn ? <ShieldAlert size={16} /> : EVENT_META[e.kind].icon}
                           </Box>
                           <Box flex="1" minW={0}>
@@ -1081,6 +1229,7 @@ const CrewSleep: React.FC = () => {
                               {e.end > e.start && <Text as="span" fontWeight="normal" color="var(--muted-text)"> · {fmtDur((e.end - e.start) / MIN)}</Text>}
                             </Text>
                             {eventDetail(e) && <Text fontSize="xs" color="var(--muted-text)">{eventDetail(e)}</Text>}
+                            {coreLine(e) && <Text fontSize="xs" color={colors.anchor}>{coreLine(e)}</Text>}
                           </Box>
                         </HStack>
                       </React.Fragment>
@@ -1098,9 +1247,11 @@ const CrewSleep: React.FC = () => {
         </Card>
       )}
 
+      </>)}
+
+      {tab === 'history' && (<>
       {/* History */}
-      <Flex justify="space-between" align="center" mt={2}>
-        <Heading size="md" color="var(--heading-color)">History</Heading>
+      <Flex justify="flex-end" align="center">
         <HStack gap={1}>
           {[7, 14, 30, 90].map(d => (
             <Button key={d} size="xs" variant={d === days ? 'solid' : 'outline'} onClick={() => setParams({ days: String(d) })}>{d}d</Button>
@@ -1116,7 +1267,7 @@ const CrewSleep: React.FC = () => {
       <Card>
         <ActoLegend colors={colors} />
         <Actogram homeTz={homeTz} dates={dates} nights={allNights} localNights={localNights} grounds={grounds}
-          flights={flights} plans={planSleeps} sleeps={sleeps} now={now} colors={colors} />
+          flights={flights} plans={planSleeps} cores={cores} commutes={commutes} sleeps={sleeps} now={now} colors={colors} />
       </Card>
       <Flex gap={4} flexWrap="wrap">
         <Box flex="1 1 0" minW="280px"><VegaProvider><VegaPlot spec={dailySpec} height="240px" /></VegaProvider></Box>
@@ -1175,6 +1326,7 @@ const CrewSleep: React.FC = () => {
           </>
         )}
       </Card>
+      </>)}
 
       {/* Configuration */}
       <Dialog.Root open={configOpen} onOpenChange={(d: { open: boolean }) => { if (!d.open) setParams({ config: null }); }} placement="center" scrollBehavior="inside">
@@ -1207,7 +1359,7 @@ const CrewSleep: React.FC = () => {
                       <HStack gap={1} mt={2} flexWrap="wrap">
                         {savedNames.map(s => (
                           <Button key={s} size="xs" variant="outline" colorPalette={s === urlProfile ? 'blue' : undefined}
-                            onClick={() => navigate(`${BASE}/${encodeURIComponent(s)}`)}>
+                            onClick={() => navigate(profilePath(s))}>
                             <FolderOpen size={12} /> {s}
                           </Button>
                         ))}
@@ -1250,8 +1402,28 @@ const CrewSleep: React.FC = () => {
                       <Labeled label="Meal service before landing"><DurInput value={p.serviceBeforeLandingMin} onChange={m => set('serviceBeforeLandingMin', m)} /></Labeled>
                     </Flex>
                     <Flex gap={4} mt={3} flexWrap="wrap" align="flex-end">
+                      <HStack as="label" gap={2} fontSize="xs" fontWeight="bold" cursor="pointer" pb={1}>
+                        <input type="checkbox" checked={p.strategicNap} onChange={e => set('strategicNap', e.target.checked)} />
+                        <span>Strategic nap in the crew lounge before a night flight or long duty</span>
+                      </HStack>
+                      <Labeled label="Strategic nap"><DurInput value={p.strategicNapMin} onChange={m => set('strategicNapMin', m)} /></Labeled>
+                      <HStack as="label" gap={2} fontSize="xs" fontWeight="bold" cursor="pointer" pb={1}>
+                        <input type="checkbox" checked={p.melatonin} onChange={e => set('melatonin', e.target.checked)} />
+                        <span>Melatonin reminder</span>
+                      </HStack>
+                      <Labeled label="Melatonin before sleep"><DurInput value={p.melatoninLeadMin} onChange={m => set('melatoninLeadMin', m)} /></Labeled>
+                      <Labeled label="Anchor core"><DurInput value={p.anchorCoreMin} onChange={m => set('anchorCoreMin', m)} /></Labeled>
                       <Labeled label="Extra sleep before a short night"><DurInput value={p.sleepBankMin} onChange={m => set('sleepBankMin', m)} /></Labeled>
                     </Flex>
+                    <Text fontSize="2xs" color="var(--muted-text)" mt={1}>
+                      Anchor core: the block in the middle of your home night you should sleep through every day, wherever you are.
+                      1h30 is the minimum, 3h is good, more is better. Shown in green on the timeline.
+                    </Text>
+                    <Text fontSize="2xs" color="var(--muted-text)" mt={1}>
+                      Melatonin: reminder on layovers only, before sleep in your home night (when it is often daytime locally), and
+                      at least 8 h before the next sign-on. Only if your doctor allows it: it is prescription-only in some countries,
+                      including Korea, and many airlines restrict sleep aids before duty. Untick to hide the reminders.
+                    </Text>
                     <Text fontSize="2xs" color="var(--muted-text)" mt={1}>
                       When the next night is short (overnight flight, early report), the night before is extended by up to this
                       much: sleep in first, then go to bed earlier. 0 turns it off.

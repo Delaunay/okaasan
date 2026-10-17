@@ -36,6 +36,7 @@ export interface Progress {
   streak: number;
   lastDay: string;
   bestQuiz: Record<string, number>;     // quiz id -> best score in %
+  time: Record<string, number>;         // day (dayStr) -> seconds spent in lessons and quizzes
 }
 
 // What the learner sees above the answer area.
@@ -136,6 +137,7 @@ export interface Answer {
   key: string;
   ok: boolean;
   skill?: Skill;
+  option?: string;      // the right option's key, when it differs from key (confusions use option keys)
 }
 
 export interface SoundPack {

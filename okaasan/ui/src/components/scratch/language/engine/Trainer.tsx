@@ -2,17 +2,16 @@
 // the confusion list, progress storage and the sound pack picker.
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Box, Button, Flex, Grid, Heading, HStack, Text, VStack } from '@chakra-ui/react';
-import { Flame, GraduationCap, RotateCcw, Shuffle, Star, Volume2 } from 'lucide-react';
+import { Clock, Flame, GraduationCap, RotateCcw, Shuffle, Star, Volume2 } from 'lucide-react';
 import { privateJsonStore } from '../../../../services/jsonstore';
 import type { Answer, Ex, LanguageModule, LanguagePack, Progress } from './types';
-import { EMPTY_PROGRESS, confusionKey, dueCount, makeCtx, schedule, topConfusions } from './util';
+import { EMPTY_PROGRESS, addTime, dayStr, dueCount, formatDuration, makeCtx, schedule, topConfusions, updateConfusions } from './util';
 import { loadPack } from './load';
 import { useSpeaker } from './audio';
 import { Lesson } from './Lesson';
 import { DescribedItem, TrainerContext, UnitCard } from './widgets';
+import { StudyTime } from './studytime';
 import { STROKE_KEYFRAMES } from './strokes';
-
-const dayStr = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
 interface Running {
   id: number;
@@ -72,16 +71,23 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
     if (r.exercises.length) setRunning({ ...r, id: Date.now() });
   };
 
-  const finish = (r: Running, answers: Answer[], confused: [string, string][]) => {
+  // A lesson left half way still counts as study time.
+  const exit = (spent: Record<string, number>) => {
+    if (Object.keys(spent).length) {
+      const next = { ...progress, time: addTime(progress.time, spent) };
+      setProgress(next);
+      save(next);
+    }
+    setRunning(null);
+  };
+
+  const finish = (r: Running, answers: Answer[], confused: [string, string][], spent: Record<string, number>) => {
     const stats = { ...progress.stats };
     for (const a of answers) {
       const s = stats[a.key] || { ok: 0, bad: 0 };
       stats[a.key] = a.ok ? { ...s, ok: s.ok + 1 } : { ...s, bad: s.bad + 1 };
     }
-    const confusions = { ...progress.confusions };
-    for (const [a, b] of confused) {
-      if (a !== b) confusions[confusionKey(a, b)] = (confusions[confusionKey(a, b)] || 0) + 1;
-    }
+    const confusions = updateConfusions(progress.confusions, answers, confused);
     const today = new Date();
     const yesterday = new Date(today.getTime() - 86_400_000);
     const right = answers.filter((a) => a.ok).length;
@@ -97,6 +103,7 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
       bestQuiz: r.quizId && answers.length
         ? { ...progress.bestQuiz, [r.quizId]: Math.max(progress.bestQuiz[r.quizId] || 0, Math.round((right / answers.length) * 100)) }
         : progress.bestQuiz,
+      time: addTime(progress.time, spent),
     };
     setProgress(next);
     save(next);
@@ -118,8 +125,8 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
             title={running.title}
             exercises={running.exercises}
             exam={running.exam}
-            onExit={() => setRunning(null)}
-            onFinish={(a, c) => finish(running, a, c)}
+            onExit={exit}
+            onFinish={(a, c, t) => finish(running, a, c, t)}
           />
         ) : (
           <>
@@ -128,6 +135,7 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
                 {pack.name} <span style={{ fontFamily: pack.font, color: 'var(--muted-text)', fontWeight: 400 }}>{pack.nativeName}</span>
               </Heading>
               <HStack gap={2}>
+                <Badge variant="subtle" colorPalette="blue" title="Time studied today"><Clock size={12} /> {formatDuration(progress.time[dayStr(new Date())] || 0)} today</Badge>
                 <Badge variant="subtle" colorPalette="orange"><Flame size={12} /> {progress.streak} day{progress.streak === 1 ? '' : 's'}</Badge>
                 <Badge variant="subtle" colorPalette="yellow"><Star size={12} /> {progress.xp} XP</Badge>
                 <Badge variant="subtle" colorPalette="green">{level.badge(ctx)}</Badge>
@@ -175,6 +183,7 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
             <Box px={4} py={4} maxW={view === 'learn' ? '640px' : '1100px'} w="100%" mx="auto">
               {view === 'reference' && Reference ? <Reference ctx={ctx} /> : (
                 <VStack align="stretch" gap={4}>
+                  <StudyTime time={progress.time} />
                   <Box p={4} borderRadius="xl" border="2px solid" borderBottomWidth="4px" borderColor="var(--panel-purple-border)" bg="var(--panel-purple-bg)">
                     <HStack gap={3} mb={3}>
                       <GraduationCap size={28} color="var(--panel-purple-text)" />
@@ -216,7 +225,7 @@ function TrainerView({ pack }: { pack: LanguagePack }) {
                     <Box p={3} borderRadius="lg" bg="var(--panel-orange-bg)" border="1px solid" borderColor="var(--panel-orange-border)">
                       <Flex align="center" gap={3} mb={2}>
                         <Text flex={1} fontSize="sm" fontWeight={600} color="var(--panel-orange-text)">
-                          Often confused: these now come up more often, and against each other.
+                          Often confused: these now come up more often, and against each other. A pair fades as you get both right.
                         </Text>
                         {pack.drill && (
                           <Button size="sm" colorPalette="orange"

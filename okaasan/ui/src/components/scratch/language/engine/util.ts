@@ -20,8 +20,23 @@ export function pickWeighted<T>(items: T[], weight: (x: T) => number): T {
 }
 
 export const EMPTY_PROGRESS: Progress = {
-  stats: {}, srs: {}, confusions: {}, lessons: {}, xp: 0, streak: 0, lastDay: '', bestQuiz: {},
+  stats: {}, srs: {}, confusions: {}, lessons: {}, xp: 0, streak: 0, lastDay: '', bestQuiz: {}, time: {},
 };
+
+export const dayStr = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+
+// Study time per day: seconds of a lesson (by the day they were spent) added in.
+export function addTime(time: Record<string, number>, spent: Record<string, number>) {
+  const next = { ...time };
+  for (const [d, s] of Object.entries(spent)) next[d] = (next[d] || 0) + s;
+  return next;
+}
+
+export function formatDuration(seconds: number) {
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
 
 // ---------------------------------------------------------------------------
 // Spaced repetition (Leitner boxes): right moves an item up one box and it
@@ -81,6 +96,29 @@ export function makeCtx(progress: Progress, canListen: boolean, soundPack: Sound
     isDue: (id) => isDueAt(progress.srs[id], now),
     confusedWith: (key) => (partners[key] || []).slice().sort((x, y) => y[1] - x[1]).map(([k]) => k),
   };
+}
+
+// Confusions after a session: new mix-ups add one; a pair fades when its
+// items are answered right without a slip: halved when one side was, gone
+// when both were (the other side can be a wrong form that is never asked).
+export function updateConfusions(confusions: Record<string, number>, answers: Answer[], confused: [string, string][]) {
+  const missed = new Set<string>();
+  const right = new Set<string>();
+  for (const a of answers) {
+    for (const k of a.option ? [a.key, a.option] : [a.key]) (a.ok ? right : missed).add(k);
+  }
+  const clean = (k: string) => right.has(k) && !missed.has(k);
+  const next = { ...confusions };
+  for (const [pair, n] of Object.entries(next)) {
+    const [a, b] = pair.split('|');
+    if (missed.has(a) || missed.has(b)) continue;
+    const left = clean(a) && clean(b) ? 0 : clean(a) || clean(b) ? Math.floor(n / 2) : n;
+    if (left > 0) next[pair] = left; else delete next[pair];
+  }
+  for (const [a, b] of confused) {
+    if (a !== b) next[confusionKey(a, b)] = (next[confusionKey(a, b)] || 0) + 1;
+  }
+  return next;
 }
 
 // Most confused pairs first.

@@ -146,9 +146,50 @@ const ROUTES: [string, string, number, number][] = [
   ['ICN', 'ZAG', h(13, 30), h(12, 20)],
 ];
 
-export interface NetworkRoute { from: string; to: string; blockMin: number }
+// Flight numbers per direction, only where a public source (AeroRoutes schedule
+// pages, airportia, trip.com, planefinder, flightaware; checked Oct 2026) shows
+// that number on that route and direction. Several routes run more than one
+// number (e.g. FUK also TW205/206, KIX also TW305/306, DAD also TW13/14, NRT
+// also TW239-246); the main one is listed. Routes without a number learn it
+// from the trips entered.
+const FLIGHT_NOS: Record<string, string> = {
+  // Europe (Frankfurt reported suspended from late Oct 2026)
+  'ICN>CDG': 'TW401', 'CDG>ICN': 'TW402',
+  'ICN>FRA': 'TW403', 'FRA>ICN': 'TW404',
+  'ICN>FCO': 'TW405', 'FCO>ICN': 'TW406',
+  'ICN>BCN': 'TW407', 'BCN>ICN': 'TW408',
+  'ICN>ZAG': 'TW409', 'ZAG>ICN': 'TW410',
+  // Oceania, Americas, Pacific
+  'ICN>SYD': 'TW501', 'SYD>ICN': 'TW502',
+  'ICN>YVR': 'TW531', 'YVR>ICN': 'TW532',
+  'ICN>GUM': 'TW505', 'GUM>ICN': 'TW506',
+  'ICN>SPN': 'TW513', 'SPN>ICN': 'TW514',
+  // Japan
+  'ICN>FUK': 'TW201', 'FUK>ICN': 'TW202',
+  'ICN>KIX': 'TW301', 'KIX>ICN': 'TW302',
+  'ICN>NRT': 'TW241', 'NRT>ICN': 'TW244',
+  'ICN>CTS': 'TW263', 'CTS>ICN': 'TW264',
+  'ICN>OKA': 'TW281', 'OKA>ICN': 'TW282',
+  // Southeast Asia
+  'ICN>BKK': 'TW101', 'BKK>ICN': 'TW102',
+  'ICN>DAD': 'TW7', 'DAD>ICN': 'TW8',
+  'ICN>CXR': 'TW33', 'CXR>ICN': 'TW34',
+  'ICN>SIN': 'TW161', 'SIN>ICN': 'TW162',
+  'ICN>CGK': 'TW155', 'CGK>ICN': 'TW156',
+  // Hong Kong, Taiwan
+  'ICN>HKG': 'TW643', 'HKG>ICN': 'TW644',
+  'GMP>TSA': 'TW667', 'TSA>GMP': 'TW668',
+  // Central Asia, Mongolia
+  'ICN>TAS': 'TW431', 'TAS>ICN': 'TW432',
+  'FRU>ICN': 'TW436',
+  'UBN>ICN': 'TW422',
+  // Domestic (many daily flights; one of them)
+  'GMP>CJU': 'TW701',
+};
+
+export interface NetworkRoute { from: string; to: string; blockMin: number; flightNo?: string }
 
 export const TRINITY_ROUTES: NetworkRoute[] = ROUTES.flatMap(([from, to, out, back]) => [
-  { from, to, blockMin: out },
-  { from: to, to: from, blockMin: back },
+  { from, to, blockMin: out, flightNo: FLIGHT_NOS[`${from}>${to}`] },
+  { from: to, to: from, blockMin: back, flightNo: FLIGHT_NOS[`${to}>${from}`] },
 ]);

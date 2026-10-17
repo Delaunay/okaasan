@@ -68,6 +68,11 @@ export interface Profile {
   serviceAfterTakeoffMin: number;  // meal service after takeoff: no rest
   serviceBeforeLandingMin: number; // meal service before landing: no rest
   sleepBankMin: number;    // extra sleep the night before a short night
+  strategicNap: boolean;   // short nap in the crew lounge before a night flight or long duty
+  strategicNapMin: number;
+  melatonin: boolean;      // reminder before layover sleeps in the home night (off unless prescribed)
+  melatoninLeadMin: number;
+  anchorCoreMin: number;   // core of the home night to keep asleep every day (1h30 minimum, 3h best)
   // Duty & rest rules (set to your airline's flight time limitations)
   reportMin: number;       // sign-on before departure
   debriefMin: number;      // sign-off after block-in
@@ -97,7 +102,7 @@ export interface Ground extends Iv {
   outbound: ParsedFlight | null;  // null: after the last flight
 }
 
-export type PlanKind = 'sleep' | 'anchor' | 'nap' | 'inflight' | 'light' | 'dim' | 'caffeine';
+export type PlanKind = 'sleep' | 'anchor' | 'nap' | 'inflight' | 'strategic' | 'light' | 'dim' | 'caffeine' | 'melatonin';
 export interface PlanItem extends Iv {
   kind: PlanKind;
   bankedMin?: number; // extra sleep added because the next night is short
@@ -114,6 +119,7 @@ export interface GroundPlan {
 }
 
 export interface BreakScore extends Iv {
+  coreMin: number;      // minutes of the anchor core covered
   homeNightMin: number;
   dipMin: number;
   blockMin: number;
@@ -146,10 +152,13 @@ export interface Trip extends Iv {
 export const MIN = 60_000;
 export const HOUR = 60 * MIN;
 export const DAY = 24 * HOUR;
-export const SLEEP_KINDS: PlanKind[] = ['sleep', 'anchor', 'nap', 'inflight'];
+export const SLEEP_KINDS: PlanKind[] = ['sleep', 'anchor', 'nap', 'inflight', 'strategic'];
 
 // 30 min power nap, then whole 90 min sleep cycles, plus a full and a long night.
 export const DEFAULT_NAP_OPTIONS = [30, 90, 180, 360, 480, 540];
+
+// Minimum time between taking melatonin and the next sign-on.
+export const MELATONIN_CLEAR = 8 * HOUR;
 
 // After a late arrival, sleep may run this far past home wake time to stay in one block.
 export const SLEEP_IN_MAX = 4 * HOUR;
@@ -298,6 +307,12 @@ export function nightsIn(tz: string, bed: string, wake: string, from: number, to
   return out;
 }
 
+/** The anchor core of a home night: a fixed block centred on its middle. */
+export function coreOf(n: Iv, coreMin: number): Iv {
+  const mid = (n.start + n.end) / 2;
+  return { start: mid - (coreMin / 2) * MIN, end: mid + (coreMin / 2) * MIN };
+}
+
 /** Signed hours between a sleep midpoint and the habitual home-night midpoint, in [-12, 12). */
 export function driftHours(iv: Iv, homeTz: string, bed: string, wake: string) {
   const bedMin = hm(bed);
@@ -332,15 +347,22 @@ export const newAirport = (code: string, fallbackTz: string): Airport => {
 export const networkAirports = (): Airport[] => TRINITY_AIRPORTS.map(a => newAirport(a.code, a.tz));
 export const networkRoutes = (): Route[] => TRINITY_ROUTES.map(r => ({ ...r }));
 
+const routeKey = (r: Route) => `${r.from.toUpperCase()}>${r.to.toUpperCase()}`;
+
+/** Fill in network flight numbers on routes that have none, keeping the user's own. */
+function withNetworkFlightNos(routes: Route[]): Route[] {
+  const known = new Map(networkRoutes().filter(r => r.flightNo).map(r => [routeKey(r), r.flightNo]));
+  return routes.map(r => (r.flightNo || !known.has(routeKey(r)) ? r : { ...r, flightNo: known.get(routeKey(r)) }));
+}
+
 /** Add network airports and routes that are missing, keeping the user's edits. */
 export function mergeNetwork(p: Profile): Profile {
   const codes = new Set(p.airports.map(a => a.code.toUpperCase()));
-  const routeKey = (r: Route) => `${r.from.toUpperCase()}>${r.to.toUpperCase()}`;
   const keys = new Set(p.routes.map(routeKey));
   return {
     ...p,
     airports: [...p.airports, ...networkAirports().filter(a => !codes.has(a.code))],
-    routes: [...p.routes, ...networkRoutes().filter(r => !keys.has(routeKey(r)))],
+    routes: [...withNetworkFlightNos(p.routes), ...networkRoutes().filter(r => !keys.has(routeKey(r)))],
   };
 }
 
@@ -356,6 +378,11 @@ export const newProfile = (): Profile => ({
   serviceAfterTakeoffMin: 60,
   serviceBeforeLandingMin: 60,
   sleepBankMin: 90,
+  strategicNap: true,
+  strategicNapMin: 30,
+  melatonin: true,
+  melatoninLeadMin: 30,
+  anchorCoreMin: 180,
   reportMin: 90,
   debriefMin: 30,
   restHomeMin: 12 * 60,
@@ -372,7 +399,7 @@ export const newProfile = (): Profile => ({
 export function normalizeProfile(data: Partial<Profile>): Profile {
   const p: Profile = { ...newProfile(), ...data };
   if (!data.airports?.length) p.airports = networkAirports();
-  if (!data.routes?.length) p.routes = networkRoutes();
+  p.routes = data.routes?.length ? withNetworkFlightNos(data.routes) : networkRoutes();
   return p;
 }
 
@@ -527,6 +554,7 @@ function groundAdvice(g: Ground, shift: number, hours: number) {
  */
 export function planFlight(f: ParsedFlight, p: Profile, homeTz: string, options: number[]): FlightPlan {
   const nights = nightsIn(homeTz, p.bedtime, p.wake, f.start - DAY, f.end + DAY);
+  const cores = nights.map(n => coreOf(n, p.anchorCoreMin));
   const dips = nights.map(n => ({ start: n.end + 6 * HOUR, end: n.end + 10 * HOUR }));
 
   // Place a block of `len` inside `usable`, maximising overlap with `targets`.
@@ -552,20 +580,27 @@ export function planFlight(f: ParsedFlight, p: Profile, homeTz: string, options:
     const usable = { start: iv.start + p.bunkSettleMin * MIN, end: iv.end };
     // Cabin duties cap how long you can actually sleep, however long the break.
     const availMin = Math.min((usable.end - usable.start) / MIN, p.maxBunkRestMin);
-    const empty = { ...iv, homeNightMin: 0, dipMin: 0, blockMin: 0, sleep: null, fit: 'none' as const };
+    const empty = { ...iv, coreMin: 0, homeNightMin: 0, dipMin: 0, blockMin: 0, sleep: null, fit: 'none' as const };
     let blockMin = largestFit(availMin, options);
     if (!blockMin) return empty;
 
-    const inNight = place(usable, blockMin * MIN, nights);
-    if (inNight.overlapMin > 0) return { ...iv, homeNightMin: inNight.overlapMin, dipMin: 0, blockMin, sleep: inNight.sleep, fit: 'night' as const };
+    // Prefer covering the anchor core, then the rest of the home night, then the afternoon dip.
+    const inCore = place(usable, blockMin * MIN, cores);
+    const atNight = inCore.overlapMin > 0 ? inCore : place(usable, blockMin * MIN, nights);
+    if (atNight.overlapMin > 0) {
+      return {
+        ...iv, coreMin: inCore.overlapMin, homeNightMin: overlapAll(atNight.sleep, nights) / MIN,
+        dipMin: 0, blockMin, sleep: atNight.sleep, fit: 'night' as const,
+      };
+    }
     const inDip = place(usable, blockMin * MIN, dips);
-    if (inDip.overlapMin > 0) return { ...iv, homeNightMin: 0, dipMin: inDip.overlapMin, blockMin, sleep: inDip.sleep, fit: 'dip' as const };
+    if (inDip.overlapMin > 0) return { ...iv, coreMin: 0, homeNightMin: 0, dipMin: inDip.overlapMin, blockMin, sleep: inDip.sleep, fit: 'dip' as const };
     blockMin = largestFit(Math.min(30, availMin), options);
     if (!blockMin) return empty;
-    return { ...iv, homeNightMin: 0, dipMin: 0, blockMin, sleep: { start: usable.start, end: usable.start + blockMin * MIN }, fit: 'power' as const };
+    return { ...iv, coreMin: 0, homeNightMin: 0, dipMin: 0, blockMin, sleep: { start: usable.start, end: usable.start + blockMin * MIN }, fit: 'power' as const };
   });
 
-  const rank = (b: BreakScore) => [b.homeNightMin, b.dipMin, b.blockMin];
+  const rank = (b: BreakScore) => [b.coreMin, b.homeNightMin, b.dipMin, b.blockMin];
   let best = -1;
   breaks.forEach((b, i) => {
     if (!b.sleep) return;
@@ -593,6 +628,16 @@ export function planGrounds(grounds: Ground[], p: Profile, homeTz: string, optio
   return grounds.map(g => planGround(g, p, homeTz, options, inflight, lookahead));
 }
 
+/** A flight worth a strategic nap before it: it eats into the home night, or it is a long duty. */
+export function wantsStrategicNap(f: Iv, p: Profile, homeTz: string) {
+  if (!p.strategicNap || p.strategicNapMin <= 0) return false;
+  const nights = nightsIn(homeTz, p.bedtime, p.wake, f.start - DAY, f.end + DAY);
+  return f.end - f.start >= 8 * HOUR || overlapAll(f, nights) >= 2 * HOUR;
+}
+
+// Time to find a quiet spot in the lounge and to wake up properly after the nap.
+const LOUNGE_MARGIN = 20 * MIN;
+
 export function planGround(
   g: Ground, p: Profile, homeTz: string, options: number[], inflight: Iv[],
   lookahead?: { sleeps: Iv[]; until: number },
@@ -600,11 +645,21 @@ export function planGround(
   const shift = (tzOffsetMin(g.tz, g.start) - tzOffsetMin(homeTz, g.start)) / 60;
   const hours = (g.end - g.start) / HOUR;
   const advice = groundAdvice(g, shift, hours);
+  // Strategic nap: in the crew lounge, just before sign-on; you leave for the airport that much earlier.
+  const lounge = g.outbound && wantsStrategicNap(g.outbound, p, homeTz)
+    ? (() => {
+      const end = g.outbound.start - p.reportMin * MIN - 10 * MIN;
+      return { start: end - p.strategicNapMin * MIN, end };
+    })()
+    : null;
   const window = {
     start: g.start + (g.inbound ? g.airport.toBedMin * MIN : 0),
-    end: g.end - (g.outbound ? (g.departAirport ?? g.airport).fromBedMin * MIN : 0),
+    end: g.end - (g.outbound ? (g.departAirport ?? g.airport).fromBedMin * MIN : 0)
+      - (lounge ? p.strategicNapMin * MIN + LOUNGE_MARGIN : 0),
   };
-  if (window.end <= window.start) return { ground: g, shift, hours, window: null, items: [], advice };
+  if (window.end <= window.start) {
+    return { ground: g, shift, hours, window: null, items: lounge ? [{ ...lounge, kind: 'strategic' }] : [], advice };
+  }
 
   const nights = nightsIn(homeTz, p.bedtime, p.wake, window.start - DAY, window.end + DAY);
   const habitualMin = (hm(p.wake) - hm(p.bedtime) + 1440) % 1440;
@@ -726,6 +781,7 @@ export function planGround(
     }
   }
   items.splice(0, items.length, ...merged, ...items.filter(i => !SLEEP_KINDS.includes(i.kind)));
+  if (lounge) items.push({ ...lounge, kind: 'strategic' });
 
   // Tips never run into a planned sleep: start them after it, or stop them before it.
   const sleeps = items.filter(i => SLEEP_KINDS.includes(i.kind)).sort((a, b) => a.start - b.start);
@@ -739,6 +795,19 @@ export function planGround(
     }
     return cut.end - cut.start >= 20 * MIN ? [cut] : [];
   });
+
+  // Melatonin: only on layovers, only before sleep in the home night (where it keeps
+  // the home clock instead of shifting it), and at least MELATONIN_CLEAR before the
+  // next sign-on so it has worn off by duty.
+  if (p.melatonin && !g.isHome) {
+    for (const it of kept.filter(i => i.kind === 'sleep' || i.kind === 'anchor')) {
+      // Taken late in the home night or in the home morning it would delay the clock instead.
+      if (!nights.some(n => it.start >= n.start - 2 * HOUR && it.start <= n.end - 4 * HOUR)) continue;
+      const t = it.start - p.melatoninLeadMin * MIN;
+      if (g.outbound && g.outbound.start - p.reportMin * MIN - t < MELATONIN_CLEAR) continue;
+      kept.push({ start: t, end: t, kind: 'melatonin' });
+    }
+  }
   kept.sort((a, b) => a.start - b.start);
   return { ground: g, shift, hours, window, items: kept, advice };
 }
@@ -813,8 +882,10 @@ export function tripEvents(
     const toGround = grounds.find(gp => gp.ground.inbound?.id === f.id);
     const toTz = toGround?.ground.tz ?? homeTz;
     if (fromGround?.window) {
+      const lounge = fromGround.items.some(i => i.kind === 'strategic');
       events.push({ start: fromGround.window.end, end: fromGround.window.end, kind: 'wakeup', tz: fromTz, place: from,
-        title: 'Start getting ready', detail: `latest: preparation, commute and report for the ${clock(f.start, fromTz)} departure` });
+        title: 'Start getting ready',
+        detail: `latest: preparation, commute${lounge ? ', lounge nap' : ''} and report for the ${clock(f.start, fromTz)} departure` });
     }
     events.push({ start: f.start, end: f.start, kind: 'depart', tz: fromTz, place: from,
       title: `${f.label ? `${f.label} · ` : ''}${from} → ${to}`,
@@ -845,15 +916,18 @@ export function tripEvents(
   for (const gp of grounds) {
     if (!intersect(gp.ground, range)) continue;
     for (const it of gp.items) {
-      if (!intersect(it, range)) continue;
+      // Point reminders (melatonin) have no duration, so test the range by position, not overlap.
+      if (it.end < range.start || it.start > range.end) continue;
       const isSleep = SLEEP_KINDS.includes(it.kind);
       if (gp.ground.isHome && !isSleep) continue; // at home, only the sleep itself matters
-      events.push({ ...it, kind: it.kind, tz: gp.ground.tz, place: gp.ground.code, tip: !isSleep, title: '' });
+      // The lounge nap happens at the departure airport (ICN or GMP may differ from where you landed).
+      const place = it.kind === 'strategic' && gp.ground.outbound ? gp.ground.outbound.from.toUpperCase() : gp.ground.code;
+      events.push({ ...it, kind: it.kind, tz: gp.ground.tz, place, tip: ['light', 'dim', 'caffeine'].includes(it.kind), title: '' });
     }
   }
 
   // Order of same-time events follows the day: get up, fly, arrive, rest, bed.
-  const order: EventKind[] = ['wakeup', 'depart', 'inflight', 'arrive', 'rest', 'inbed', 'light', 'caffeine', 'dim', 'nap', 'anchor', 'sleep'];
+  const order: EventKind[] = ['wakeup', 'strategic', 'depart', 'inflight', 'arrive', 'rest', 'inbed', 'light', 'caffeine', 'dim', 'melatonin', 'nap', 'anchor', 'sleep'];
   return events.sort((a, b) => a.start - b.start || order.indexOf(a.kind) - order.indexOf(b.kind));
 }
 
